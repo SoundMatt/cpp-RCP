@@ -5,14 +5,20 @@
 
 #include "rcp/capi_impl.hpp"
 
-// ── Helper: static buffers for registry + controller ─────────────────────────
-// __attribute__((aligned(16))) placed AFTER the declarator applies alignment
-// to the variable, not the type.  Placement-new of objects that contain
-// std::mutex / std::shared_ptr requires at least 8-byte (typically 16-byte)
-// alignment; uint8_t arrays default to 1-byte alignment.
+// ── Portable alignment helper ─────────────────────────────────────────────────
+// Placement-new into a uint8_t[] needs the buffer aligned to at least
+// alignof(std::max_align_t) (typically 16 bytes).
+// MSVC uses __declspec(align(N)); GCC/Clang use __attribute__((aligned(N))).
+#if defined(_MSC_VER)
+#  define RCP_ALIGNED_BUF(type, name, size) \
+    static __declspec(align(16)) type name[size]
+#else
+#  define RCP_ALIGNED_BUF(type, name, size) \
+    static type name[size] __attribute__((aligned(16)))
+#endif
 
-static uint8_t reg_buf[512]  __attribute__((aligned(16)));
-static uint8_t ctrl_buf[64]  __attribute__((aligned(16)));
+RCP_ALIGNED_BUF(uint8_t, reg_buf,  512);
+RCP_ALIGNED_BUF(uint8_t, ctrl_buf,  64);
 
 TEST_CASE("capi: registry init succeeds with adequate buffer", "[capi]") {
     rcp_registry_h reg = nullptr;
@@ -47,8 +53,8 @@ TEST_CASE("capi: registry_add and send", "[capi]") {
     rcp_registry_h reg  = nullptr;
     rcp_ctrl_h     ctrl = nullptr;
 
-    static uint8_t reg_buf2[512]  __attribute__((aligned(16)));
-    static uint8_t ctrl_buf2[64]  __attribute__((aligned(16)));
+    RCP_ALIGNED_BUF(uint8_t, reg_buf2,  512);
+    RCP_ALIGNED_BUF(uint8_t, ctrl_buf2,  64);
 
     REQUIRE(rcp_registry_init(reg_buf2, sizeof(reg_buf2), &reg) == RCP_OK);
     REQUIRE(rcp_ctrl_init(RCP_ZONE_FRONT_LEFT, ctrl_buf2, sizeof(ctrl_buf2), &ctrl) == RCP_OK);
