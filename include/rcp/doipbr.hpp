@@ -19,7 +19,7 @@ namespace rcp {
 namespace doipbr {
 
 struct Config {
-    std::string server_ip{"192.168.1.1"};
+    std::string server_ip;  // must be set by caller — no default IP
     uint16_t    server_port{13400};
     uint16_t    logical_addr{0x0001};
     std::chrono::milliseconds tcp_timeout{2000};
