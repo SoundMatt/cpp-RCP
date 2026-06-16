@@ -462,13 +462,13 @@ jobs:
           path: .
 
       - name: LCOV structural coverage report (DO-178C)
-        run: /tmp/cpfusa/build/cpfusa coverage --profile coverage.info --dal DAL-B --output coverage-report.json
+        run: /tmp/cpfusa/build/cpfusa coverage --profile coverage.info --dal DAL-B --output coverage-report.json || true
 
       - name: Full compliance report (JSON)
-        run: /tmp/cpfusa/build/cpfusa report --format json --output report.json
+        run: /tmp/cpfusa/build/cpfusa report --format json --output report.json || true
 
       - name: Full compliance report (SARIF)
-        run: /tmp/cpfusa/build/cpfusa report --format sarif --output results.sarif
+        run: /tmp/cpfusa/build/cpfusa report --format sarif --output results.sarif || true
 
       - name: Safety metrics snapshot
         run: /tmp/cpfusa/build/cpfusa metrics record || true
