@@ -147,6 +147,7 @@ enum class CommandType : uint16_t {
     Watchdog = 4,
     Sleep    = 5,
     Wake     = 6,
+    Update   = 7, // OTA firmware update session (M20)
 };
 
 // ── ResponseStatus ────────────────────────────────────────────────────────────

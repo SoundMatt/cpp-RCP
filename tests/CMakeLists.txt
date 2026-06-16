@@ -46,6 +46,58 @@ add_executable(test_shmem test_shmem.cpp)
 target_link_libraries(test_shmem PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_shmem COMMAND test_shmem)
 
+# ── Milestones 19–40 ──────────────────────────────────────────────────────────
+
+add_executable(test_authz test_authz.cpp)
+target_link_libraries(test_authz PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_authz COMMAND test_authz)
+
+add_executable(test_firmware test_firmware.cpp)
+target_link_libraries(test_firmware PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_firmware COMMAND test_firmware)
+
+add_executable(test_zonegroup test_zonegroup.cpp)
+target_link_libraries(test_zonegroup PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_zonegroup COMMAND test_zonegroup)
+
+add_executable(test_proxy test_proxy.cpp)
+target_link_libraries(test_proxy PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_proxy COMMAND test_proxy)
+
+add_executable(test_redundancy test_redundancy.cpp)
+target_link_libraries(test_redundancy PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_redundancy COMMAND test_redundancy)
+
+add_executable(test_federation test_federation.cpp)
+target_link_libraries(test_federation PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_federation COMMAND test_federation)
+
+add_executable(test_observe test_observe.cpp)
+target_link_libraries(test_observe PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_observe COMMAND test_observe)
+
+add_executable(test_admin test_admin.cpp)
+target_link_libraries(test_admin PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_admin COMMAND test_admin)
+
+add_executable(test_record test_record.cpp)
+target_link_libraries(test_record PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_record COMMAND test_record)
+
+add_executable(test_config test_config.cpp)
+target_link_libraries(test_config PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_config COMMAND test_config)
+
+add_executable(test_dyndata test_dyndata.cpp)
+target_link_libraries(test_dyndata PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_dyndata COMMAND test_dyndata)
+
+add_executable(test_capi test_capi.cpp)
+target_link_libraries(test_capi PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_capi COMMAND test_capi)
+
+# ── Benchmark ─────────────────────────────────────────────────────────────────
+
 add_executable(bench_mock bench_mock.cpp)
 target_link_libraries(bench_mock PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_bench COMMAND bench_mock)
