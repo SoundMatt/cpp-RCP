@@ -14,4 +14,19 @@ jobs:
           fetch-depth: 0
 
       - name: Check DCO sign-off
-        uses: dco-check/dco-check@v1.1.0
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          MISSING=0
+          while IFS= read -r sha; do
+            body=$(git log --format="%B" -n1 "$sha")
+            if ! echo "$body" | grep -q "^Signed-off-by:"; then
+              echo "FAIL: commit $sha is missing Signed-off-by"
+              MISSING=$((MISSING + 1))
+            fi
+          done < <(git log --format="%H" "${BASE}..${HEAD}")
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::error::$MISSING commit(s) are missing DCO Signed-off-by lines."
+            exit 1
+          fi
+          echo "All commits have DCO sign-off."
