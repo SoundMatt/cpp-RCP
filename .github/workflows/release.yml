@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate-safety-artifacts:
+    name: Regenerate safety artifacts
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build lcov
+
+      - name: Build cpp-FuSa from source
+        run: |
+          git clone --depth=1 https://github.com/SoundMatt/cpp-FuSa /tmp/cpfusa
+          cmake -B /tmp/cpfusa/build -S /tmp/cpfusa \
+            -DCMAKE_BUILD_TYPE=Release -G Ninja
+          cmake --build /tmp/cpfusa/build --parallel
+
+      - name: Configure project (coverage build)
+        env:
+          CC: gcc-12
+          CXX: g++-12
+        run: |
+          cmake -B build-cov \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="--coverage -O0" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+            -G Ninja
+
+      - name: Build project
+        run: cmake --build build-cov --parallel
+
+      - name: Run tests and collect coverage
+        run: |
+          ctest --test-dir build-cov --output-on-failure -j1
+          lcov --capture \
+            --directory build-cov \
+            --output-file coverage.info
+          lcov --remove coverage.info \
+            '*/tests/*' '*/catch2/*' '*/FetchContent/*' \
+            --output-file coverage.info
+
+      - name: Regenerate dFMEA (with cybersecurity analysis)
+        run: /tmp/cpfusa/build/cpfusa fmea --cyber
+
+      - name: Regenerate safety case (GSN)
+        run: /tmp/cpfusa/build/cpfusa safety-case
+
+      - name: Regenerate TARA (ISO 21434 Ch. 9)
+        run: /tmp/cpfusa/build/cpfusa tara
+
+      - name: Regenerate SBOM, provenance, and artifact manifest
+        run: /tmp/cpfusa/build/cpfusa release
+
+      - name: Regenerate ISO 26262 gap report (ASIL-B)
+        run: |
+          /tmp/cpfusa/build/cpfusa iso26262 \
+            --asil ASIL-B \
+            --output iso26262-gap-report.json
+
+      - name: Regenerate IEC 61508 gap report (SIL-2)
+        run: |
+          /tmp/cpfusa/build/cpfusa iec61508 \
+            --sil SIL-2 \
+            --output iec61508-gap-report.json
+
+      - name: Regenerate DO-178C gap report (DAL-B)
+        run: |
+          /tmp/cpfusa/build/cpfusa do178 \
+            --dal DAL-B \
+            --output do178-gap-report.json
+
+      - name: Regenerate structural coverage report (DO-178C)
+        run: |
+          /tmp/cpfusa/build/cpfusa coverage \
+            --profile coverage.info \
+            --dal DAL-B \
+            --output coverage-report.json
+
+      - name: Regenerate Software Accomplishment Summary (DO-178C §11.20)
+        run: /tmp/cpfusa/build/cpfusa sas
+
+      - name: Regenerate Software Configuration Index (DO-178C §11.16)
+        run: /tmp/cpfusa/build/cpfusa sci
+
+      - name: Bundle audit evidence pack
+        run: /tmp/cpfusa/build/cpfusa audit-pack
+
+      - name: Generate safety badge (Shields.io SVG)
+        run: /tmp/cpfusa/build/cpfusa badge
+
+      - name: Generate full compliance report
+        run: |
+          /tmp/cpfusa/build/cpfusa report --format json --output report.json
+          /tmp/cpfusa/build/cpfusa report --format html --output report.html
+
+      - name: Tool qualification evidence
+        run: /tmp/cpfusa/build/cpfusa qualify
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit regenerated artifacts
+        run: |
+          TAG="${{ github.ref_name }}"
+          git add \
+            fmea.csv fmea.json \
+            safety-case.json safety-case.md safety-case.mermaid \
+            tara.json tara.md \
+            sbom.json provenance.json artifact-manifest.json \
+            iso26262-gap-report.json \
+            iec61508-gap-report.json \
+            do178-gap-report.json \
+            coverage-report.json \
+            sas.json sas.md \
+            sci.json \
+            audit-pack.zip \
+            fusa-badge.svg \
+            report.json report.html \
+            qualify-report.json \
+            || true
+          if git diff --cached --quiet; then
+            echo "No artifact changes for $TAG — nothing to commit."
+          else
+            git commit -m "chore: regenerate safety artifacts for $TAG [skip ci]
+
+Signed-off-by: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+            git push origin HEAD:refs/heads/main
+          fi
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-safety-artifacts-${{ github.ref_name }}
+          path: |
+            fmea.json
+            safety-case.json
+            tara.json
+            sbom.json
+            provenance.json
+            artifact-manifest.json
+            iso26262-gap-report.json
+            iec61508-gap-report.json
+            do178-gap-report.json
+            coverage-report.json
+            audit-pack.zip
+            fusa-badge.svg
+            report.json

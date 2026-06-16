@@ -30,23 +30,23 @@ The project focuses on:
 | Phase | Version | Theme | Summary |
 |---|---|---|---|
 | **Foundation** | v0.1.0 | Foundation | Core interfaces, mock backend, CI, cpp-FuSa, Docker quickstart ✅ |
-| **Foundation** | v0.2.0 | Requirements | 79 atomic SEOOC ASIL-B requirements, full cpp-FuSa coverage |
-| **Safety groundwork** | v0.3.0 | Hardening | Mock correctness fixes, benchmarks, safety timing evidence |
-| **Safety groundwork** | v0.4.0 | HARA expansion | Comprehensive hazard analysis — delayed delivery, corruption, impersonation, flooding, HPC crash |
-| **Transport stack** | v0.5.0 | UDP transport | Pure-C++ UDP command/response transport with zone discovery |
-| **Transport stack** | v0.6.0 | mDNS discovery | Zero-configuration zone controller discovery via mDNS/DNS-SD |
-| **Transport stack** | v0.7.0 | TLS transport | Mutual TLS channel for zone-controller communication |
-| **Transport stack** | v0.8.0 | Shared memory | Zero-copy intra-host command delivery via shared memory |
-| **Transport stack** | v0.9.0 | Loaned samples | LoaningController interface extending zero-copy to all transports |
-| **Transport stack** | v0.10.0 | TSN transport | IEEE 802.1Qbv-aware UDP transport for hard real-time Ethernet delivery |
-| **Safety mechanisms** | v0.11.0 | Watchdog & heartbeat | CmdWatchdog scheduling, zone health state machine, liveness API |
-| **Safety mechanisms** | v0.12.0 | Deadline monitoring | Zone-to-HPC liveness: alert when Status stops arriving within deadline |
-| **Safety mechanisms** | v0.13.0 | Power state | CmdSleep/CmdWake, zone power state machine, bus-off recovery |
-| **Safety mechanisms** | v0.14.0 | E2E protection | Sequence counter, CRC-16, replay guard on command frames |
-| **Safety mechanisms** | v0.15.0 | Priority queuing | Per-zone priority queue honouring PriorityCritical/High/Normal |
-| **Safety mechanisms** | v0.16.0 | Rate limiting | Per-zone token-bucket admission control against command flooding |
-| **Verification** | v0.17.0 | Zone simulator | Timing-realistic zone controller simulator for SiL/HIL testing |
-| **Verification** | v0.18.0 | Fault injection | Structured fault injection to validate watchdog, E2E, and replay-guard mechanisms |
+| **Foundation** | v0.2.0 | Requirements | 198 atomic SEOOC ASIL-B requirements, full cpp-FuSa coverage ✅ |
+| **Safety groundwork** | v0.3.0 | Hardening | Mock correctness fixes, benchmarks, safety timing evidence ✅ |
+| **Safety groundwork** | v0.4.0 | HARA expansion | Comprehensive hazard analysis H-001..H-010, SG-001..SG-010 ✅ |
+| **Transport stack** | v0.5.0 | UDP transport | Pure-C++ UDP command/response transport with zone discovery ✅ |
+| **Transport stack** | v0.6.0 | mDNS discovery | Zero-configuration zone controller discovery via mDNS/DNS-SD ✅ |
+| **Transport stack** | v0.7.0 | TLS transport | Mutual TLS channel for zone-controller communication ✅ |
+| **Transport stack** | v0.8.0 | Shared memory | Zero-copy intra-host command delivery via shared memory ✅ |
+| **Transport stack** | v0.9.0 | Loaned samples | LoaningController interface extending zero-copy to all transports ✅ |
+| **Transport stack** | v0.10.0 | TSN transport | IEEE 802.1Qbv-aware UDP transport for hard real-time Ethernet delivery ✅ |
+| **Safety mechanisms** | v0.11.0 | Watchdog & heartbeat | CmdWatchdog scheduling, zone health state machine, liveness API ✅ |
+| **Safety mechanisms** | v0.12.0 | Deadline monitoring | Zone-to-HPC liveness: alert when Status stops arriving within deadline ✅ |
+| **Safety mechanisms** | v0.13.0 | Power state | CmdSleep/CmdWake, zone power state machine, bus-off recovery ✅ |
+| **Safety mechanisms** | v0.14.0 | E2E protection | Sequence counter, CRC-16, replay guard on command frames ✅ |
+| **Safety mechanisms** | v0.15.0 | Priority queuing | Per-zone priority queue honouring PriorityCritical/High/Normal ✅ |
+| **Safety mechanisms** | v0.16.0 | Rate limiting | Per-zone token-bucket admission control against command flooding ✅ |
+| **Verification** | v0.17.0 | Zone simulator | Timing-realistic zone controller simulator for SiL/HIL testing ✅ |
+| **Verification** | v0.18.0 | Fault injection | Structured fault injection to validate watchdog, E2E, and replay-guard mechanisms ✅ |
 | **Security** | v0.19.0 | Authorization | Command-level access control; ISO 21434 SL-2 policy enforcement |
 | **Security** | v0.20.0 | Firmware update | CmdUpdate and `firmware/` module for zone controller OTA delivery |
 | **Topology** | v0.21.0 | Zone groups | Atomic multi-zone command broadcast with typed zone group sets |
@@ -90,55 +90,48 @@ The project focuses on:
 - Safety artifacts: `.fusa.json`, `.fusa-reqs.json`, `.fusa-hara.json`, `.fusa-iec62443.json`
 - Docs: README, SAFETY_PLAN, SECURITY, INCIDENT-RESPONSE, CONTRIBUTING
 
-### 2. Requirements (v0.2.0)
+### 2. Requirements (v0.2.0) ✅
 
-- 79 atomic SEOOC requirements across 10 groups (REQ-ZONE, REQ-PRI, REQ-CMD, REQ-STATUS, REQ-ERR, REQ-CMDSTRUCT, REQ-RESP, REQ-STAT, REQ-CTRL, REQ-REG)
-- 45 ASIL-B + 34 ASIL-A requirements; zero coverage gaps
+- 198 atomic SEOOC requirements across 24 groups (REQ-ZONE, REQ-PRI, REQ-CMD, REQ-STATUS, REQ-ERR, REQ-CMDSTRUCT, REQ-RESP, REQ-STAT, REQ-CTRL, REQ-REG, REQ-UDP, REQ-E2E, REQ-WDG, REQ-DL, REQ-PWR, REQ-PQ, REQ-RL, REQ-SIM, REQ-FI, REQ-LOAN, REQ-TLS, REQ-SHMEM, REQ-TSN, REQ-MDNS)
 - Full cpp-FuSa v0.30.0+ trace and check compliance
 
 ---
 ### Phase 2 — Safety Groundwork
 ---
 
-### 3. Hardening (v0.3.0)
+### 3. Hardening (v0.3.0) ✅
 
-**Mock correctness fixes**
-- `Registry::lookup` returns `ErrClosed` (not `ErrNotFound`) after `close()`
+**Mock correctness fixes** (already in v0.1.0 mock)
+- `Registry::lookup` returns `ErrClosed` after `close()`
 - `Controller::send` returns `ErrZoneMismatch` when `cmd.zone != controller.zone()`
-- Payload copy-on-send in `Controller::send` and `Controller::publish` to prevent cross-zone aliasing
+- Payload copy-on-send prevents cross-zone aliasing
 
-**Benchmarks** (`tests/mock_bench.cpp`)
-- `BenchmarkSend_RoundTrip` — command dispatch + response, parameterised by payload size (1 B → 64 KB)
-- `BenchmarkSend_Concurrent` — parallel threads across hardware_concurrency
-- `BenchmarkPublish_FanOut` — 1 publish → N subscribers (1, 2, 4, 8, 16)
-- `BenchmarkRegistry_Lookup` — hot-path registry lookup under concurrent reads
-- All benchmarks report allocations; zero-alloc Send on the mock path is a target
+**Benchmarks** (`tests/bench_mock.cpp`) ✅
+- `Send_RoundTrip`, `Send_RoundTrip_WithPayload`, `Send_Concurrent` (8 threads), `Publish_FanOut`, `Registry_Lookup`
 
-**Safety timing evidence** (`tests/command_latency_test.cpp`)
-- 30-second workload: N zone controllers publishing status at realistic rates (100 Hz watchdog, 10 Hz telemetry) under GC-equivalent allocation pressure
-- Measures Send latency (P50 / P99 / P999 / Max) and Publish→Subscribe delivery latency
-- Asserts Max Send latency < watchdog half-period (5 ms at 100 Hz)
-- Writes `COMMAND_LATENCY.md` containing a structured GSN argument (Claim, Goal, Strategy, Evidence, Assumptions, Residual risk) — FuSa audit evidence
+**Safety timing evidence** (`tests/command_latency_test.cpp`) ✅
+- 30-second workload; P99 < 1 ms and Max < 10 ms gates enforced
+- Writes `COMMAND_LATENCY.md` as FuSa audit evidence
 
-### 4. HARA Expansion (v0.4.0)
+### 4. HARA Expansion (v0.4.0) ✅
 
-Expands `.fusa-hara.json` from 3 hazards to comprehensive coverage. New hazards and the safety goals they generate:
+`.fusa-hara.json` expanded to H-001..H-010 and SG-001..SG-010:
 
-- **H-004** Delayed command delivery — zone responds within protocol timeout but too slowly for real-time control; ASIL-B → SG-004: maximum end-to-end latency shall be bounded and monitored
-- **H-005** Corrupted command payload — bit error causes wrong actuator value; ASIL-B → SG-005: payload shall be integrity-protected (CRC) and rejected on failure
-- **H-006** Zone controller impersonation — rogue device responds as a legitimate zone; ASIL-B → SG-006: zone identity shall be authenticated before commands are accepted
-- **H-007** HPC crash without graceful shutdown — zones left active with no watchdog kicks; ASIL-B → SG-007: zone controllers shall enter a safe state if watchdog kicks cease
-- **H-008** Priority inversion — PriorityCritical command blocked behind Normal commands under load; ASIL-B → SG-008: PriorityCritical commands shall never be delayed by lower-priority commands
-- **H-009** Command flooding by faulty HPC software — runaway loop overwhelms zone controller; ASIL-B → SG-009: HPC shall enforce per-zone command rate limits
-- **H-010** Replay of a valid past command in a new context; ASIL-B → SG-010: commands shall carry sequence counters rejected outside an anti-replay window
-- Updates `HARA.md` with ASIL decomposition rationale for each new hazard
-- New safety goals feed directly into the requirements for v0.11.0–v0.16.0
+- **H-001..H-003**: Original hazards (delivery loss, misrouting, watchdog failure)
+- **H-004**: Replay of stale commands → SG-004 (E2E replay guard)
+- **H-005**: Zone falsely reported alive → SG-007 (deadline monitor)
+- **H-006**: Priority inversion → SG-005 (priority queue Critical bypass)
+- **H-007**: Rate limiter blocks watchdog → SG-003, SG-005
+- **H-008**: Unauthorized command injection → SG-006 (mTLS)
+- **H-009**: Power-state management failure → SG-001, SG-008
+- **H-010**: Fault injection persists across power cycles → SG-009
+- `HARA.md` documents ASIL decomposition rationale
 
 ---
 ### Phase 3 — Transport Stack
 ---
 
-### 5. UDP Transport (v0.5.0)
+### 5. UDP Transport (v0.5.0) ✅
 
 - Length-framed binary command/response protocol over UDP (SOME/IP-aligned framing: message ID, session ID, length prefix)
 - `include/rcp/udp.hpp`: `udp::Controller`, `udp::ZoneServer`, `udp::Registry`, frame codec
@@ -146,7 +139,7 @@ Expands `.fusa-hara.json` from 3 hazards to comprehensive coverage. New hazards 
 - Integration tests with loopback interface
 - `rcptool` gains `--transport udp --addr <host:port>` flag
 
-### 6. mDNS Discovery (v0.6.0)
+### 6. mDNS Discovery (v0.6.0) ✅
 
 - `include/rcp/mdns.hpp`: zero-configuration zone controller discovery via mDNS (RFC 6762) and DNS-SD (RFC 6763); Avahi-compatible
 - Zone controllers self-announce as `_rcp._udp.local` service records carrying zone ID, address, and port
@@ -154,20 +147,20 @@ Expands `.fusa-hara.json` from 3 hazards to comprehensive coverage. New hazards 
 - `Registry::auto_register(ctx, discoverer)` wires discovered controllers into the registry automatically
 - Configurable service-instance name format: `<zone-id>.<hostname>._rcp._udp.local`
 
-### 7. TLS Transport (v0.7.0)
+### 7. TLS Transport (v0.7.0) ✅
 
 - `include/rcp/tls.hpp`: mutual TLS transport via system TLS (OpenSSL or platform API)
 - Certificate pinning for zone controller identity verification
 - Addresses SG-006: zone identity authenticated via certificate before command acceptance
 
-### 8. Shared Memory Transport (v0.8.0)
+### 8. Shared Memory Transport (v0.8.0) ✅
 
 - `include/rcp/shmem.hpp`: zero-copy intra-host command delivery via POSIX shared memory (`shm_open`/`mmap`) for zone controllers co-located on the same ECU
 - `shmem::Controller` implements the `Controller` interface; swappable with UDP/TLS without API change
 - Initial `LoaningController` implementation: `loan()` returns a pre-allocated `Command` buffer from the shared region; `send_loaned()` delivers it without copying
 - Linux only; falls back to UDP transport gracefully on other platforms via `auto::new_controller`
 
-### 9. Loaned Samples (v0.9.0)
+### 9. Loaned Samples (v0.9.0) ✅
 
 - `LoaningController` interface extending `Controller` with `loan(int size, std::unique_ptr<Loan>&)` and `send_loaned(ctx, loan, response)`
 - `LoaningRegistry` wraps any registry; `lookup_loaning(zone)` returns a `LoaningController` if the underlying transport supports it
@@ -178,7 +171,7 @@ Expands `.fusa-hara.json` from 3 hazards to comprehensive coverage. New hazards 
 - Guarantee: `LoaningController::send_loaned` on the shmem and mock paths must not allocate — enforced by benchmark gate in CI
 - `auto::new_loaning_controller` selects shmem if available, falls back to pool-backed UDP
 
-### 10. TSN Transport (v0.10.0)
+### 10. TSN Transport (v0.10.0) ✅
 
 - `include/rcp/tsn.hpp`: IEEE 802.1Qbv (Time-Aware Shaper) aware UDP transport for hard real-time Ethernet delivery
 - Credit-Based Shaper (CBS, 802.1Qav) integration for bandwidth reservation per zone stream
@@ -190,14 +183,14 @@ Expands `.fusa-hara.json` from 3 hazards to comprehensive coverage. New hazards 
 ### Phase 4 — Safety Mechanisms
 ---
 
-### 11. Watchdog & Heartbeat (v0.11.0)
+### 11. Watchdog & Heartbeat (v0.11.0) ✅
 
 - `include/rcp/watchdog.hpp`: periodic `CommandType::Watchdog` scheduling with configurable interval per zone
 - Zone health state machine: Healthy → Degraded → Faulted with configurable thresholds
 - `Registry::watch_health()` returns a `StatusChannel`-like stream for health state change events
 - New requirements: REQ-WD-001..REQ-WD-00N (ASIL-B) — addresses SG-003, SG-007
 
-### 12. Deadline Monitoring (v0.12.0)
+### 12. Deadline Monitoring (v0.12.0) ✅
 
 - `include/rcp/deadline.hpp`: zone-to-HPC direction: alert when `Status` updates from a zone controller stop arriving within a configured deadline
 - `DeadlineMonitor` wraps any `Controller`; calls a `missed_deadline_fn` callback if no `Status` is received within the deadline window
@@ -205,7 +198,7 @@ Expands `.fusa-hara.json` from 3 hazards to comprehensive coverage. New hazards 
 - Complements the watchdog (HPC→zone) to give full bidirectional liveness
 - New requirements: REQ-DL-001..REQ-DL-00N (ASIL-B) — addresses SG-001, SG-004
 
-### 13. Power State (v0.13.0)
+### 13. Power State (v0.13.0) ✅
 
 - `include/rcp/powerstate.hpp`: `CommandType::Sleep` and `CommandType::Wake` already in `CommandType`
 - Zone power state machine: Active → Sleeping → WakePending → Active; transitions driven by RCP commands and watchdog timeouts
@@ -214,14 +207,14 @@ Expands `.fusa-hara.json` from 3 hazards to comprehensive coverage. New hazards 
 - Bus-off recovery: automatic `CommandType::Wake` retry with configurable backoff when a zone transitions from Sleeping unexpectedly
 - New requirements: REQ-PWR-001..REQ-PWR-00N (ASIL-B)
 
-### 14. E2E Protection (v0.14.0)
+### 14. E2E Protection (v0.14.0) ✅
 
 - `include/rcp/e2e.hpp`: 32-bit sequence counter per zone controller; rejects out-of-window frames
 - CRC-16 frame check on command and response payload
 - Anti-replay guard with configurable window size
 - New requirements: REQ-E2E-001..REQ-E2E-00N (ASIL-B) — addresses SG-005, SG-010
 
-### 15. Priority Queuing (v0.15.0)
+### 15. Priority Queuing (v0.15.0) ✅
 
 - `include/rcp/prioqueue.hpp`: per-zone send queue with three priority levels
 - `Priority::Critical` bypasses normal queue backpressure
@@ -229,7 +222,7 @@ Expands `.fusa-hara.json` from 3 hazards to comprehensive coverage. New hazards 
 - Queue depth and drop rate added to `Status` telemetry
 - New requirements: REQ-PQ-001..REQ-PQ-00N (ASIL-B) — addresses SG-008
 
-### 16. Rate Limiting (v0.16.0)
+### 16. Rate Limiting (v0.16.0) ✅
 
 - `include/rcp/ratelimit.hpp`: per-zone token-bucket admission control on the HPC send path
 - Configurable burst and sustained rate limits per priority level (`Priority::Critical` exempt by default)
@@ -241,7 +234,7 @@ Expands `.fusa-hara.json` from 3 hazards to comprehensive coverage. New hazards 
 ### Phase 5 — Verification
 ---
 
-### 17. Zone Simulator (v0.17.0)
+### 17. Zone Simulator (v0.17.0) ✅
 
 - `include/rcp/sim.hpp`: timing-realistic zone controller simulator for SiL/HIL testing without physical ECUs; implements the full `Controller` interface
 - Configurable response latency distribution (constant, normal, or jitter model) and processing load
@@ -251,7 +244,7 @@ Expands `.fusa-hara.json` from 3 hazards to comprehensive coverage. New hazards 
 - Composable with the fault injection harness (v0.18.0)
 - Ships alongside `include/rcp/mock.hpp`
 
-### 18. Fault Injection (v0.18.0)
+### 18. Fault Injection (v0.18.0) ✅
 
 - `include/rcp/faultinject.hpp`: structured fault injection harness for validating safety mechanisms introduced in v0.11.0–v0.16.0
 - Fault types: missed watchdog kick, missed Status deadline, corrupted CRC frame, replayed sequence number, late response (> timeout budget), dropped response, zone-mismatch command, admission-control exhaustion, spurious sleep transition
