@@ -671,6 +671,918 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-001",
+      "title": "Header magic bytes 'RC'",
+      "text": "All wire frames shall begin with the two-byte sequence 0x52 ('R'), 0x43 ('C').",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-002",
+      "title": "Protocol version field",
+      "text": "All wire frames shall carry the protocol version (currently 0x01) in byte 2.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-003",
+      "title": "Message type field",
+      "text": "Byte 3 of every wire frame shall encode the message type: Command, Response, Status, Subscribe, or Unsubscribe.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-004",
+      "title": "Zone field",
+      "text": "Bytes 4 of every wire frame shall encode the target Zone as a uint8.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-005",
+      "title": "CommandType field for commands",
+      "text": "Bytes 5\u20136 of Command frames shall encode the CommandType as a big-endian uint16.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-006",
+      "title": "Priority/Status field",
+      "text": "Byte 7 shall encode Priority for Command frames, ResponseStatus for Response frames, and Healthy flag for Status frames.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-007",
+      "title": "Command/response ID field",
+      "text": "Bytes 8\u201311 shall encode the Command or Response ID as a big-endian uint32.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-008",
+      "title": "Payload length field",
+      "text": "Bytes 12\u201315 shall encode the payload byte count as a big-endian uint32.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-009",
+      "title": "Payload follows header",
+      "text": "The variable-length payload shall immediately follow the 16-byte header.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-010",
+      "title": "Big-endian multi-byte fields",
+      "text": "All multi-byte fields in wire frames shall be encoded in big-endian (network) byte order.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-011",
+      "title": "Frame validation rejects bad magic",
+      "text": "The decoder shall return an error if frame bytes 0\u20131 are not 0x52, 0x43.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-012",
+      "title": "Frame validation rejects bad version",
+      "text": "The decoder shall return an error if the version byte does not equal the supported protocol version.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-001",
+      "title": "E2E header prepended to payload",
+      "text": "The e2e::wrap() function shall prepend a 6-byte header (4-byte seq + 2-byte CRC-16) to the payload.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-002",
+      "title": "Sequence counter increments per send",
+      "text": "Each call to e2e::Controller::send() shall increment the sequence counter atomically.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-003",
+      "title": "CRC-16/CCITT-FALSE algorithm",
+      "text": "The CRC shall be computed using the CRC-16/CCITT-FALSE polynomial (0x1021, init 0xFFFF).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-004",
+      "title": "CRC covers seq and payload",
+      "text": "The CRC-16 shall cover both the 4-byte sequence number and the entire payload.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-005",
+      "title": "Unwrap validates CRC",
+      "text": "e2e::unwrap() shall return E2EErrc::crc_mismatch if the CRC in the frame does not match the computed CRC.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-006",
+      "title": "Unwrap rejects short frames",
+      "text": "e2e::unwrap() shall return E2EErrc::short_frame if the frame is shorter than HeaderLen bytes.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-007",
+      "title": "ReplayGuard rejects duplicate seq",
+      "text": "ReplayGuard::check() shall return E2EErrc::replay for any sequence number that was already accepted within the window.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-008",
+      "title": "ReplayGuard rejects old seq outside window",
+      "text": "ReplayGuard::check() shall return E2EErrc::replay for sequence numbers more than ReplayWindowSize behind the current high-water mark.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WDG-001",
+      "title": "Keeper kicks all zones periodically",
+      "text": "watchdog::Keeper shall send a CmdWatchdog command to every registered zone controller at the configured interval.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WDG-002",
+      "title": "Zone starts Healthy",
+      "text": "A zone controller shall be in the Healthy state immediately after Keeper construction.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WDG-003",
+      "title": "Degraded after degrade_after misses",
+      "text": "A zone controller shall transition to Degraded after degrade_after consecutive kick failures.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WDG-004",
+      "title": "Faulted after fault_after misses",
+      "text": "A zone controller shall transition to Faulted after fault_after consecutive kick failures.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WDG-005",
+      "title": "Recovery to Healthy on success",
+      "text": "A zone controller shall transition back to Healthy on the next successful kick after any degraded or faulted state.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WDG-006",
+      "title": "Callback fires on transition",
+      "text": "The health callback shall be invoked with the new HealthState whenever a zone's health state changes.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WDG-007",
+      "title": "Kick timeout respected",
+      "text": "Each kick shall use a Context with the configured timeout; a timeout response shall count as a miss.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WDG-008",
+      "title": "Close stops background thread",
+      "text": "Keeper::close() shall cause the background kick thread to terminate without hanging.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DL-001",
+      "title": "Monitor subscribes to all zones",
+      "text": "deadline::Monitor shall subscribe to each registered zone controller's Status stream on construction.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DL-002",
+      "title": "Dead event on initial deadline",
+      "text": "The monitor shall emit LivenessEvent{alive=false} for any zone that does not publish a Status within the configured deadline, including the very first deadline period.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DL-003",
+      "title": "Repeated dead events suppressed",
+      "text": "The monitor shall not re-emit LivenessEvent{alive=false} for a zone that is already known to be dead.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DL-004",
+      "title": "Alive event on first status",
+      "text": "The monitor shall emit LivenessEvent{alive=true} when the first Status arrives for a previously-dead zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DL-005",
+      "title": "Deadline timer resets on status",
+      "text": "Receipt of a Status shall reset the per-zone deadline timer.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DL-006",
+      "title": "alive() returns false before first status",
+      "text": "Monitor::alive(z) shall return false for any zone that has not yet published a Status.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DL-007",
+      "title": "Close terminates watch threads",
+      "text": "Monitor::close() shall signal all watch threads to stop.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DL-008",
+      "title": "Destructor joins threads",
+      "text": "The Monitor destructor shall join all watch threads before returning.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-001",
+      "title": "sleep() sends CmdSleep",
+      "text": "powerstate::Manager::sleep() shall send CommandType::Sleep to the target zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-002",
+      "title": "sleep() transitions Active\u2192Sleeping",
+      "text": "A successful sleep() call shall transition the zone from Active to Sleeping.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-003",
+      "title": "wake() sends CmdWake",
+      "text": "powerstate::Manager::wake() shall send CommandType::Wake to the target zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-004",
+      "title": "wake() transitions Sleeping\u2192Active",
+      "text": "A successful wake() call shall transition the zone from Sleeping or BusOff to Active.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-005",
+      "title": "Command failure yields BusOff",
+      "text": "A send error during sleep() or wake() shall transition the zone to BusOff.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-006",
+      "title": "recover_loop retries BusOff zones",
+      "text": "The background recovery loop shall periodically attempt wake() for every zone in the BusOff state.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-007",
+      "title": "state() is thread-safe",
+      "text": "powerstate::Manager::state(z) shall be safe to call concurrently with sleep(), wake(), or the recovery loop.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-008",
+      "title": "Close stops recovery loop",
+      "text": "Manager::close() shall stop the background recovery thread without hanging.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PQ-001",
+      "title": "Higher priority dispatched first",
+      "text": "prioqueue::Controller shall dispatch Priority::Critical before Priority::High before Priority::Normal when multiple commands are queued.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PQ-002",
+      "title": "FIFO within same priority",
+      "text": "Commands with equal priority shall be dispatched in the order they were submitted (first-in, first-out).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PQ-003",
+      "title": "Deadline respected per entry",
+      "text": "If a queued command's context deadline expires before dispatch, send() shall return ErrTimeout.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PQ-004",
+      "title": "done() context rejected",
+      "text": "send() shall return ErrTimeout immediately if the provided context is already done.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PQ-005",
+      "title": "Zone mismatch rejected",
+      "text": "send() shall return ErrZoneMismatch if cmd.zone differs from the inner controller's zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PQ-006",
+      "title": "Subscribe delegates to inner",
+      "text": "subscribe() shall delegate directly to the inner controller.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PQ-007",
+      "title": "Close stops dispatch thread",
+      "text": "close() shall stop the dispatch thread and cause subsequent send() calls to return ErrClosed.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PQ-008",
+      "title": "send() after close returns ErrClosed",
+      "text": "Any send() call after close() shall return ErrClosed.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-RL-001",
+      "title": "Token bucket with configurable rate and burst",
+      "text": "ratelimit::Controller shall implement a token bucket with configurable rate (tokens/s) and burst capacity.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-RL-002",
+      "title": "Tokens refilled based on elapsed time",
+      "text": "The token bucket shall refill tokens proportionally to elapsed wall-clock time since the last take().",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-RL-003",
+      "title": "ErrBusy when bucket exhausted",
+      "text": "send() shall return ErrBusy immediately, without calling inner send(), when fewer than 1 token remains.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-RL-004",
+      "title": "Critical commands exempt when configured",
+      "text": "When Config::exempt_critical is true, Priority::Critical commands shall bypass the token bucket.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-RL-005",
+      "title": "Non-critical commands not exempt",
+      "text": "Priority::Normal and Priority::High commands shall always be subject to the token bucket.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-RL-006",
+      "title": "Zone mismatch rejected",
+      "text": "send() shall return ErrZoneMismatch if cmd.zone differs from the inner controller's zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-RL-007",
+      "title": "Close stops sends",
+      "text": "close() shall cause subsequent send() calls to return ErrClosed.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-RL-008",
+      "title": "send() after close returns ErrClosed",
+      "text": "Any send() call after close() shall return ErrClosed.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SIM-001",
+      "title": "send() returns OK by default",
+      "text": "sim::Controller::send() shall return ResponseStatus::OK unless a fault has been injected.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SIM-002",
+      "title": "zone() returns configured zone",
+      "text": "sim::Controller::zone() shall return the Zone value from the Config struct.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SIM-003",
+      "title": "Constant latency model",
+      "text": "When LatencyModel::Constant is configured, send() shall sleep for exactly base_latency before returning.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SIM-004",
+      "title": "Jitter latency model",
+      "text": "When LatencyModel::Jitter is configured, send() shall sleep for a duration uniformly distributed in [base_latency, base_latency + jitter].",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SIM-005",
+      "title": "fault() causes send to fail",
+      "text": "fault(ec) shall cause all subsequent send() calls to return ec instead of delegating to the handler.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SIM-006",
+      "title": "recover() restores normal operation",
+      "text": "recover() shall clear any injected fault and restore send() to OK responses.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SIM-007",
+      "title": "Status published on interval",
+      "text": "If Config::status_interval > 0, the simulator shall publish a Status on that cadence to all subscribers.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SIM-008",
+      "title": "close() stops background threads",
+      "text": "close() shall terminate the status and watchdog background threads without hanging.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-FI-001",
+      "title": "No fault when no rules",
+      "text": "When no rules are active, send() shall delegate to the inner controller unchanged.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-FI-002",
+      "title": "Drop rule returns error without calling inner",
+      "text": "A Drop rule shall cause send() to return an error without calling the inner controller.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-FI-003",
+      "title": "Error rule returns ResponseStatus::Error",
+      "text": "An Error rule shall return {} (no error code) with the Response status set to ResponseStatus::Error.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-FI-004",
+      "title": "Slow rule adds configured latency",
+      "text": "A Slow rule shall sleep for Rule::latency before delegating to the inner controller.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-FI-005",
+      "title": "Count-based rule expires after N firings",
+      "text": "A rule with count > 0 shall auto-expire after count applications and be removed from the active list.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-FI-006",
+      "title": "clear_rules() removes all active rules",
+      "text": "clear_rules() shall remove all rules, returning the controller to pass-through mode.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-FI-007",
+      "title": "Timeout rule returns ErrTimeout",
+      "text": "A Timeout rule shall return ErrTimeout without calling the inner controller.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-FI-008",
+      "title": "zone() delegates to inner",
+      "text": "zone() shall return the inner controller's zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LOAN-001",
+      "title": "loan() returns zeroed buffer",
+      "text": "loan::Controller::loan(n) shall return a zeroed byte vector of exactly n bytes.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LOAN-002",
+      "title": "loan() returns ErrClosed when closed",
+      "text": "loan() shall return ErrClosed if the controller has been closed.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LOAN-003",
+      "title": "loan() returns error for negative size",
+      "text": "loan() shall return an error if size < 0.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LOAN-004",
+      "title": "send_loaned() delegates to inner",
+      "text": "send_loaned() shall delegate command delivery to the inner controller.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LOAN-005",
+      "title": "Loan RAII releases buffer to pool",
+      "text": "When a Loan is destroyed without being sent, its destructor shall return the buffer to the pool.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LOAN-006",
+      "title": "zone() delegates to inner",
+      "text": "zone() shall return the inner controller's zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TLS-001",
+      "title": "Mutual TLS authentication",
+      "text": "TLS transport shall require both client and server to present valid X.509 certificates.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TLS-002",
+      "title": "Certificate verification by CA",
+      "text": "Certificates shall be verified against the configured CA bundle; self-signed certs shall be rejected unless the CA is the cert itself.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TLS-003",
+      "title": "Config::verify_peer=true by default",
+      "text": "Certificate verification shall be enabled by default.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TLS-004",
+      "title": "PEM file support",
+      "text": "cert_file, key_file, and ca_file shall accept paths to PEM-formatted files.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TLS-005",
+      "title": "Command frames encrypted",
+      "text": "All Command and Response frames shall be encrypted in transit.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TLS-006",
+      "title": "Status frames encrypted",
+      "text": "All Status subscription frames shall be encrypted in transit.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TLS-007",
+      "title": "TLS 1.2+ enforced",
+      "text": "Connections with TLS protocol version below 1.2 shall be rejected.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TLS-008",
+      "title": "Weak cipher suites disabled",
+      "text": "NULL, RC4, EXPORT, and DES cipher suites shall be disabled.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TLS-009",
+      "title": "close() terminates TLS session",
+      "text": "close() shall perform a clean TLS shutdown before closing the underlying socket.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TLS-010",
+      "title": "Error propagation",
+      "text": "Any TLS handshake or I/O error shall be returned as a std::error_code to the caller.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SHMEM-001",
+      "title": "In-process zero-copy delivery",
+      "text": "shmem::Controller::send() shall deliver commands to the ZoneServer without serialising to a byte buffer.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SHMEM-002",
+      "title": "Custom handler invoked",
+      "text": "If set_handler() has been called, the handler shall be invoked for each command; otherwise a default OK response is returned.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SHMEM-003",
+      "title": "ErrZoneMismatch on wrong zone",
+      "text": "send() shall return ErrZoneMismatch if cmd.zone differs from the server's zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SHMEM-004",
+      "title": "ErrClosed after close()",
+      "text": "send() shall return ErrClosed after the Controller or ZoneServer has been closed.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SHMEM-005",
+      "title": "publish() delivers to all subscribers",
+      "text": "ZoneServer::publish() shall push the Status to every active StatusChannel.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SHMEM-006",
+      "title": "Payload copied before handler",
+      "text": "The controller shall copy the Command payload before passing it to the ZoneServer handler.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SHMEM-007",
+      "title": "Registry lookup finds registered server",
+      "text": "shmem::Registry::lookup() shall return the controller for a zone registered via add_server().",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SHMEM-008",
+      "title": "Registry::close() releases all controllers",
+      "text": "Registry::close() shall close all registered controllers and cause subsequent lookup() to return ErrClosed.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TSN-001",
+      "title": "SO_PRIORITY set per command priority",
+      "text": "tsn::Controller::send() shall set the SO_PRIORITY socket option proportional to the command's rcp::Priority before sending.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TSN-002",
+      "title": "PCPMap maps Normal/High/Critical to PCP values",
+      "text": "The PCPMap struct shall provide separate PCP values for Priority::Normal, Priority::High, and Priority::Critical.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TSN-003",
+      "title": "Critical mapped to highest PCP",
+      "text": "Priority::Critical shall be mapped to PCP 7 by default.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TSN-004",
+      "title": "High mapped to mid-range PCP",
+      "text": "Priority::High shall be mapped to PCP 5 by default.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TSN-005",
+      "title": "Normal mapped to low PCP",
+      "text": "Priority::Normal shall be mapped to PCP 2 by default.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-TSN-006",
+      "title": "subscribe() delegates to inner",
+      "text": "subscribe() shall delegate directly to the inner controller without modifying socket priority.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDNS-001",
+      "title": "Discoverer interface for zone discovery",
+      "text": "mdns::Discoverer shall define the abstract interface for mDNS-based zone controller discovery.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDNS-002",
+      "title": "start() fires Added event for each discovered zone",
+      "text": "Discoverer::start() shall invoke the callback with EventType::Added for each discovered ZoneInfo.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDNS-003",
+      "title": "stop() terminates discovery",
+      "text": "Discoverer::stop() shall cause the discoverer to stop emitting events.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDNS-004",
+      "title": "StaticDiscoverer emits configured zones",
+      "text": "StaticDiscoverer::start() shall emit all configured ZoneInfo entries synchronously before returning.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDNS-005",
+      "title": "ZoneInfo carries host, port, and zone",
+      "text": "ZoneInfo shall carry the Zone, host string, port number, and service instance name.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDNS-006",
+      "title": "instance_name follows _rcp._udp.local convention",
+      "text": "make_instance_name() shall produce names of the form '<zone>.<host>._rcp._udp.local'.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDNS-007",
+      "title": "Announcer interface for zone registration",
+      "text": "mdns::Announcer shall define the abstract interface for announcing zone controllers via the local mDNS responder.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDNS-008",
+      "title": "withdraw() removes mDNS record",
+      "text": "Announcer::withdraw(z) shall remove the mDNS record for the given zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
     }
   ]
 }

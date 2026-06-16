@@ -6,89 +6,202 @@
   "operationalSituations": [
     {
       "id": "OS-001",
-      "description": "Normal vehicle operation — all zone controllers reachable"
+      "description": "Normal vehicle operation \u2014 all zone controllers reachable"
     },
     {
       "id": "OS-002",
-      "description": "Partial network fault — one or more zone controllers unreachable"
+      "description": "Partial network fault \u2014 one or more zone controllers unreachable"
     },
     {
       "id": "OS-003",
-      "description": "Safety-critical manoeuvre — emergency braking or collision avoidance active"
+      "description": "Safety-critical manoeuvre \u2014 emergency braking or collision avoidance active"
     },
     {
       "id": "OS-004",
-      "description": "HPC software fault — runaway process, crash, or OOM condition"
+      "description": "HPC software fault \u2014 runaway process, crash, or OOM condition"
     },
     {
       "id": "OS-005",
-      "description": "Elevated network latency — congestion, EMI, or hardware degradation"
+      "description": "Elevated network latency \u2014 congestion, EMI, or hardware degradation"
     },
     {
       "id": "OS-006",
-      "description": "Adversarial access — attacker present on the zone Ethernet bus"
+      "description": "Adversarial access \u2014 attacker present on the zone Ethernet bus"
     }
   ],
   "hazards": [
     {
       "id": "H-001",
       "description": "Loss of command delivery to safety-critical zone (e.g. braking actuator)",
-      "situations": ["OS-001", "OS-002", "OS-003"],
+      "situations": [
+        "OS-001",
+        "OS-002",
+        "OS-003"
+      ],
       "risk": {
         "severity": "S3",
         "exposure": "E4",
         "controllability": "C2",
         "asil": "ASIL-B"
       },
-      "safetyGoals": ["SG-001"]
+      "safetyGoals": [
+        "SG-001"
+      ]
     },
     {
       "id": "H-002",
       "description": "Spurious command sent to wrong zone controller",
-      "situations": ["OS-001"],
+      "situations": [
+        "OS-001"
+      ],
       "risk": {
         "severity": "S2",
         "exposure": "E3",
         "controllability": "C2",
         "asil": "ASIL-B"
       },
-      "safetyGoals": ["SG-002"]
+      "safetyGoals": [
+        "SG-002"
+      ]
     },
     {
       "id": "H-003",
       "description": "Zone controller watchdog not kicked, leading to unintended reset",
-      "situations": ["OS-001", "OS-003"],
+      "situations": [
+        "OS-001",
+        "OS-003"
+      ],
       "risk": {
         "severity": "S2",
         "exposure": "E4",
         "controllability": "C2",
         "asil": "ASIL-B"
       },
-      "safetyGoals": ["SG-003"]
+      "safetyGoals": [
+        "SG-003"
+      ]
     },
     {
       "id": "H-004",
       "description": "Replay of stale commands from a previous drive cycle",
-      "situations": ["OS-001", "OS-006"],
+      "situations": [
+        "OS-001",
+        "OS-006"
+      ],
       "risk": {
         "severity": "S2",
         "exposure": "E3",
         "controllability": "C2",
         "asil": "ASIL-B"
       },
-      "safetyGoals": ["SG-004"]
+      "safetyGoals": [
+        "SG-004"
+      ]
     },
     {
       "id": "H-005",
       "description": "Zone controller falsely reported as alive when unresponsive",
-      "situations": ["OS-002", "OS-005"],
+      "situations": [
+        "OS-002",
+        "OS-005"
+      ],
       "risk": {
         "severity": "S2",
         "exposure": "E3",
         "controllability": "C2",
         "asil": "ASIL-B"
       },
-      "safetyGoals": ["SG-007"]
+      "safetyGoals": [
+        "SG-007"
+      ]
+    },
+    {
+      "id": "H-006",
+      "description": "Priority inversion \u2014 low-priority burst of commands starves a safety-critical CmdWatchdog",
+      "situations": [
+        "OS-001",
+        "OS-003",
+        "OS-005"
+      ],
+      "risk": {
+        "severity": "S2",
+        "exposure": "E4",
+        "controllability": "C2",
+        "asil": "ASIL-B"
+      },
+      "safetyGoals": [
+        "SG-001",
+        "SG-005"
+      ]
+    },
+    {
+      "id": "H-007",
+      "description": "Rate limiter blocks watchdog kick during high command burst, causing spurious zone reset",
+      "situations": [
+        "OS-001",
+        "OS-005"
+      ],
+      "risk": {
+        "severity": "S2",
+        "exposure": "E3",
+        "controllability": "C2",
+        "asil": "ASIL-B"
+      },
+      "safetyGoals": [
+        "SG-003",
+        "SG-005"
+      ]
+    },
+    {
+      "id": "H-008",
+      "description": "Unauthorized command injection via unsecured UDP transport on the zone Ethernet bus",
+      "situations": [
+        "OS-006"
+      ],
+      "risk": {
+        "severity": "S3",
+        "exposure": "E2",
+        "controllability": "C2",
+        "asil": "ASIL-B"
+      },
+      "safetyGoals": [
+        "SG-006"
+      ]
+    },
+    {
+      "id": "H-009",
+      "description": "Zone controller not properly woken from sleep, causing loss of actuation during safety manoeuvre",
+      "situations": [
+        "OS-002",
+        "OS-003"
+      ],
+      "risk": {
+        "severity": "S3",
+        "exposure": "E3",
+        "controllability": "C2",
+        "asil": "ASIL-B"
+      },
+      "safetyGoals": [
+        "SG-001",
+        "SG-008"
+      ]
+    },
+    {
+      "id": "H-010",
+      "description": "Fault injection state persists across vehicle power cycles, masking real faults in production",
+      "situations": [
+        "OS-001",
+        "OS-004"
+      ],
+      "risk": {
+        "severity": "S2",
+        "exposure": "E2",
+        "controllability": "C3",
+        "asil": "ASIL-A"
+      },
+      "safetyGoals": [
+        "SG-009"
+      ]
     }
   ],
   "safetyGoals": [
@@ -115,6 +228,31 @@
     {
       "id": "SG-007",
       "description": "A zone controller that stops publishing Status shall be detected as dead within the configured deadline.",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "SG-005",
+      "description": "Priority::Critical commands shall never be delayed by Priority::Normal or Priority::High commands queued earlier.",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "SG-006",
+      "description": "Transport authentication (mTLS or equivalent) shall be enforced on all external zone controller connections.",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "SG-008",
+      "description": "A zone controller shall only be declared operational after a successful Wake command response.",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "SG-009",
+      "description": "Fault injection rules shall not persist beyond the lifetime of the injecting process.",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "SG-010",
+      "description": "Zone controller health state transitions shall be deterministically derivable from observable send() outcomes alone.",
       "asil": "ASIL-B"
     }
   ]

@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Build and test (cross-platform) ──────────────────────────────────────────
+  # ── Build and test (cross-platform matrix) ───────────────────────────────────
   build-and-test:
     name: ${{ matrix.os }} / ${{ matrix.compiler }} / C++${{ matrix.std }}
     runs-on: ${{ matrix.os }}
@@ -77,10 +77,18 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure -j1
 
-  # ── Static analysis ───────────────────────────────────────────────────────────
-  lint:
+      - name: Upload compile_commands.json (Linux clang-14 C++17 only)
+        if: matrix.os == 'ubuntu-22.04' && matrix.compiler == 'clang-14' && matrix.std == 17
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-commands
+          path: build/compile_commands.json
+
+  # ── clang-tidy ───────────────────────────────────────────────────────────────
+  clang-tidy:
     name: clang-tidy
     runs-on: ubuntu-22.04
+    needs: build-and-test
     steps:
       - uses: actions/checkout@v4
 
@@ -108,16 +116,20 @@ jobs:
           find include tests -name '*.hpp' -o -name '*.cpp' | \
             xargs clang-tidy -p build --warnings-as-errors='*' || true
 
-  # ── Coverage ──────────────────────────────────────────────────────────────────
+  # ── LCOV coverage ─────────────────────────────────────────────────────────────
   coverage:
     name: Coverage (LCOV)
     runs-on: ubuntu-22.04
     needs: build-and-test
+    outputs:
+      coverage-info: coverage.info
     steps:
       - uses: actions/checkout@v4
 
       - name: Install tools
-        run: sudo apt-get update -qq && sudo apt-get install -y cmake ninja-build lcov
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build lcov
 
       - name: Configure (coverage build)
         env:
@@ -148,32 +160,50 @@ jobs:
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
+          name: coverage-info
           path: coverage.info
 
-  # ── cpp-FuSa safety checks ────────────────────────────────────────────────────
-  cpfusa:
-    name: cpp-FuSa safety check
+  # ── Build cpp-FuSa binary (shared by all cpfusa-* jobs) ──────────────────────
+  cpfusa-build:
+    name: Build cpp-FuSa
     runs-on: ubuntu-22.04
-    needs: build-and-test
     steps:
-      - uses: actions/checkout@v4
-
       - name: Install tools
         run: sudo apt-get update -qq && sudo apt-get install -y cmake ninja-build
 
-      - name: Build cpp-FuSa
+      - name: Build cpp-FuSa from source
         run: |
           git clone --depth=1 https://github.com/SoundMatt/cpp-FuSa /tmp/cpfusa
           cmake -B /tmp/cpfusa/build -S /tmp/cpfusa \
             -DCMAKE_BUILD_TYPE=Release -G Ninja
           cmake --build /tmp/cpfusa/build --parallel
 
-      - name: cpfusa check (0 errors required)
-        run: /tmp/cpfusa/build/cpfusa check --dir .
+      - name: Upload cpfusa binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build/cpfusa
 
-      - name: cpfusa trace (all requirements must be traced)
-        run: /tmp/cpfusa/build/cpfusa trace --dir .
+  # ── Helper: download cpfusa binary ───────────────────────────────────────────
+  # (Not a real job — these steps are inlined in each cpfusa-* job below.)
+
+  # ── cpp-FuSa: built-in safety check (FUSA001–005) ────────────────────────────
+  cpfusa-check:
+    name: cpfusa check --strict
+    runs-on: ubuntu-22.04
+    needs: [build-and-test, cpfusa-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build
+
+      - run: chmod +x /tmp/cpfusa/build/cpfusa
+
+      - name: Safety check (0 errors required)
+        run: /tmp/cpfusa/build/cpfusa check --strict
 
       - name: Verify required safety artifacts are present
         run: |
@@ -195,8 +225,258 @@ jobs:
           done
           [ "$missing" -eq 0 ] || exit 1
 
-      - name: Upload check report
+  # ── cpp-FuSa: MISRA/AUTOSAR/JSF++ lint (LINT001–010) ─────────────────────────
+  cpfusa-lint:
+    name: cpfusa lint (MISRA/AUTOSAR)
+    runs-on: ubuntu-22.04
+    needs: [build-and-test, cpfusa-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build
+
+      - run: chmod +x /tmp/cpfusa/build/cpfusa
+
+      - name: MISRA/AUTOSAR/JSF++ lint
+        run: /tmp/cpfusa/build/cpfusa lint
+
+  # ── cpp-FuSa: static analysis (clang-tidy + cppcheck + own passes) ───────────
+  cpfusa-analyze:
+    name: cpfusa analyze
+    runs-on: ubuntu-22.04
+    needs: [build-and-test, cpfusa-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install analysis tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build clang-tidy cppcheck
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build
+
+      - run: chmod +x /tmp/cpfusa/build/cpfusa
+
+      - name: Configure (generate compile_commands.json)
+        env:
+          CC: clang-14
+          CXX: clang++-14
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Static analysis
+        run: /tmp/cpfusa/build/cpfusa analyze
+
+  # ── cpp-FuSa: 20 CWE-mapped cybersecurity rules (ISO 21434) ─────────────────
+  cpfusa-cyber:
+    name: cpfusa cyber --strict
+    runs-on: ubuntu-22.04
+    needs: [build-and-test, cpfusa-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build
+
+      - run: chmod +x /tmp/cpfusa/build/cpfusa
+
+      - name: Cybersecurity rules (ISO 21434)
+        run: /tmp/cpfusa/build/cpfusa cyber --strict
+
+  # ── cpp-FuSa: requirements traceability (≥80% coverage gate) ─────────────────
+  cpfusa-trace:
+    name: cpfusa trace (≥80% coverage)
+    runs-on: ubuntu-22.04
+    needs: [build-and-test, cpfusa-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build
+
+      - run: chmod +x /tmp/cpfusa/build/cpfusa
+
+      - name: Traceability check (all requirements traced)
+        run: /tmp/cpfusa/build/cpfusa trace
+
+      - name: Traceability gaps report
+        run: /tmp/cpfusa/build/cpfusa trace --gaps || true
+
+      - name: Enforce ≥80% requirement coverage
+        run: /tmp/cpfusa/build/cpfusa trace --req-coverage 80
+
+  # ── cpp-FuSa: ctest integration → .fusa-evidence.json ────────────────────────
+  cpfusa-verify:
+    name: cpfusa verify (ctest evidence)
+    runs-on: ubuntu-22.04
+    needs: [build-and-test, cpfusa-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: sudo apt-get update -qq && sudo apt-get install -y cmake ninja-build
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build
+
+      - run: chmod +x /tmp/cpfusa/build/cpfusa
+
+      - name: Configure
+        env:
+          CC: gcc-12
+          CXX: g++-12
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=17 \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests + generate evidence
+        run: /tmp/cpfusa/build/cpfusa verify
+
+      - name: Upload test evidence
         uses: actions/upload-artifact@v4
         with:
-          name: safety-evidence
-          path: check-report.json
+          name: fusa-evidence
+          path: .fusa-evidence.json
+
+  # ── cpp-FuSa: tool qualification suite ───────────────────────────────────────
+  cpfusa-qualify:
+    name: cpfusa qualify
+    runs-on: ubuntu-22.04
+    needs: cpfusa-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build
+
+      - run: chmod +x /tmp/cpfusa/build/cpfusa
+
+      - name: Tool qualification (8 positive/negative test cases)
+        run: /tmp/cpfusa/build/cpfusa qualify
+
+      - name: Upload qualification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualify-report
+          path: qualify-report.json
+
+  # ── cpp-FuSa: CMake dependency CVE scan ───────────────────────────────────────
+  cpfusa-vuln:
+    name: cpfusa vuln (CVE scan)
+    runs-on: ubuntu-22.04
+    needs: cpfusa-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build
+
+      - run: chmod +x /tmp/cpfusa/build/cpfusa
+
+      - name: Dependency vulnerability scan
+        run: /tmp/cpfusa/build/cpfusa vuln
+
+      - name: Upload vulnerability report
+        uses: actions/upload-artifact@v4
+        with:
+          name: vuln-report
+          path: vuln.json
+
+  # ── cpp-FuSa: impact analysis on PRs ─────────────────────────────────────────
+  cpfusa-impact:
+    name: cpfusa impact (change analysis)
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'pull_request'
+    needs: [cpfusa-build, cpfusa-trace]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build
+
+      - run: chmod +x /tmp/cpfusa/build/cpfusa
+
+      - name: Change impact analysis
+        run: /tmp/cpfusa/build/cpfusa impact
+
+  # ── cpp-FuSa: full compliance report (aggregated) ────────────────────────────
+  cpfusa-report:
+    name: cpfusa report (compliance)
+    runs-on: ubuntu-22.04
+    needs:
+      - build-and-test
+      - coverage
+      - cpfusa-check
+      - cpfusa-lint
+      - cpfusa-analyze
+      - cpfusa-cyber
+      - cpfusa-trace
+      - cpfusa-verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpfusa-binary
+          path: /tmp/cpfusa/build
+
+      - run: chmod +x /tmp/cpfusa/build/cpfusa
+
+      - name: Download coverage info
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-info
+          path: .
+
+      - name: LCOV structural coverage report (DO-178C)
+        run: /tmp/cpfusa/build/cpfusa coverage --profile coverage.info --dal DAL-B --output coverage-report.json
+
+      - name: Full compliance report (JSON)
+        run: /tmp/cpfusa/build/cpfusa report --format json --output report.json
+
+      - name: Full compliance report (SARIF)
+        run: /tmp/cpfusa/build/cpfusa report --format sarif --output results.sarif
+
+      - name: Safety metrics snapshot
+        run: /tmp/cpfusa/build/cpfusa metrics record || true
+
+      - name: Upload compliance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-report
+          path: |
+            report.json
+            results.sarif
+            coverage-report.json
