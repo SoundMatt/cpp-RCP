@@ -91,7 +91,7 @@ public:
         // Simulate response latency.
         auto delay = cfg_.base_latency;
         if (cfg_.latency_model == LatencyModel::Jitter && cfg_.jitter.count() > 0) {
-            std::uniform_int_distribution<long> dist(0, cfg_.jitter.count());
+            std::uniform_int_distribution<std::chrono::milliseconds::rep> dist(0, cfg_.jitter.count());
             std::lock_guard<std::mutex> lk(mu_);
             delay += std::chrono::milliseconds(dist(rng_));
         }
