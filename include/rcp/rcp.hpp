@@ -48,16 +48,18 @@
 // A central high-performance computer uses a Registry to discover zone controllers,
 // then dispatches Commands to each Controller and receives Responses and Status
 // telemetry in return.
+//
+// RELAY conformance: include <relay/relay.hpp> for relay:: namespace types, and
+// <rcp/adapt.hpp> for Adapt() which wraps a Controller as a relay::Caller.
 #pragma once
+
+#include <relay/relay.hpp>
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
-#include <deque>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -88,6 +90,20 @@ inline const std::error_category& rcp_category() noexcept {
             case Errc::busy:           return "rcp: zone controller busy";
             case Errc::zone_mismatch:  return "rcp: zone mismatch";
             default:                   return "rcp: unknown error";
+            }
+        }
+        // Map rcp::Errc codes to relay::Errc conditions (§5.2, §5.3).
+        bool equivalent(int code, const std::error_condition& cond) const noexcept override {
+            if (cond.category() != relay::relay_category()) return false;
+            auto re = static_cast<relay::Errc>(cond.value());
+            switch (static_cast<Errc>(code)) {
+            case Errc::closed:         return re == relay::Errc::closed;
+            case Errc::timeout:        return re == relay::Errc::timeout;
+            case Errc::busy:           return re == relay::Errc::timeout;
+            case Errc::not_found:      return re == relay::Errc::not_connected;
+            case Errc::zone_mismatch:  return re == relay::Errc::not_connected;
+            case Errc::already_exists: return re == relay::Errc::closed;  // §5.3; see RELAY issue #8
+            default:                   return false;
             }
         }
     };
@@ -225,87 +241,16 @@ private:
     std::function<void()> release_;
 };
 
-// ── Context ───────────────────────────────────────────────────────────────────
-// Lightweight context carrying an optional deadline. Analogous to Go's context.Context.
+// ── Context — relay::Context alias (§18.2) ────────────────────────────────────
+// rcp::Context is an alias for relay::Context per §18.2 conformance.
 
-class Context {
-public:
-    static Context background() noexcept { return Context{}; }
+using Context = relay::Context;
 
-    static Context with_deadline(std::chrono::steady_clock::time_point tp) noexcept {
-        Context c;
-        c.deadline_ = tp;
-        return c;
-    }
+// ── StatusChannel — relay::Channel<Status> alias (§18.2) ─────────────────────
+// rcp::StatusChannel is an alias for relay::Channel<Status>.
+// Legacy code using std::shared_ptr<StatusChannel> is unchanged.
 
-    static Context with_timeout(std::chrono::steady_clock::duration d) noexcept {
-        return with_deadline(std::chrono::steady_clock::now() + d);
-    }
-
-    bool done() const noexcept {
-        if (!deadline_) return false;
-        return std::chrono::steady_clock::now() >= *deadline_;
-    }
-
-    std::optional<std::chrono::steady_clock::time_point> deadline() const noexcept {
-        return deadline_;
-    }
-
-private:
-    std::optional<std::chrono::steady_clock::time_point> deadline_;
-};
-
-// ── StatusChannel ─────────────────────────────────────────────────────────────
-// Thread-safe bounded channel for Status updates, analogous to a Go channel.
-
-class StatusChannel {
-public:
-    explicit StatusChannel(size_t cap = 16) : cap_(cap) {}
-
-    void push(const Status& s) {
-        std::lock_guard<std::mutex> lk(mu_);
-        if (closed_) return;
-        if (queue_.size() < cap_) {
-            queue_.push_back(s);
-            cv_.notify_one();
-        }
-    }
-
-    std::optional<Status> recv() {
-        std::unique_lock<std::mutex> lk(mu_);
-        cv_.wait(lk, [this] { return !queue_.empty() || closed_; });
-        if (queue_.empty()) return std::nullopt;
-        auto s = queue_.front();
-        queue_.pop_front();
-        return s;
-    }
-
-    std::optional<Status> try_recv() {
-        std::lock_guard<std::mutex> lk(mu_);
-        if (queue_.empty()) return std::nullopt;
-        auto s = queue_.front();
-        queue_.pop_front();
-        return s;
-    }
-
-    void close() {
-        std::lock_guard<std::mutex> lk(mu_);
-        closed_ = true;
-        cv_.notify_all();
-    }
-
-    bool is_closed() const noexcept {
-        std::lock_guard<std::mutex> lk(mu_);
-        return closed_;
-    }
-
-private:
-    mutable std::mutex      mu_;
-    std::condition_variable cv_;
-    std::deque<Status>      queue_;
-    size_t                  cap_;
-    bool                    closed_ = false;
-};
+using StatusChannel = relay::Channel<Status>;
 
 // ── Controller ────────────────────────────────────────────────────────────────
 

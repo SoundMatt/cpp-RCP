@@ -106,3 +106,9 @@ add_executable(command_latency_test command_latency_test.cpp)
 target_link_libraries(command_latency_test PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_latency COMMAND command_latency_test)
 set_tests_properties(rcp_latency PROPERTIES TIMEOUT 60)
+
+# ── RELAY conformance ─────────────────────────────────────────────────────────
+
+add_executable(test_relay test_relay.cpp)
+target_link_libraries(test_relay PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_relay COMMAND test_relay)
