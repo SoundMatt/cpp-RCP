@@ -76,7 +76,7 @@ private:
 // ── DynamicPayload ────────────────────────────────────────────────────────────
 
 struct DynamicPayload {
-    SchemaId             schema_id;
+    SchemaId             schema_id = 0;
     std::vector<uint8_t> data;
 
     // encode packs schema_id (big-endian) + data into a wire-ready vector.
