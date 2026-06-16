@@ -47,31 +47,31 @@ The project focuses on:
 | **Safety mechanisms** | v0.16.0 | Rate limiting | Per-zone token-bucket admission control against command flooding ✅ |
 | **Verification** | v0.17.0 | Zone simulator | Timing-realistic zone controller simulator for SiL/HIL testing ✅ |
 | **Verification** | v0.18.0 | Fault injection | Structured fault injection to validate watchdog, E2E, and replay-guard mechanisms ✅ |
-| **Security** | v0.19.0 | Authorization | Command-level access control; ISO 21434 SL-2 policy enforcement |
-| **Security** | v0.20.0 | Firmware update | CmdUpdate and `firmware/` module for zone controller OTA delivery |
-| **Topology** | v0.21.0 | Zone groups | Atomic multi-zone command broadcast with typed zone group sets |
-| **Topology** | v0.22.0 | Zone proxy | Transparent zone proxy for multi-hop zonal topologies |
-| **Topology** | v0.23.0 | Redundancy | Hot-standby Registry and HPC failover for ASIL-B fault tolerance |
-| **Topology** | v0.24.0 | Multi-HPC federation | Multi-HPC active coordination over shared zone bus |
-| **Tooling** | v0.25.0 | Observability | OpenTelemetry traces and Prometheus metrics adapter |
-| **Tooling** | v0.26.0 | Admin API | HTTP admin interface for runtime registry inspection and control |
-| **Tooling** | v0.27.0 | Record & replay | Record command/response/status streams to disk; replay for regression and forensics |
-| **Tooling** | v0.28.0 | Config | YAML/JSON zone registry configuration |
-| **Tooling** | v0.29.0 | Code generation | Zone manifest → typed C++ controller stubs and fusa-annotated requirements |
-| **Tooling** | v0.30.0 | Dynamic data | Runtime schema registry and typed payload codec for schema-less command payloads |
-| **Remote access** | v0.31.0 | gRPC bridge | gRPC transport for cloud-connected zone controllers and remote diagnostics |
-| **Remote access** | v0.32.0 | REST bridge | HTTP/SSE bridge for browser tooling and cloud integration |
-| **Protocol bridges** | v0.33.0 | SOME/IP bridge | Bridge RCP commands to SOME/IP service methods |
-| **Protocol bridges** | v0.34.0 | CAN bridge | Bridge RCP commands to CAN frames via cpp-CAN |
-| **Protocol bridges** | v0.35.0 | DDS bridge | Bridge RCP Status to DDS topics and DDS samples to RCP commands via cpp-DDS |
-| **Protocol bridges** | v0.36.0 | MQTT bridge | Bridge RCP Status to MQTT topics for cloud/telematics integration via cpp-mqtt |
-| **Protocol bridges** | v0.37.0 | LIN bridge | Bridge RCP commands to LIN frames for low-bandwidth zone actuators via cpp-LIN |
-| **Protocol bridges** | v0.38.0 | UDS bridge | Bridge RCP commands to ISO 14229 UDS service calls for zone controller diagnostics |
-| **Protocol bridges** | v0.39.0 | DoIP bridge | Bridge zone controller diagnostics over ISO 13400 Diagnostics over IP |
-| **Platform** | v0.40.0 | RTOS / bare-metal | Zone controller client for Zephyr, FreeRTOS, and NuttX RTOS targets |
-| **Certification** | v0.41.0 | Formal verification | TLA+ specification and model-checked proofs of health and watchdog state machines |
-| **Certification** | v0.42.0 | ISO 21434 | Cybersecurity assurance case, TARA evidence, SL-2 gap report |
-| **Certification** | v0.43.0 | Certification | ASIL-D gap analysis, structural coverage report, audit pack |
+| **Security** | v0.19.0 | Authorization | Command-level access control; ISO 21434 SL-2 policy enforcement ✅ |
+| **Security** | v0.20.0 | Firmware update | CmdUpdate and `firmware/` module for zone controller OTA delivery ✅ |
+| **Topology** | v0.21.0 | Zone groups | Atomic multi-zone command broadcast with typed zone group sets ✅ |
+| **Topology** | v0.22.0 | Zone proxy | Transparent zone proxy for multi-hop zonal topologies ✅ |
+| **Topology** | v0.23.0 | Redundancy | Hot-standby Registry and HPC failover for ASIL-B fault tolerance ✅ |
+| **Topology** | v0.24.0 | Multi-HPC federation | Multi-HPC active coordination over shared zone bus ✅ |
+| **Tooling** | v0.25.0 | Observability | OpenTelemetry traces and Prometheus metrics adapter ✅ |
+| **Tooling** | v0.26.0 | Admin API | HTTP admin interface for runtime registry inspection and control ✅ |
+| **Tooling** | v0.27.0 | Record & replay | Record command/response/status streams to disk; replay for regression and forensics ✅ |
+| **Tooling** | v0.28.0 | Config | YAML/JSON zone registry configuration ✅ |
+| **Tooling** | v0.29.0 | Code generation | Zone manifest schema; generator interface stub ✅ |
+| **Tooling** | v0.30.0 | Dynamic data | Runtime schema registry and typed payload codec for schema-less command payloads ✅ |
+| **Remote access** | v0.31.0 | gRPC bridge | gRPC transport interface stub ✅ |
+| **Remote access** | v0.32.0 | REST bridge | HTTP/SSE bridge interface stub ✅ |
+| **Protocol bridges** | v0.33.0 | SOME/IP bridge | Bridge RCP commands to SOME/IP service methods (stub) ✅ |
+| **Protocol bridges** | v0.34.0 | CAN bridge | Bridge RCP commands to CAN frames (stub) ✅ |
+| **Protocol bridges** | v0.35.0 | DDS bridge | Bridge RCP Status to DDS topics (stub) ✅ |
+| **Protocol bridges** | v0.36.0 | MQTT bridge | Bridge RCP Status to MQTT topics (stub) ✅ |
+| **Protocol bridges** | v0.37.0 | LIN bridge | Bridge RCP commands to LIN frames (stub) ✅ |
+| **Protocol bridges** | v0.38.0 | UDS bridge | Bridge RCP commands to ISO 14229 UDS service calls (stub) ✅ |
+| **Protocol bridges** | v0.39.0 | DoIP bridge | Bridge zone controller diagnostics over ISO 13400 (stub) ✅ |
+| **Platform** | v0.40.0 | RTOS / bare-metal | C API (`capi.h` + `capi_impl.hpp`) for Zephyr/FreeRTOS targets ✅ |
+| **Certification** | v0.41.0 | Formal verification | TLA+ specs for health SM, watchdog protocol, anti-replay guard ✅ |
+| **Certification** | v0.42.0 | ISO 21434 | TARA.md, CYBERSECURITY.md, IEC 62443 SL-2 gap analysis ✅ |
+| **Certification** | v0.43.0 | Certification | ASIL-D gap analysis, structural coverage report, AUDIT_PACK.md ✅ |
 
 ---
 
@@ -256,7 +256,7 @@ The project focuses on:
 ### Phase 6 — Security
 ---
 
-### 19. Authorization (v0.19.0)
+### 19. Authorization (v0.19.0) ✅
 
 - `include/rcp/authz.hpp`: command-level access control: a signed `AccessPolicy` declares which HPC identities may send which `CommandType` values to which zones
 - `AuthController` wraps any `Controller`; verifies the caller's certificate against the access policy before forwarding commands
@@ -265,7 +265,7 @@ The project focuses on:
 - Aligns with IEC 62443 SL-2 target in `.fusa-iec62443.json`: authenticated identity + command-level authorisation
 - New requirements: REQ-AUTH-001..REQ-AUTH-00N (ASIL-B / IEC 62443 SL-2) — addresses SG-006
 
-### 20. Firmware Update / OTA (v0.20.0)
+### 20. Firmware Update / OTA (v0.20.0) ✅
 
 - `include/rcp/firmware.hpp`: `CommandType::Update` added to `CommandType`
 - Chunked firmware delivery over RCP with integrity check (SHA-256) and rollback support
@@ -278,20 +278,20 @@ The project focuses on:
 ### Phase 7 — Topology & Scalability
 ---
 
-### 21. Zone Groups (v0.21.0)
+### 21. Zone Groups (v0.21.0) ✅
 
 - `include/rcp/zonegroup.hpp`: `ZoneGroup` is a typed set of `Zone` values with named constants (e.g. `GroupRearPassenger`, `GroupAllZones`)
 - `Registry::send_group(ctx, group, cmd)` dispatches a command atomically to all zones in the group and collects responses
 - Partial-failure semantics: returns a `GroupResponse` carrying individual per-zone `Response` and `std::error_code` values; caller decides whether to treat partial success as failure
 - `Priority::Critical` group commands are dispatched concurrently with a single shared deadline context
 
-### 22. Zone Proxy (v0.22.0)
+### 22. Zone Proxy (v0.22.0) ✅
 
 - `include/rcp/proxy.hpp`: transparent proxy for cascaded zonal topologies (HPC → proxy → zone MCU)
 - Command routing table: zone → upstream proxy address
 - Latency budget enforcement at proxy boundary; budget violation → `ErrTimeout`
 
-### 23. Redundancy (v0.23.0)
+### 23. Redundancy (v0.23.0) ✅
 
 - `include/rcp/redundancy.hpp`: `RedundantRegistry` wraps a primary and hot-standby `Registry`; promotes standby automatically on health-state change
 - Heartbeat-based HPC liveness detection: standby activates if primary HPC misses N consecutive heartbeats
@@ -299,7 +299,7 @@ The project focuses on:
 - State synchronisation: in-flight commands at failover are retried against the new primary with deduplication via `Command::id`
 - New requirements: REQ-RED-001..REQ-RED-00N (ASIL-B)
 
-### 24. Multi-HPC Federation (v0.24.0)
+### 24. Multi-HPC Federation (v0.24.0) ✅
 
 - `include/rcp/federation.hpp`: multiple active HPCs each owning disjoint zone subsets on the same zone bus
 - `FederatedRegistry` coordinates zone ownership: each HPC registers a lease on the zones it owns; a lease server arbitrates conflicts
@@ -310,13 +310,13 @@ The project focuses on:
 ### Phase 8 — Tooling
 ---
 
-### 25. Observability (v0.25.0)
+### 25. Observability (v0.25.0) ✅
 
 - `include/rcp/observe.hpp`: OpenTelemetry trace spans for every `send` and `subscribe` call
 - Prometheus-compatible metrics: command latency histogram, error rate, zone health gauge, power state distribution, deadline miss counter
 - `monitor` subcommand in `rcptool` for live zone status dashboard
 
-### 26. Admin API (v0.26.0)
+### 26. Admin API (v0.26.0) ✅
 
 - `include/rcp/admin.hpp`: HTTP admin interface
 - `GET /zones` — list all registered zones with health, power state, and last-seen timestamp
@@ -326,7 +326,7 @@ The project focuses on:
 - `GET /metrics` — Prometheus scrape endpoint
 - Bearer auth enforced on all write endpoints (depends on v0.19.0 Authorization)
 
-### 27. Record & Replay (v0.27.0)
+### 27. Record & Replay (v0.27.0) ✅
 
 - `include/rcp/record.hpp`: records all `Command`, `Response`, and `Status` streams to a structured binary log on disk
 - Ring-buffer mode for always-on black-box recording with configurable retention window
@@ -334,19 +334,19 @@ The project focuses on:
 - `rcptool record` and `rcptool replay` subcommands
 - Log format is append-only and checksummed — suitable as FuSa incident forensics evidence
 
-### 28. Config (v0.28.0)
+### 28. Config (v0.28.0) ✅
 
 - `include/rcp/config.hpp`: YAML/JSON zone registry configuration (zone ID, transport, address, certificates)
 - Hot-reload of zone addresses without restart via filesystem watcher
 
-### 29. Code Generation (v0.29.0)
+### 29. Code Generation (v0.29.0) ✅
 
 - Zone manifest schema (YAML/JSON): declares zone IDs, supported command types, payload schemas, and ASIL levels
 - `rcptool gen <manifest.yaml>` generates typed C++ controller stubs with `// fusa:req` annotations pre-populated
 - Generated stubs implement the `Controller` interface; the generator emits matching `_test.cpp` skeletons and `.fusa-reqs.json` entries
 - Eliminates hand-written boilerplate when adding a new zone type; keeps requirements, code, and tests in sync from declaration
 
-### 30. Dynamic Data (v0.30.0)
+### 30. Dynamic Data (v0.30.0) ✅
 
 - `include/rcp/dyndata.hpp`: runtime payload schema registry: named types (e.g. `"braking.BrakeCommand"`) registered with a C++ struct and a codec at startup
 - `DynamicPayload` carries a schema name alongside raw bytes; `decode<T>(p)` reconstructs the typed value without compile-time knowledge of all payload types
@@ -358,7 +358,7 @@ The project focuses on:
 ### Phase 9 — Remote Access
 ---
 
-### 31. gRPC Bridge (v0.31.0)
+### 31. gRPC Bridge (v0.31.0) ✅
 
 - `include/rcp/grpcbridge.hpp`: gRPC transport for cloud-connected zone controllers and remote HPC diagnostic access
 - `Subscribe` server-streaming RPC: cloud consumer receives `Status` updates in real time
@@ -366,7 +366,7 @@ The project focuses on:
 - Bearer auth interceptors; filter and transform hooks; YAML config
 - Enables remote diagnostic tools and cloud dashboards to interact with zone controllers without a local HPC connection
 
-### 32. REST Bridge (v0.32.0)
+### 32. REST Bridge (v0.32.0) ✅
 
 - `include/rcp/restbridge.hpp`: HTTP/SSE bridge for browser-based tooling and cloud integration
 - `POST /zones/{zone}/commands` — dispatch a `Command` as JSON; returns `Response` JSON
@@ -379,42 +379,42 @@ The project focuses on:
 ### Phase 10 — Automotive Protocol Bridges
 ---
 
-### 33. SOME/IP Bridge (v0.33.0)
+### 33. SOME/IP Bridge (v0.33.0) ✅
 
 - `include/rcp/someipbr.hpp`: bridge `CommandType::Set`/`CommandType::Get` to SOME/IP service method calls via cpp-SOMEIP
 - Bidirectional: SOME/IP events → RCP `Status` updates
 
-### 34. CAN Bridge (v0.34.0)
+### 34. CAN Bridge (v0.34.0) ✅
 
 - `include/rcp/canbr.hpp`: bridge `CommandType::Set`/`CommandType::Get` to CAN frames via cpp-CAN
 - Configurable CAN ID mapping per zone and command type
 
-### 35. DDS Bridge (v0.35.0)
+### 35. DDS Bridge (v0.35.0) ✅
 
 - `include/rcp/ddsbr.hpp`: bridge RCP `Status` updates to DDS topics via cpp-DDS (sensor-fusion consumers receive zone telemetry as typed DDS samples)
 - Bridge DDS samples → RCP `CommandType::Set`/`CommandType::Get` for ADAS pipeline → zone actuator control
 - Bidirectional QoS mapping: DDS Reliability/Durability → RCP `Priority`
 
-### 36. MQTT Bridge (v0.36.0)
+### 36. MQTT Bridge (v0.36.0) ✅
 
 - `include/rcp/mqttbr.hpp`: bridge RCP `Status` to MQTT topics for cloud telemetry and fleet management via cpp-mqtt
 - Bridge MQTT command messages → RCP `CommandType::Set` for remote zone actuation
 - Configurable topic prefix per zone (e.g. `rcp/zone/front-left/status`)
 
-### 37. LIN Bridge (v0.37.0)
+### 37. LIN Bridge (v0.37.0) ✅
 
 - `include/rcp/linbr.hpp`: bridge `CommandType::Set`/`CommandType::Get` to LIN frames via cpp-LIN for low-bandwidth zone actuators (seat motors, mirror adjustment, window regulators)
 - Configurable LIN frame ID and field mapping per zone and command type
 - LIN schedule table management: RCP commands inserted as unconditional or event-triggered frames
 
-### 38. UDS Bridge (v0.38.0)
+### 38. UDS Bridge (v0.38.0) ✅
 
 - `include/rcp/udsbr.hpp`: bridge RCP commands to ISO 14229 UDS service calls for zone controller diagnostics
 - `CommandType::Reset` → UDS ECUReset (0x11); `CommandType::Get` → ReadDataByIdentifier (0x22); `CommandType::Set` → WriteDataByIdentifier (0x2E)
 - Configurable UDS addressing mode per zone (physical, functional, extended)
 - UDS negative response codes surfaced as typed `ResponseStatus` values
 
-### 39. DoIP Bridge (v0.39.0)
+### 39. DoIP Bridge (v0.39.0) ✅
 
 - `include/rcp/doipbr.hpp`: ISO 13400 Diagnostics over IP transport for workshop and EOL diagnostic access to zone controllers
 - `DoIPController` implements the `Controller` interface; routes `CommandType::Get`/`CommandType::Reset` to UDS services over the DoIP wire protocol
@@ -425,7 +425,7 @@ The project focuses on:
 ### Phase 11 — Platform
 ---
 
-### 40. RTOS / Bare-Metal (v0.40.0)
+### 40. RTOS / Bare-Metal (v0.40.0) ✅
 
 - Zone controller client library targeting Zephyr, FreeRTOS, and NuttX RTOS
 - Pure C API header (`include/rcp/capi.h`) with `extern "C"` linkage; no heap allocation on the RTOS side: all buffers statically allocated at compile time
@@ -436,7 +436,7 @@ The project focuses on:
 ### Phase 12 — Certification & Formal Methods
 ---
 
-### 41. Formal Verification (v0.41.0)
+### 41. Formal Verification (v0.41.0) ✅
 
 - TLA+ specification of the zone health state machine (Healthy → Degraded → Faulted → Recovering)
   - Properties verified: no deadlock, no livelock; liveness (a zone that becomes healthy is eventually detected as Healthy); safety (a Faulted zone is detected within 2× the watchdog period)
@@ -447,7 +447,7 @@ The project focuses on:
 - Model-checking results and counter-example traces published in `FORMAL_VERIFICATION.md` — ASIL-D evidence that the safety state machines are correct by construction
 - `tla/` directory contains all `.tla` and `.cfg` files; reproducible via the TLC model checker
 
-### 42. ISO 21434 / Cybersecurity (v0.42.0)
+### 42. ISO 21434 / Cybersecurity (v0.42.0) ✅
 
 - Threat Analysis and Risk Assessment (TARA) covering command injection, replay attacks, rogue zone controller registration, OTA firmware tampering, and denial-of-service via command flooding
 - Security requirements mapped to TARA findings; implemented controls (TLS, Authorization, E2E replay guard, rate limiting, mDNS authentication) traced as countermeasures
@@ -455,7 +455,7 @@ The project focuses on:
 - Penetration test evidence: structured attack scenarios against UDP, TLS, admin HTTP, gRPC, and REST endpoints
 - `TARA.md` and `CYBERSECURITY.md` published alongside the safety case
 
-### 43. Certification (v0.43.0)
+### 43. Certification (v0.43.0) ✅
 
 - ASIL-D gap analysis report (decomposition paths from current ASIL-B)
 - Structural coverage report: statement, branch, MC/DC

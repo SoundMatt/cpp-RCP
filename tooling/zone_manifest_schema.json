@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rcp.example.com/schemas/zone-manifest/v1",
+  "title": "cpp-RCP Zone Manifest",
+  "description": "Schema for the zone registry manifest loaded by rcp::config::load()",
+  "type": "object",
+  "required": ["zones"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Manifest schema version (semver)",
+      "default": "1.0.0"
+    },
+    "zones": {
+      "type": "array",
+      "description": "List of zone definitions",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/ZoneEntry"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ZoneEntry": {
+      "type": "object",
+      "required": ["zone"],
+      "properties": {
+        "zone": {
+          "type": "string",
+          "enum": ["FrontLeft", "FrontRight", "RearLeft", "RearRight", "Central"],
+          "description": "Zone identifier matching rcp::Zone enum"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["Low", "Normal", "High", "Critical"],
+          "default": "Normal",
+          "description": "Default command priority for this zone"
+        },
+        "transport": {
+          "type": "string",
+          "enum": ["mock", "udp", "shmem", "tsn", "grpc", "rest", "someip", "can", "dds", "mqtt", "lin", "uds", "doip"],
+          "default": "mock",
+          "description": "Transport adapter to instantiate for this zone"
+        },
+        "address": {
+          "type": "string",
+          "description": "Transport-specific address (IP:port, socket path, etc.)"
+        },
+        "extra": {
+          "type": "object",
+          "description": "Transport-specific extra configuration",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
