@@ -6,6 +6,8 @@
 #include "rcp/mock.hpp"
 #include "rcp/record.hpp"
 
+#include <filesystem>
+
 using namespace rcp;
 
 TEST_CASE("record: recording controller captures entries", "[record]") {
@@ -53,7 +55,7 @@ TEST_CASE("record: write_binary creates file", "[record]") {
     auto ec = ctrl->send(Context{}, cmd, resp);
     (void)ec;
 
-    auto path = "/tmp/rcp_test_record.bin";
+    auto path = (std::filesystem::temp_directory_path() / "rcp_test_record.bin").string();
     REQUIRE_FALSE(rec->write_binary(path));
 
     // Verify file is non-empty
