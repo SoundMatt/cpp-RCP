@@ -1,0 +1,17 @@
+build/
+build-*/
+.cache/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+cmake-build-*/
+compile_commands.json
+CMakeFiles/
+CMakeCache.txt
+CTestTestfile.cmake
+_deps/
+*.swp
+*.swo
+.DS_Store

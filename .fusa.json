@@ -1,0 +1,17 @@
+{
+  "version": "1",
+  "project": {
+    "name": "cpp-RCP",
+    "module": "github.com/SoundMatt/cpp-RCP",
+    "standard": "iso26262",
+    "asil": "ASIL-B"
+  },
+  "rules": {
+    "exclude": [],
+    "severity": {}
+  },
+  "report": {
+    "format": "json",
+    "output": "check-report.json"
+  }
+}

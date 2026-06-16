@@ -1,0 +1,121 @@
+{
+  "project": "cpp-RCP",
+  "standard": "ISO 26262",
+  "createdAt": "2026-06-16T00:00:00Z",
+  "updatedAt": "2026-06-16T00:00:00Z",
+  "operationalSituations": [
+    {
+      "id": "OS-001",
+      "description": "Normal vehicle operation — all zone controllers reachable"
+    },
+    {
+      "id": "OS-002",
+      "description": "Partial network fault — one or more zone controllers unreachable"
+    },
+    {
+      "id": "OS-003",
+      "description": "Safety-critical manoeuvre — emergency braking or collision avoidance active"
+    },
+    {
+      "id": "OS-004",
+      "description": "HPC software fault — runaway process, crash, or OOM condition"
+    },
+    {
+      "id": "OS-005",
+      "description": "Elevated network latency — congestion, EMI, or hardware degradation"
+    },
+    {
+      "id": "OS-006",
+      "description": "Adversarial access — attacker present on the zone Ethernet bus"
+    }
+  ],
+  "hazards": [
+    {
+      "id": "H-001",
+      "description": "Loss of command delivery to safety-critical zone (e.g. braking actuator)",
+      "situations": ["OS-001", "OS-002", "OS-003"],
+      "risk": {
+        "severity": "S3",
+        "exposure": "E4",
+        "controllability": "C2",
+        "asil": "ASIL-B"
+      },
+      "safetyGoals": ["SG-001"]
+    },
+    {
+      "id": "H-002",
+      "description": "Spurious command sent to wrong zone controller",
+      "situations": ["OS-001"],
+      "risk": {
+        "severity": "S2",
+        "exposure": "E3",
+        "controllability": "C2",
+        "asil": "ASIL-B"
+      },
+      "safetyGoals": ["SG-002"]
+    },
+    {
+      "id": "H-003",
+      "description": "Zone controller watchdog not kicked, leading to unintended reset",
+      "situations": ["OS-001", "OS-003"],
+      "risk": {
+        "severity": "S2",
+        "exposure": "E4",
+        "controllability": "C2",
+        "asil": "ASIL-B"
+      },
+      "safetyGoals": ["SG-003"]
+    },
+    {
+      "id": "H-004",
+      "description": "Replay of stale commands from a previous drive cycle",
+      "situations": ["OS-001", "OS-006"],
+      "risk": {
+        "severity": "S2",
+        "exposure": "E3",
+        "controllability": "C2",
+        "asil": "ASIL-B"
+      },
+      "safetyGoals": ["SG-004"]
+    },
+    {
+      "id": "H-005",
+      "description": "Zone controller falsely reported as alive when unresponsive",
+      "situations": ["OS-002", "OS-005"],
+      "risk": {
+        "severity": "S2",
+        "exposure": "E3",
+        "controllability": "C2",
+        "asil": "ASIL-B"
+      },
+      "safetyGoals": ["SG-007"]
+    }
+  ],
+  "safetyGoals": [
+    {
+      "id": "SG-001",
+      "description": "Commands to safety-critical zones shall be delivered within the watchdog period or a fault shall be signalled.",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "SG-002",
+      "description": "Commands shall only be processed by the zone they are addressed to; misrouted commands shall be rejected.",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "SG-003",
+      "description": "The watchdog kick command (CmdWatchdog) shall always be deliverable at the configured priority.",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "SG-004",
+      "description": "Replayed or duplicated commands from prior sessions shall be detected and rejected.",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "SG-007",
+      "description": "A zone controller that stops publishing Status shall be detected as dead within the configured deadline.",
+      "asil": "ASIL-B"
+    }
+  ]
+}

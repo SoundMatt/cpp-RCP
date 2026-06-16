@@ -1,0 +1,676 @@
+{
+  "requirements": [
+    {
+      "id": "REQ-ZONE-001",
+      "title": "Zone::to_string returns unique human-readable name",
+      "text": "rcp::to_string(Zone) shall return a unique, non-empty, human-readable string for each defined Zone constant. Two distinct Zone constants shall never return the same string.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ZONE-002",
+      "title": "Zone::Unknown has value 0",
+      "text": "Zone::Unknown shall have the numeric value 0, making it the zero value of the Zone type and a safe default for uninitialized variables.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ZONE-003",
+      "title": "Zone::FrontLeft has value 1",
+      "text": "Zone::FrontLeft shall have the numeric value 1.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ZONE-004",
+      "title": "Zone::FrontRight has value 2",
+      "text": "Zone::FrontRight shall have the numeric value 2.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ZONE-005",
+      "title": "Zone::RearLeft has value 3",
+      "text": "Zone::RearLeft shall have the numeric value 3.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ZONE-006",
+      "title": "Zone::RearRight has value 4",
+      "text": "Zone::RearRight shall have the numeric value 4.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ZONE-007",
+      "title": "Zone::Central has value 5",
+      "text": "Zone::Central shall have the numeric value 5.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ZONE-008",
+      "title": "All named Zone constants are distinct",
+      "text": "Zone::FrontLeft, Zone::FrontRight, Zone::RearLeft, Zone::RearRight, and Zone::Central shall each have a different numeric value from every other named zone constant.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PRI-001",
+      "title": "Priority::Normal has value 0",
+      "text": "Priority::Normal shall have the numeric value 0, making it the zero value of Priority and the safe default for Command fields left unset.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-PRI-002",
+      "title": "Priority::High is greater than Priority::Normal",
+      "text": "The numeric value of Priority::High shall be strictly greater than Priority::Normal.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-PRI-003",
+      "title": "Priority::Critical is greater than Priority::High",
+      "text": "The numeric value of Priority::Critical shall be strictly greater than Priority::High.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CMD-001",
+      "title": "CommandType::Noop has value 0",
+      "text": "CommandType::Noop shall have the numeric value 0. An uninitialized Command.type shall be interpreted as a safe no-op.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-CMD-002",
+      "title": "CommandType::Set has value 1",
+      "text": "CommandType::Set shall have the numeric value 1.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-CMD-003",
+      "title": "CommandType::Get has value 2",
+      "text": "CommandType::Get shall have the numeric value 2.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-CMD-004",
+      "title": "CommandType::Reset has value 3",
+      "text": "CommandType::Reset shall have the numeric value 3.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-CMD-005",
+      "title": "CommandType::Watchdog has value 4",
+      "text": "CommandType::Watchdog shall have the numeric value 4. The watchdog kick command shall be a stable, named constant.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CMD-006",
+      "title": "All CommandType constants are distinct",
+      "text": "CommandType::Noop, Set, Get, Reset, and Watchdog shall each have a different numeric value.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-STATUS-001",
+      "title": "ResponseStatus::to_string returns unique human-readable name",
+      "text": "rcp::to_string(ResponseStatus) shall return a unique, non-empty, human-readable string for each defined ResponseStatus constant.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-STATUS-002",
+      "title": "ResponseStatus::OK has value 0",
+      "text": "ResponseStatus::OK shall have the numeric value 0. An uninitialized Response.status shall be interpreted as success.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-STATUS-003",
+      "title": "ResponseStatus::Error has value 1",
+      "text": "ResponseStatus::Error shall have the numeric value 1.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-STATUS-004",
+      "title": "ResponseStatus::Timeout has value 2",
+      "text": "ResponseStatus::Timeout shall have the numeric value 2.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-STATUS-005",
+      "title": "ResponseStatus::Busy has value 3",
+      "text": "ResponseStatus::Busy shall have the numeric value 3.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-STATUS-006",
+      "title": "All ResponseStatus constants are distinct",
+      "text": "ResponseStatus::OK, Error, Timeout, Busy, and Unknown shall each have a different numeric value.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ERR-001",
+      "title": "ErrClosed is truthy",
+      "text": "The sentinel error ErrClosed shall evaluate to true in a boolean context so callers can distinguish it from a default (zero) error_code.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ERR-002",
+      "title": "ErrNotFound is truthy",
+      "text": "The sentinel error ErrNotFound shall be truthy.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ERR-003",
+      "title": "ErrAlreadyExists is truthy",
+      "text": "The sentinel error ErrAlreadyExists shall be truthy.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ERR-004",
+      "title": "ErrTimeout is truthy",
+      "text": "The sentinel error ErrTimeout shall be truthy.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ERR-005",
+      "title": "ErrBusy is truthy",
+      "text": "The sentinel error ErrBusy shall be truthy.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ERR-006",
+      "title": "All sentinel errors are mutually distinct",
+      "text": "ErrClosed, ErrNotFound, ErrAlreadyExists, ErrTimeout, ErrBusy, and ErrZoneMismatch shall all be distinct std::error_code values (different value or category).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ERR-007",
+      "title": "ErrClosed detectable by value comparison",
+      "text": "Any error_code returned by a closed Controller or Registry shall compare equal to ErrClosed. Callers must be able to detect closed-entity conditions without parsing error strings.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ERR-008",
+      "title": "ErrNotFound detectable by value comparison",
+      "text": "Any error_code returned for a missing zone lookup shall compare equal to ErrNotFound.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ERR-009",
+      "title": "ErrAlreadyExists detectable by value comparison",
+      "text": "Any error_code returned for a duplicate zone registration shall compare equal to ErrAlreadyExists.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ERR-010",
+      "title": "ErrTimeout detectable by value comparison",
+      "text": "Any error_code returned due to a context deadline expiry shall compare equal to ErrTimeout.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ERR-011",
+      "title": "ErrZoneMismatch is a distinct truthy sentinel error",
+      "text": "ErrZoneMismatch shall be truthy and distinct from all other sentinel errors so callers can detect zone-misrouting without parsing error strings.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CMDSTRUCT-001",
+      "title": "Zero-value Command is a safe no-op",
+      "text": "A zero-initialised Command shall have zone=Zone::Unknown, type=CommandType::Noop, and priority=Priority::Normal.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CMDSTRUCT-002",
+      "title": "Command.payload may be empty",
+      "text": "Command.payload shall be optional; an empty payload shall be accepted by any Controller::send implementation without error or crash.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-RESP-001",
+      "title": "Response.command_id echoes the originating Command.id",
+      "text": "Controller::send shall return a Response whose command_id field equals the id field of the submitted Command.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-RESP-002",
+      "title": "Response.zone identifies the zone that processed the command",
+      "text": "Controller::send shall return a Response whose zone field equals the Zone of the Controller that processed the command.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-RESP-003",
+      "title": "Zero-value Response has ResponseStatus::OK",
+      "text": "A zero-initialised Response shall have status=ResponseStatus::OK (value 0).",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-STAT-001",
+      "title": "Status.zone identifies the publishing controller",
+      "text": "Every Status published by a Controller shall carry a zone field equal to the Controller's declared zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-STAT-002",
+      "title": "Status.seq is monotonically increasing",
+      "text": "Each successive Status published by a given Controller instance shall have a seq value strictly greater than the previous one.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-STAT-003",
+      "title": "Status.healthy is true while the controller is open",
+      "text": "A Status published by a Controller that has not yet been closed shall carry healthy=true.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-STAT-004",
+      "title": "Status.payload carries the bytes passed to publish",
+      "text": "Status.payload in every delivered Status update shall be byte-for-byte identical to the payload argument supplied to the publish call that produced it.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-STAT-005",
+      "title": "Status.payload may be empty",
+      "text": "publish shall accept an empty payload without error or crash. The resulting Status.payload shall be empty.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-CTRL-001",
+      "title": "Controller::send returns StatusOK with no handler",
+      "text": "When no Handler is configured, Controller::send shall return a Response with status=ResponseStatus::OK.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-002",
+      "title": "Controller::send dispatches to the configured handler",
+      "text": "When a Handler is configured, Controller::send shall invoke the handler exactly once per send call and return the handler's Response.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-003",
+      "title": "Controller::send rejected after close",
+      "text": "Controller::send called after Controller::close shall return ErrClosed.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-004",
+      "title": "Controller::send respects an already-done context",
+      "text": "If the Context passed to Controller::send is already done at call time, send shall return ErrTimeout without invoking the handler.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-005",
+      "title": "Controller::close is idempotent",
+      "text": "Controller::close shall be safe to call multiple times. Every call after the first shall return a success error_code without side effects.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-CTRL-006",
+      "title": "Published Status is delivered to all active subscribers",
+      "text": "A Status produced by publish shall be received by every channel returned by an active subscribe call on the same controller.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-007",
+      "title": "Subscribe channels are closed when the controller closes",
+      "text": "When Controller::close is called, all channels previously returned by subscribe shall be closed.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-008",
+      "title": "Subscribe rejected after close",
+      "text": "Controller::subscribe called after Controller::close shall return ErrClosed. No channel shall be returned.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-CTRL-009",
+      "title": "Controller::zone returns the declared zone",
+      "text": "Controller::zone shall return the Zone value provided at construction time for the lifetime of the controller.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-CTRL-010",
+      "title": "Subscribe seq values are strictly increasing",
+      "text": "Successive Status updates received on a subscribe channel shall carry strictly increasing seq values.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-011",
+      "title": "Subscribe channel is closed when its context is done",
+      "text": "When the Context passed to subscribe becomes done, the channel returned by that subscribe call shall be closed.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-012",
+      "title": "Multiple concurrent subscribers each receive published Status",
+      "text": "When multiple subscribe calls are active on the same controller, each returned channel shall independently receive every Status published via publish.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-013",
+      "title": "CommandType::Noop is accepted without error",
+      "text": "Controller::send with Command.type=CommandType::Noop shall return ResponseStatus::OK and shall not return an error.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-014",
+      "title": "CommandType::Watchdog is accepted without error",
+      "text": "Controller::send with Command.type=CommandType::Watchdog shall return ResponseStatus::OK and shall not return an error.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-015",
+      "title": "CommandType::Reset is accepted without error",
+      "text": "Controller::send with Command.type=CommandType::Reset shall return ResponseStatus::OK and shall not return an error.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-016",
+      "title": "Handler Response is returned verbatim",
+      "text": "When a Handler is configured, the Response returned by the handler shall be returned directly by Controller::send without modification.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-017",
+      "title": "Publish on a closed controller does not crash",
+      "text": "Calling publish on a controller after Controller::close shall not throw or crash.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-018",
+      "title": "Concurrent send calls are data-race free",
+      "text": "Multiple concurrent calls to Controller::send on the same controller shall be free of data races.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-019",
+      "title": "Concurrent publish and subscribe are data-race free",
+      "text": "Concurrent calls to publish and subscribe on the same controller shall be free of data races.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-020",
+      "title": "Subscribe channel carries the correct Zone",
+      "text": "Every Status received on a subscribe channel shall carry a zone field equal to the subscribing Controller's zone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-021",
+      "title": "Subscribe channel carries correct Payload",
+      "text": "Status.payload on each received update shall be byte-for-byte identical to the payload argument of the publish call that produced it.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-022",
+      "title": "Subscribe channel carries healthy=true for open controller",
+      "text": "Status.healthy shall be true on every update published while the controller is open.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-023",
+      "title": "Done context does not invoke handler",
+      "text": "If the Context passed to send is already done, the Handler shall not be invoked.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-024",
+      "title": "Send with empty payload does not crash",
+      "text": "Controller::send with an empty Command.payload shall not throw or crash.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-CTRL-025",
+      "title": "Controller::send rejects commands whose zone does not match the controller zone",
+      "text": "Controller::send shall return ErrZoneMismatch when cmd.zone does not equal the zone declared by the controller.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-026",
+      "title": "Controller::send copies Command.payload before passing to the handler",
+      "text": "Controller::send shall copy Command.payload before invoking the handler. Subsequent modification of the original payload by the caller shall not affect the bytes seen by the handler.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CTRL-027",
+      "title": "Controller::publish copies the payload before embedding in Status",
+      "text": "Controller::publish shall copy the payload argument before embedding it in the Status value delivered to subscribers.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REG-001",
+      "title": "new_registry pre-populates all five standard zones",
+      "text": "A Registry returned by mock::new_registry shall contain controllers for Zone::FrontLeft, FrontRight, RearLeft, RearRight, and Central.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REG-002",
+      "title": "Duplicate zone registration returns ErrAlreadyExists",
+      "text": "Registry::register_ctrl for a zone that already has a registered controller shall return ErrAlreadyExists.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REG-003",
+      "title": "Deregister removes the zone and closes its controller",
+      "text": "Registry::deregister shall remove the controller for the given zone and call close on it. After deregistration, lookup for the same zone shall return ErrNotFound.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REG-004",
+      "title": "Lookup returns ErrNotFound for an absent zone",
+      "text": "Registry::lookup for a zone with no registered controller shall return ErrNotFound.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REG-005",
+      "title": "Registry::close is idempotent",
+      "text": "Registry::close shall be safe to call multiple times. Every call after the first shall succeed without side effects.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-REG-006",
+      "title": "Controllers returns all currently registered controllers",
+      "text": "Registry::controllers shall return exactly the set of controllers currently registered, with no duplicates and no omissions.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-REG-007",
+      "title": "Register rejected after Registry::close",
+      "text": "Registry::register_ctrl called after Registry::close shall return ErrClosed.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-REG-008",
+      "title": "Deregister returns ErrNotFound for a zone that was never registered",
+      "text": "Registry::deregister for a zone with no registered controller shall return ErrNotFound.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REG-009",
+      "title": "Registered controller is immediately retrievable via lookup",
+      "text": "After a successful Registry::register_ctrl call, Registry::lookup for the same zone shall return the registered controller without error.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REG-010",
+      "title": "Registry::close calls close on all registered controllers",
+      "text": "Registry::close shall call close on every controller currently registered before returning.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REG-011",
+      "title": "Lookup on a closed Registry returns an error",
+      "text": "Registry::lookup called after Registry::close shall return a non-success error_code.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REG-012",
+      "title": "Deregister for an already-deregistered zone returns ErrNotFound",
+      "text": "A second call to Registry::deregister for a zone that was already deregistered shall return ErrNotFound.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-REG-013",
+      "title": "Registry::lookup returns ErrClosed when called on a closed registry",
+      "text": "Registry::lookup called after Registry::close shall return ErrClosed specifically, not ErrNotFound.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    }
+  ]
+}
