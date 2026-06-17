@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(cpp-rcp
-    VERSION 0.1.0
+    VERSION 0.3.0
     DESCRIPTION "Remote Control Protocol for automotive zonal architecture (C++)"
     HOMEPAGE_URL "https://github.com/SoundMatt/cpp-RCP"
     LANGUAGES CXX
@@ -51,6 +51,14 @@ option(RCP_BUILD_TESTS "Build tests" ON)
 if(RCP_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# ── RELAY-conformant CLI (cpp-rcp) ────────────────────────────────────────────
+option(RELAY_BUILD_CLI "Build the cpp-rcp RELAY-conformant CLI (spec §11)" OFF)
+if(RELAY_BUILD_CLI)
+    add_executable(cpp-rcp cli/main.cpp)
+    target_link_libraries(cpp-rcp PRIVATE rcp::rcp)
+    set_target_properties(cpp-rcp PROPERTIES OUTPUT_NAME cpp-rcp)
 endif()
 
 # ── Install ───────────────────────────────────────────────────────────────────
