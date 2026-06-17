@@ -1,0 +1,104 @@
+{
+  "format": "cpp-FuSa TARA v1",
+  "generatedAt": "2026-06-17T03:08:54Z",
+  "project": "cpp-RCP",
+  "scenarios": [
+    {
+      "asset": "cpp-RCP binary",
+      "cyberGoal": "Build integrity: sign all release artifacts",
+      "damageScenario": "Attacker replaces signed binary with malicious version",
+      "feasibility": 2,
+      "id": "TS-001",
+      "impact": 4,
+      "riskLevel": "medium",
+      "riskValue": 8,
+      "threat": "Tampering with build artifacts",
+      "treatment": "mitigate"
+    },
+    {
+      "asset": "Configuration (.fusa.json)",
+      "cyberGoal": "Config integrity: store config in VCS and verify hash",
+      "damageScenario": "Attacker modifies ASIL level or safety standard to weaken enforcement",
+      "feasibility": 2,
+      "id": "TS-002",
+      "impact": 3,
+      "riskLevel": "medium",
+      "riskValue": 6,
+      "threat": "Spoofing of safety configuration",
+      "treatment": "mitigate"
+    },
+    {
+      "asset": "cpp-RCP CLI interface",
+      "cyberGoal": "Confidentiality: restrict CLI output in CI logs",
+      "damageScenario": "Safety findings leaked to unprivileged process via stdout",
+      "feasibility": 1,
+      "id": "TS-003",
+      "impact": 2,
+      "riskLevel": "low",
+      "riskValue": 2,
+      "threat": "Information disclosure via verbose output",
+      "treatment": "accept"
+    },
+    {
+      "asset": "Third-party dependencies (FetchContent)",
+      "cyberGoal": "Integrity: pin dependency hashes in FetchDeps.cmake",
+      "damageScenario": "Malicious dependency injected via compromised upstream",
+      "feasibility": 2,
+      "id": "TS-004",
+      "impact": 4,
+      "riskLevel": "medium",
+      "riskValue": 8,
+      "threat": "Supply chain compromise",
+      "treatment": "mitigate"
+    },
+    {
+      "asset": "qualify-report.json",
+      "cyberGoal": "Integrity: SHA-256 hash field in qualify-report.json",
+      "damageScenario": "Attacker modifies qualify-report.json to hide failures",
+      "feasibility": 1,
+      "id": "TS-005",
+      "impact": 4,
+      "riskLevel": "low",
+      "riskValue": 4,
+      "threat": "Integrity violation of qualification evidence",
+      "treatment": "mitigate"
+    },
+    {
+      "asset": ".fusa-evidence.json",
+      "cyberGoal": "Freshness: timestamp + VCS revision in evidence bundle",
+      "damageScenario": "Old passing evidence file reused after test suite degrades",
+      "feasibility": 2,
+      "id": "TS-006",
+      "impact": 3,
+      "riskLevel": "medium",
+      "riskValue": 6,
+      "threat": "Replay of stale test evidence",
+      "treatment": "mitigate"
+    },
+    {
+      "asset": "CI pipeline",
+      "cyberGoal": "Availability: branch protection requires CI passing",
+      "damageScenario": "Attacker disables cpfusa check step to bypass safety enforcement",
+      "feasibility": 2,
+      "id": "TS-007",
+      "impact": 4,
+      "riskLevel": "medium",
+      "riskValue": 8,
+      "threat": "Denial of service to safety check gate",
+      "treatment": "mitigate"
+    },
+    {
+      "asset": "Source code annotations (//fusa:req)",
+      "cyberGoal": "Traceability: trace coverage gate enforced in CI",
+      "damageScenario": "Developer removes annotations to hide coverage gaps",
+      "feasibility": 1,
+      "id": "TS-008",
+      "impact": 3,
+      "riskLevel": "low",
+      "riskValue": 3,
+      "threat": "Repudiation of requirement traceability",
+      "treatment": "mitigate"
+    }
+  ],
+  "standard": "ISO 21434:2021 Ch.9"
+}

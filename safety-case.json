@@ -1,0 +1,187 @@
+{
+  "edges": [
+    {
+      "from": "G1",
+      "label": "supported-by",
+      "to": "S1"
+    },
+    {
+      "from": "S1",
+      "label": "in-context-of",
+      "to": "G2"
+    },
+    {
+      "from": "S1",
+      "label": "in-context-of",
+      "to": "G3"
+    },
+    {
+      "from": "S1",
+      "label": "in-context-of",
+      "to": "G4"
+    },
+    {
+      "from": "S1",
+      "label": "in-context-of",
+      "to": "G5"
+    },
+    {
+      "from": "S1",
+      "label": "in-context-of",
+      "to": "G6"
+    },
+    {
+      "from": "G2",
+      "label": "supported-by",
+      "to": "Sn1"
+    },
+    {
+      "from": "G2",
+      "label": "supported-by",
+      "to": "Sn2"
+    },
+    {
+      "from": "G4",
+      "label": "supported-by",
+      "to": "S2"
+    },
+    {
+      "from": "S2",
+      "label": "in-context-of",
+      "to": "Sn3"
+    },
+    {
+      "from": "S2",
+      "label": "in-context-of",
+      "to": "Sn5"
+    },
+    {
+      "from": "G5",
+      "label": "supported-by",
+      "to": "Sn6"
+    },
+    {
+      "from": "G6",
+      "label": "supported-by",
+      "to": "Sn4"
+    },
+    {
+      "from": "G1",
+      "label": "in-context-of",
+      "to": "C1"
+    },
+    {
+      "from": "G2",
+      "label": "in-context-of",
+      "to": "A1"
+    }
+  ],
+  "evidence": [
+    ".fusa.json",
+    ".fusa-reqs.json",
+    "fmea.json",
+    "fmea.csv"
+  ],
+  "format": "cpp-FuSa Safety Case v1 (GSN)",
+  "generatedAt": "2026-06-17T03:08:54Z",
+  "nodes": [
+    {
+      "id": "G1",
+      "status": "undeveloped",
+      "text": "cpp-RCP is acceptably safe for iso26262 ASIL-ASIL-B",
+      "type": "Goal"
+    },
+    {
+      "id": "G2",
+      "status": "supported",
+      "text": "Software development process meets iso26262 requirements",
+      "type": "Goal"
+    },
+    {
+      "id": "G3",
+      "status": "undeveloped",
+      "text": "No unacceptable residual risks remain",
+      "type": "Goal"
+    },
+    {
+      "id": "G4",
+      "status": "undeveloped",
+      "text": "All requirements are implemented and verified",
+      "type": "Goal"
+    },
+    {
+      "id": "G5",
+      "status": "undeveloped",
+      "text": "Static analysis reports no unmitigated errors",
+      "type": "Goal"
+    },
+    {
+      "id": "G6",
+      "status": "undeveloped",
+      "text": "Tool is qualified per ISO 26262 Part 8",
+      "type": "Goal"
+    },
+    {
+      "id": "S1",
+      "status": "",
+      "text": "Argument over safety process evidence",
+      "type": "Strategy"
+    },
+    {
+      "id": "S2",
+      "status": "",
+      "text": "Argument over verification evidence",
+      "type": "Strategy"
+    },
+    {
+      "id": "Sn1",
+      "status": "",
+      "text": "SAFETY_PLAN.md — documented safety plan",
+      "type": "Solution"
+    },
+    {
+      "id": "Sn2",
+      "status": "",
+      "text": ".fusa.json — project safety configuration",
+      "type": "Solution"
+    },
+    {
+      "id": "Sn3",
+      "status": "",
+      "text": ".fusa-reqs.json — requirements register",
+      "type": "Solution"
+    },
+    {
+      "id": "Sn4",
+      "status": "",
+      "text": "qualify-report.json — tool qualification evidence",
+      "type": "Solution"
+    },
+    {
+      "id": "Sn5",
+      "status": "",
+      "text": ".fusa-evidence.json — test execution evidence",
+      "type": "Solution"
+    },
+    {
+      "id": "Sn6",
+      "status": "",
+      "text": "check-report.json — safety check report",
+      "type": "Solution"
+    },
+    {
+      "id": "C1",
+      "status": "",
+      "text": "Project: cpp-RCP standard: iso26262 ASIL-ASIL-B",
+      "type": "Context"
+    },
+    {
+      "id": "A1",
+      "status": "",
+      "text": "Compiler toolchain is itself qualified",
+      "type": "Assumption"
+    }
+  ],
+  "project": "cpp-RCP",
+  "standard": "iso26262"
+}

@@ -1,0 +1,87 @@
+{
+  "failed": 0,
+  "generatedAt": "2026-06-17T03:09:10Z",
+  "hash": "4c3c862b15cb0728251862da148cd3ea92dd1548daae0b14b0404ec069c87fc4",
+  "kind": "qualification",
+  "language": "cpp",
+  "module": "github.com/SoundMatt/cpp-FuSa",
+  "passed": 8,
+  "results": [
+    {
+      "case": {
+        "description": "Missing .fusa.json triggers FUSA001 finding",
+        "expectFinding": true,
+        "name": "FUSA001-positive",
+        "ruleId": "FUSA001"
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "description": ".fusa.json present — no FUSA001 finding",
+        "expectFinding": false,
+        "name": "FUSA001-negative",
+        "ruleId": "FUSA001"
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "description": "No //fusa:req annotation triggers FUSA002",
+        "expectFinding": true,
+        "name": "FUSA002-positive",
+        "ruleId": "FUSA002"
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "description": "//fusa:req annotation present — no FUSA002",
+        "expectFinding": false,
+        "name": "FUSA002-negative",
+        "ruleId": "FUSA002"
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "description": "version=0.0.0 (default config) triggers FUSA003",
+        "expectFinding": true,
+        "name": "FUSA003-positive",
+        "ruleId": "FUSA003"
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "description": "Missing .fusa-evidence.json triggers FUSA004",
+        "expectFinding": true,
+        "name": "FUSA004-positive",
+        "ruleId": "FUSA004"
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "description": "Missing CHANGELOG.md triggers FUSA005",
+        "expectFinding": true,
+        "name": "FUSA005-positive",
+        "ruleId": "FUSA005"
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "description": "CHANGELOG.md present — no FUSA005",
+        "expectFinding": false,
+        "name": "FUSA005-negative",
+        "ruleId": "FUSA005"
+      },
+      "passed": true
+    }
+  ],
+  "schemaVersion": "1.10",
+  "tool": "cpp-FuSa",
+  "toolVersion": "0.12.5",
+  "total": 8
+}

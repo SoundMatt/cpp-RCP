@@ -1,0 +1,259 @@
+{
+  "dal": "DAL-B",
+  "generatedAt": "2026-06-17T03:08:54Z",
+  "objectives": [
+    {
+      "id": "A-1.1",
+      "status": "gap",
+      "table": "A-1",
+      "title": "Software Development Plan"
+    },
+    {
+      "id": "A-1.2",
+      "status": "gap",
+      "table": "A-1",
+      "title": "Software Verification Plan"
+    },
+    {
+      "id": "A-1.3",
+      "status": "gap",
+      "table": "A-1",
+      "title": "Software Configuration Management Plan"
+    },
+    {
+      "id": "A-1.4",
+      "status": "gap",
+      "table": "A-1",
+      "title": "Software Quality Assurance Plan"
+    },
+    {
+      "id": "A-2.1",
+      "status": "gap",
+      "table": "A-2",
+      "title": "Software Requirements Standards"
+    },
+    {
+      "id": "A-2.2",
+      "status": "partial",
+      "table": "A-2",
+      "title": "High-level requirements traceability"
+    },
+    {
+      "id": "A-2.3",
+      "status": "partial",
+      "table": "A-2",
+      "title": "Low-level requirements traceability"
+    },
+    {
+      "id": "A-2.4",
+      "status": "partial",
+      "table": "A-2",
+      "title": "Source code traceability"
+    },
+    {
+      "id": "A-3.1",
+      "status": "gap",
+      "table": "A-3",
+      "title": "Software requirements review"
+    },
+    {
+      "id": "A-3.2",
+      "status": "gap",
+      "table": "A-3",
+      "title": "Software architecture review"
+    },
+    {
+      "id": "A-3.3",
+      "status": "gap",
+      "table": "A-3",
+      "title": "Source code review"
+    },
+    {
+      "id": "A-3.4",
+      "status": "gap",
+      "table": "A-3",
+      "title": "Test case review"
+    },
+    {
+      "id": "A-4.1",
+      "status": "gap",
+      "table": "A-4",
+      "title": "Statement coverage (100%)"
+    },
+    {
+      "id": "A-4.2",
+      "status": "gap",
+      "table": "A-4",
+      "title": "Decision coverage (100%)"
+    },
+    {
+      "id": "A-5.1",
+      "status": "gap",
+      "table": "A-5",
+      "title": "Software integration testing"
+    },
+    {
+      "id": "A-5.2",
+      "status": "gap",
+      "table": "A-5",
+      "title": "Integration test procedures"
+    },
+    {
+      "id": "A-5.3",
+      "status": "gap",
+      "table": "A-5",
+      "title": "Integration test results"
+    },
+    {
+      "id": "A-5.4",
+      "status": "gap",
+      "table": "A-5",
+      "title": "Integration test coverage analysis"
+    },
+    {
+      "id": "A-5.5",
+      "status": "gap",
+      "table": "A-5",
+      "title": "Problem reports — integration phase"
+    },
+    {
+      "id": "A-5.6",
+      "status": "gap",
+      "table": "A-5",
+      "title": "Software configuration index"
+    },
+    {
+      "id": "A-6.1",
+      "status": "gap",
+      "table": "A-6",
+      "title": "Test procedures reviewed"
+    },
+    {
+      "id": "A-6.2",
+      "status": "gap",
+      "table": "A-6",
+      "title": "Test results reviewed"
+    },
+    {
+      "id": "A-6.3",
+      "status": "gap",
+      "table": "A-6",
+      "title": "Test coverage analysis reviewed"
+    },
+    {
+      "id": "A-6.4",
+      "status": "gap",
+      "table": "A-6",
+      "title": "Test problem reports reviewed"
+    },
+    {
+      "id": "A-6.5",
+      "status": "gap",
+      "table": "A-6",
+      "title": "Test traceability to requirements"
+    },
+    {
+      "id": "A-10.2",
+      "status": "gap",
+      "table": "A-10",
+      "title": "Memory and resource usage verification"
+    },
+    {
+      "id": "A-10.3",
+      "status": "gap",
+      "table": "A-10",
+      "title": "Equivalence class and boundary testing"
+    },
+    {
+      "id": "A-10.5",
+      "status": "gap",
+      "table": "A-10",
+      "title": "Partition and worst-case testing"
+    },
+    {
+      "id": "A-11.1",
+      "status": "gap",
+      "table": "A-11",
+      "title": "CI-level test procedures"
+    },
+    {
+      "id": "A-11.2",
+      "status": "gap",
+      "table": "A-11",
+      "title": "CI-level test results"
+    },
+    {
+      "id": "A-11.3",
+      "status": "gap",
+      "table": "A-11",
+      "title": "CI-level test coverage analysis"
+    },
+    {
+      "id": "A-11.4",
+      "status": "gap",
+      "table": "A-11",
+      "title": "CI-level problem reports"
+    },
+    {
+      "id": "A-11.5",
+      "status": "gap",
+      "table": "A-11",
+      "title": "CI software configuration index"
+    },
+    {
+      "id": "A-11.6",
+      "status": "gap",
+      "table": "A-11",
+      "title": "CI test environment verification"
+    },
+    {
+      "id": "A-11.7",
+      "status": "gap",
+      "table": "A-11",
+      "title": "CI regression test evidence"
+    },
+    {
+      "id": "A-7.1",
+      "status": "gap",
+      "table": "A-7",
+      "title": "Software baseline established"
+    },
+    {
+      "id": "A-7.2",
+      "status": "partial",
+      "table": "A-7",
+      "title": "Problem reporting and resolution"
+    },
+    {
+      "id": "A-8.1",
+      "status": "gap",
+      "table": "A-8",
+      "title": "Software life cycle processes conform"
+    },
+    {
+      "id": "A-8.2",
+      "status": "gap",
+      "table": "A-8",
+      "title": "Transition criteria satisfied"
+    },
+    {
+      "id": "A-9.1",
+      "status": "gap",
+      "table": "A-9",
+      "title": "Comply with plans and standards"
+    },
+    {
+      "id": "A-9.2",
+      "status": "gap",
+      "table": "A-9",
+      "title": "Software accomplishment summary"
+    }
+  ],
+  "project": "cpp-RCP",
+  "summary": {
+    "gaps": 37,
+    "partial": 4,
+    "satisfied": 0,
+    "total": 41
+  }
+}

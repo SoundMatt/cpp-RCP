@@ -1,0 +1,47 @@
+{
+  "artifacts": [
+    {
+      "path": ".fusa.json",
+      "sha256": "b098687422a33205926d50abf09cd39290842494d5d3ec31430400cad88f4ea8"
+    },
+    {
+      "path": ".fusa-reqs.json",
+      "sha256": "317637712e5d89aaab08048c4574d63da2422cca9c610acf4a8f46f7de41b91e"
+    },
+    {
+      "path": "fmea.json",
+      "sha256": "dccee47175e10d7d83a04f1681822198dd339e7e2d4db4f21ecca85a13db3ea3"
+    },
+    {
+      "path": "fmea.csv",
+      "sha256": "87a0da1efc625ed88722dc1b92308b48083c4039d17ad0606d028d1569a15a13"
+    },
+    {
+      "path": "safety-case.json",
+      "sha256": "212ec3ccf474f7176507488bf7e9c486a0e0f1a5648259a27ee9ab0246ac0707"
+    },
+    {
+      "path": "safety-case.md",
+      "sha256": "91a966023f3a753bfdee4e80cfae6aa3cd5f89a575a99d1fe7b5315bdc131b59"
+    },
+    {
+      "path": "safety-case.mermaid",
+      "sha256": "4b6106979527a28f325cb1d09d0cdcec040cb24d49e0f9eb7c37fe8b4488471c"
+    },
+    {
+      "path": "tara.json",
+      "sha256": "6c6f29e0242e52fc30d4a44e34e263e74d4f9de0f11e1c3bb89da972bd045516"
+    },
+    {
+      "path": "tara.md",
+      "sha256": "61e4512085df73c9d72bd60c74ebe469d15bc98b8f9f999fa903a61e70754925"
+    }
+  ],
+  "format": "x-FuSa manifest v1",
+  "generatedAt": "2026-06-17T03:08:54Z",
+  "kind": "artifact-manifest",
+  "language": "cpp",
+  "schemaVersion": "1.10",
+  "tool": "cpp-FuSa",
+  "toolVersion": "0.12.5"
+}

@@ -1,0 +1,33 @@
+graph TD
+%% cpp-FuSa Safety Case GSN — cpp-RCP
+  G1["Goal: cpp-RCP is acceptably safe for iso26262 ASIL-AS..."]
+  G2["Goal: Software development process meets iso26262 req..."]
+  G3["Goal: No unacceptable residual risks remain"]
+  G4["Goal: All requirements are implemented and verified"]
+  G5["Goal: Static analysis reports no unmitigated errors"]
+  G6["Goal: Tool is qualified per ISO 26262 Part 8"]
+  S1{"Strategy: Argument over safety process evidence"}
+  S2{"Strategy: Argument over verification evidence"}
+  Sn1[("Solution: SAFETY_PLAN.md — documented safety plan")]
+  Sn2[("Solution: .fusa.json — project safety configuration")]
+  Sn3[("Solution: .fusa-reqs.json — requirements register")]
+  Sn4[("Solution: qualify-report.json — tool qualification evid...")]
+  Sn5[("Solution: .fusa-evidence.json — test execution evidence")]
+  Sn6[("Solution: check-report.json — safety check report")]
+  C1(("Context: Project: cpp-RCP standard: iso26262 ASIL-ASIL-B"))
+  A1[/"Assumption: Compiler toolchain is itself qualified"/]
+  G1 -->|"supported-by"| S1
+  S1 -->|"in-context-of"| G2
+  S1 -->|"in-context-of"| G3
+  S1 -->|"in-context-of"| G4
+  S1 -->|"in-context-of"| G5
+  S1 -->|"in-context-of"| G6
+  G2 -->|"supported-by"| Sn1
+  G2 -->|"supported-by"| Sn2
+  G4 -->|"supported-by"| S2
+  S2 -->|"in-context-of"| Sn3
+  S2 -->|"in-context-of"| Sn5
+  G5 -->|"supported-by"| Sn6
+  G6 -->|"supported-by"| Sn4
+  G1 -->|"in-context-of"| C1
+  G2 -->|"in-context-of"| A1
