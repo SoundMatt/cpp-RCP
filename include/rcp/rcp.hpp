@@ -102,7 +102,7 @@ inline const std::error_category& rcp_category() noexcept {
             case Errc::busy:           return re == relay::Errc::timeout;
             case Errc::not_found:      return re == relay::Errc::not_connected;
             case Errc::zone_mismatch:  return re == relay::Errc::not_connected;
-            case Errc::already_exists: return re == relay::Errc::closed;  // §5.3; see RELAY issue #8
+            case Errc::already_exists: return false;  // standalone per §5.4 (RELAY spec updated)
             default:                   return false;
             }
         }
