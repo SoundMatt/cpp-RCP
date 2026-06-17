@@ -78,6 +78,14 @@ TEST_CASE("relay: rcp::ErrZoneMismatch maps to relay::ErrNotConnected", "[relay]
     REQUIRE(rcp::ErrZoneMismatch == relay::ErrNotConnected);
 }
 
+TEST_CASE("relay: rcp::ErrAlreadyExists is standalone (no relay sentinel)", "[relay][conformance]") {
+    // Per RELAY spec §5.4 update: ErrAlreadyExists is not a relay sentinel.
+    REQUIRE(rcp::ErrAlreadyExists != relay::ErrClosed);
+    REQUIRE(rcp::ErrAlreadyExists != relay::ErrNotConnected);
+    REQUIRE(rcp::ErrAlreadyExists != relay::ErrTimeout);
+    REQUIRE(rcp::ErrAlreadyExists != relay::ErrPayloadTooLarge);
+}
+
 // ── §18.2: Context aliased from relay::Context ───────────────────────────────
 
 TEST_CASE("relay: rcp::Context is relay::Context", "[relay][conformance]") {
