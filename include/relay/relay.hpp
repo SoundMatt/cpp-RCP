@@ -24,11 +24,11 @@ namespace relay {
 
 // ── Spec version (§19.4) ─────────────────────────────────────────────────────
 
-constexpr std::string_view kRelaySpecVersion = "0.3";
+constexpr std::string_view kRelaySpecVersion = "1.0";
 
-// NOTE: keep in sync with RELAY spec/version.json. The v0.3 breaking change
-// (§15.7.6 — SOME/IP numeric msg_type) does NOT affect RCP; RCP's
-// ToMessage()/FromMessage() mappings are unchanged from v0.2.
+// NOTE: keep in sync with RELAY spec/version.json. RELAY v1.0 (stable) carries
+// no normative changes from v0.3 — it promotes the spec and freezes §5/§10/§12/
+// §15. RCP's ToMessage()/FromMessage() mappings are unchanged.
 
 // ── Protocol identifiers (§3) ────────────────────────────────────────────────
 
