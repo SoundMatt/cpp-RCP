@@ -75,7 +75,7 @@ TEST_CASE("cli: version --format json has all required fields", "[cli][conforman
         REQUIRE(has_key(s, k));
     }
     REQUIRE(s.find("\"language\":\"cpp\"") != std::string::npos);
-    REQUIRE(s.find("\"spec_version\":\"0.3\"") != std::string::npos);
+    REQUIRE(s.find("\"spec_version\":\"1.0\"") != std::string::npos);
     REQUIRE(s.find("\"protocol_int\":5") != std::string::npos);
 }
 
