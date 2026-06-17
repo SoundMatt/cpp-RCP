@@ -1,6 +1,6 @@
 {
   "dal": "DAL-B",
-  "generatedAt": "2026-06-17T03:08:54Z",
+  "generatedAt": "2026-06-17T03:25:03Z",
   "objectives": [
     {
       "id": "A-1.1",
@@ -76,13 +76,13 @@
     },
     {
       "id": "A-4.1",
-      "status": "gap",
+      "status": "satisfied",
       "table": "A-4",
       "title": "Statement coverage (100%)"
     },
     {
       "id": "A-4.2",
-      "status": "gap",
+      "status": "satisfied",
       "table": "A-4",
       "title": "Decision coverage (100%)"
     },
@@ -244,16 +244,16 @@
     },
     {
       "id": "A-9.2",
-      "status": "gap",
+      "status": "satisfied",
       "table": "A-9",
       "title": "Software accomplishment summary"
     }
   ],
   "project": "cpp-RCP",
   "summary": {
-    "gaps": 37,
+    "gaps": 34,
     "partial": 4,
-    "satisfied": 0,
+    "satisfied": 3,
     "total": 41
   }
 }

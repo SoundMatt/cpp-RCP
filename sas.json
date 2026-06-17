@@ -52,7 +52,7 @@
     {
       "artifact": "qualify-report.json",
       "id": "SAS-09",
-      "present": false,
+      "present": true,
       "title": "Qualification report"
     },
     {
@@ -76,13 +76,13 @@
     {
       "artifact": "audit-pack.zip",
       "id": "SAS-13",
-      "present": false,
+      "present": true,
       "title": "Audit pack"
     },
     {
       "artifact": "fusa-badge.svg",
       "id": "SAS-14",
-      "present": false,
+      "present": true,
       "title": "Badge"
     },
     {
@@ -122,10 +122,10 @@
       "title": "Dispositions"
     }
   ],
-  "generatedAt": "2026-06-17T03:08:54Z",
+  "generatedAt": "2026-06-17T03:25:03Z",
   "project": "cpp-RCP",
   "summary": {
-    "complete": 12,
+    "complete": 15,
     "total": 20
   },
   "version": "0.1.0"

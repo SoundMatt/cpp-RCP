@@ -133,8 +133,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/prioqueue.hpp",
-      "linePct": 91.04477611940298,
-      "linesHit": 61,
+      "linePct": 86.56716417910448,
+      "linesHit": 58,
       "linesTotal": 67
     },
     {
@@ -493,8 +493,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/predefined_ops.h",
-      "linePct": 65.0,
-      "linesHit": 39,
+      "linePct": 56.666666666666664,
+      "linesHit": 34,
       "linesTotal": 60
     },
     {
@@ -736,8 +736,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_heap.h",
-      "linePct": 58.333333333333336,
-      "linesHit": 35,
+      "linePct": 23.333333333333332,
+      "linesHit": 14,
       "linesTotal": 60
     },
     {
@@ -772,9 +772,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_map.h",
-      "linePct": 68.25396825396825,
-      "linesHit": 43,
-      "linesTotal": 63
+      "linePct": 69.11764705882354,
+      "linesHit": 47,
+      "linesTotal": 68
     },
     {
       "branchPct": 0.0,
@@ -1137,15 +1137,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-06-17T03:08:54Z",
-  "linePct": 62.61098779134295,
+  "generatedAt": "2026-06-17T03:25:03Z",
+  "linePct": 62.22098987938445,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 4513,
+    "hitLines": 4488,
     "totalBranches": 0,
-    "totalLines": 7208
+    "totalLines": 7213
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0

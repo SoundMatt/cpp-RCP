@@ -10,35 +10,51 @@
     },
     {
       "path": "fmea.json",
-      "sha256": "dccee47175e10d7d83a04f1681822198dd339e7e2d4db4f21ecca85a13db3ea3"
+      "sha256": "1e19d147a8f1d70f7674737b54991c882974dbd0a2fb3134acb323b2b99ffed6"
     },
     {
       "path": "fmea.csv",
-      "sha256": "87a0da1efc625ed88722dc1b92308b48083c4039d17ad0606d028d1569a15a13"
+      "sha256": "b6f3fed5f605aba0a466fcdf56e9ceb3cf1e8cd7d5f6f381566358b7eef30a8e"
     },
     {
       "path": "safety-case.json",
-      "sha256": "212ec3ccf474f7176507488bf7e9c486a0e0f1a5648259a27ee9ab0246ac0707"
+      "sha256": "23b250ea58d1a07f86a7a86ae73b09057f4d9a4906d8cf5d50683fde33422d89"
     },
     {
       "path": "safety-case.md",
-      "sha256": "91a966023f3a753bfdee4e80cfae6aa3cd5f89a575a99d1fe7b5315bdc131b59"
+      "sha256": "9e9ccf9cef0736071d7120329efdec84275bd39c0c7781f563f82ffa8747c66e"
     },
     {
       "path": "safety-case.mermaid",
       "sha256": "4b6106979527a28f325cb1d09d0cdcec040cb24d49e0f9eb7c37fe8b4488471c"
     },
     {
+      "path": "sbom.json",
+      "sha256": "9cf432701d1de83f9f8c3416fdd9b31d10a8bab3c952ceb731a5189125174f73"
+    },
+    {
+      "path": "provenance.json",
+      "sha256": "616a057c2dc4878b2e29ac03b5b06f387a05e8e5a9f144da094d8ebda925d63d"
+    },
+    {
+      "path": "artifact-manifest.json",
+      "sha256": "c10bafed8335b8a6ad387290d6053fba513f0cfb6849f16a3e6f1adbe9707a35"
+    },
+    {
+      "path": "qualify-report.json",
+      "sha256": "1c482ee0220ed36ccbfbd174ebbcb4ccdd7948ce56acd14e935771a442bf8a20"
+    },
+    {
       "path": "tara.json",
-      "sha256": "6c6f29e0242e52fc30d4a44e34e263e74d4f9de0f11e1c3bb89da972bd045516"
+      "sha256": "3d65584284fefb7d38932f9cb258f825b4e5e595ae20affd7992c6687f624cbc"
     },
     {
       "path": "tara.md",
-      "sha256": "61e4512085df73c9d72bd60c74ebe469d15bc98b8f9f999fa903a61e70754925"
+      "sha256": "5ce566989fd9366f2f54f3f9252a0a6eb1ffbf6fc87fb193a25cb8141da603f3"
     }
   ],
   "format": "x-FuSa manifest v1",
-  "generatedAt": "2026-06-17T03:08:54Z",
+  "generatedAt": "2026-06-17T03:25:02Z",
   "kind": "artifact-manifest",
   "language": "cpp",
   "schemaVersion": "1.10",
