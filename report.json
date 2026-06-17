@@ -45158,28 +45158,6 @@
       "category": "lint",
       "location": {
         "file": "tests/test_relay.cpp",
-        "line": 24
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_relay.cpp",
-        "line": 25
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_relay.cpp",
         "line": 32
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
@@ -45698,17 +45676,6 @@
       "location": {
         "file": "tests/test_cli.cpp",
         "line": 61
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_cli.cpp",
-        "line": 78
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -46739,7 +46706,7 @@
       "severity": "WARNING"
     }
   ],
-  "generatedAt": "2026-06-17T13:33:12Z",
+  "generatedAt": "2026-06-17T14:38:33Z",
   "kind": "check-report",
   "language": "cpp",
   "project": "cpp-RCP",
@@ -46748,8 +46715,8 @@
   "standard": "iso26262",
   "summary": {
     "errors": 5,
-    "infos": 2108,
-    "total": 4249,
+    "infos": 2105,
+    "total": 4246,
     "warnings": 2136
   },
   "tool": "cpp-FuSa",
