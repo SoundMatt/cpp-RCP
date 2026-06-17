@@ -21,8 +21,8 @@ using namespace std::chrono_literals;
 
 // ── §19.4: SpecVersion constant ───────────────────────────────────────────────
 
-TEST_CASE("relay: kRelaySpecVersion is 0.2", "[relay][conformance]") {
-    REQUIRE(relay::kRelaySpecVersion == "0.2");
+TEST_CASE("relay: kRelaySpecVersion is 0.3", "[relay][conformance]") {
+    REQUIRE(relay::kRelaySpecVersion == "0.3");
 }
 
 // ── §3: Protocol enum ─────────────────────────────────────────────────────────
@@ -227,4 +227,48 @@ TEST_CASE("relay: zone round-trips through relay ID", "[relay][conform]") {
                    Zone::RearLeft,  Zone::RearRight, Zone::Central}) {
         REQUIRE(rcp::zone_from_relay_id(rcp::zone_to_relay_id(z)) == z);
     }
+}
+
+// ── v0.3 golden vector: status_to_message matches RELAY spec/vectors ─────────
+//
+// Pins rcp::status_to_message() to the canonical reference in
+// RELAY spec/vectors/rcp-status.json (v0.3). The vector's `value` is the
+// rcp.Status input; its `message` is the expected relay.Message output.
+// Mandatory fields (protocol, id, payload, seq, meta["rcp.healthy"]) MUST match
+// losslessly; timestamp is "ignored on receive" per §15.7 and is not pinned.
+
+TEST_CASE("relay: status_to_message matches rcp-status golden vector (v0.3)",
+          "[relay][conformance][vectors]") {
+    // From spec/vectors/rcp-status.json `value`:
+    //   zone=1 (FrontLeft), seq=3, healthy=true, payload="AQ==" (== byte 0x01)
+    rcp::Status s;
+    s.zone    = rcp::Zone::FrontLeft;
+    s.seq     = 3;
+    s.healthy = true;
+    s.payload = {0x01};
+
+    auto msg = rcp::status_to_message(s);
+
+    // Expected `message` fields from the golden vector:
+    REQUIRE(static_cast<int>(msg.protocol) == 5);          // relay.RCP
+    REQUIRE(msg.id == "FrontLeft");
+    REQUIRE(msg.seq == 3);
+    REQUIRE(msg.payload == std::vector<uint8_t>{0x01});     // base64 "AQ=="
+    REQUIRE(msg.meta.at("rcp.healthy") == "true");
+}
+
+// ── §14.1 (v0.3): SubscriberOptions carries topic_name; RCP ignores it ───────
+
+TEST_CASE("relay: SubscriberOptions has topic_name field, default empty",
+          "[relay][conformance]") {
+    relay::SubscriberOptions opts;
+    REQUIRE(opts.topic_name.empty());
+
+    // RCP adapter must ignore topic_name (only DDS routes on it, §14.1).
+    auto ctrl   = std::make_shared<rcp::mock::Controller>(rcp::Zone::FrontLeft);
+    auto caller = rcp::Adapt(ctrl);
+    opts.topic_name = "ignored-by-rcp";
+    auto [ch, ec] = caller->subscribe(opts);
+    REQUIRE_FALSE(ec);
+    REQUIRE(ch != nullptr);
 }

@@ -24,7 +24,11 @@ namespace relay {
 
 // ── Spec version (§19.4) ─────────────────────────────────────────────────────
 
-constexpr std::string_view kRelaySpecVersion = "0.2";
+constexpr std::string_view kRelaySpecVersion = "0.3";
+
+// NOTE: keep in sync with RELAY spec/version.json. The v0.3 breaking change
+// (§15.7.6 — SOME/IP numeric msg_type) does NOT affect RCP; RCP's
+// ToMessage()/FromMessage() mappings are unchanged from v0.2.
 
 // ── Protocol identifiers (§3) ────────────────────────────────────────────────
 
@@ -137,6 +141,9 @@ enum class BackPressurePolicy { drop_newest = 0, drop_oldest = 1, block = 2 };
 struct SubscriberOptions {
     std::size_t        channel_depth = 64;
     BackPressurePolicy back_pressure = BackPressurePolicy::drop_newest;
+    // topic_name (§14.1, v0.3): DDS adapters route subscriptions to this topic.
+    // All other adapters — including RCP — ignore it. Empty = unset.
+    std::string        topic_name;
 };
 
 // ── Channel<T> — typed bounded channel (§18.2) ───────────────────────────────
