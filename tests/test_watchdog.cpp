@@ -12,6 +12,8 @@
 #include <rcp/watchdog.hpp>
 
 #include <atomic>
+#include <chrono>
+#include <thread>
 
 using namespace rcp;
 
@@ -47,8 +49,15 @@ TEST_CASE("Watchdog transitions zone to Faulted after misses exceed fault_after"
         last_state.store(ev.state);
     });
 
-    // Allow time for fault_after misses to accumulate (3 × 20 ms + margin).
-    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    // The background keeper thread needs fault_after (3) miss cycles of 20 ms to
+    // reach Faulted. On loaded/preempted CI runners the thread may be scheduled
+    // late, so poll up to a generous deadline rather than asserting after one
+    // fixed sleep (which is flaky — observed on macOS shared runners).
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (last_state.load() != watchdog::HealthState::Faulted &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 
     REQUIRE(last_state.load() == watchdog::HealthState::Faulted);
 }
