@@ -7,7 +7,7 @@
     }
   ],
   "format": "x-FuSa SBOM v1",
-  "generatedAt": "2026-06-19T16:51:16Z",
+  "generatedAt": "2026-06-19T18:23:28Z",
   "kind": "sbom",
   "language": "cpp",
   "module": "github.com/SoundMatt/cpp-FuSa",

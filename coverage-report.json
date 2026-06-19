@@ -7,8 +7,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/adapt.hpp",
-      "linePct": 81.08108108108108,
-      "linesHit": 90,
+      "linePct": 84.68468468468468,
+      "linesHit": 94,
       "linesTotal": 111
     },
     {
@@ -52,9 +52,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/cli.hpp",
-      "linePct": 95.18072289156626,
-      "linesHit": 79,
-      "linesTotal": 83
+      "linePct": 75.390625,
+      "linesHit": 193,
+      "linesTotal": 256
     },
     {
       "branchPct": 0.0,
@@ -241,8 +241,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/rcp.hpp",
-      "linePct": 75.51020408163265,
-      "linesHit": 37,
+      "linePct": 77.55102040816327,
+      "linesHit": 38,
       "linesTotal": 49
     },
     {
@@ -430,9 +430,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/basic_string.h",
-      "linePct": 64.1025641025641,
-      "linesHit": 50,
-      "linesTotal": 78
+      "linePct": 65.0,
+      "linesHit": 52,
+      "linesTotal": 80
     },
     {
       "branchPct": 0.0,
@@ -448,8 +448,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/char_traits.h",
-      "linePct": 18.181818181818183,
-      "linesHit": 8,
+      "linePct": 15.909090909090908,
+      "linesHit": 7,
       "linesTotal": 44
     },
     {
@@ -898,9 +898,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_map.h",
-      "linePct": 69.11764705882354,
-      "linesHit": 47,
-      "linesTotal": 68
+      "linePct": 69.56521739130434,
+      "linesHit": 48,
+      "linesTotal": 69
     },
     {
       "branchPct": 0.0,
@@ -1105,8 +1105,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/ext/string_conversions.h",
-      "linePct": 0.0,
-      "linesHit": 0,
+      "linePct": 81.25,
+      "linesHit": 13,
       "linesTotal": 16
     },
     {
@@ -1263,15 +1263,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-06-19T16:51:16Z",
-  "linePct": 65.36779324055667,
+  "generatedAt": "2026-06-19T18:23:28Z",
+  "linePct": 65.61326253076027,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 4932,
+    "hitLines": 5066,
     "totalBranches": 0,
-    "totalLines": 7545
+    "totalLines": 7721
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0

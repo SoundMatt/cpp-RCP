@@ -6,23 +6,23 @@
     },
     {
       "path": ".fusa-reqs.json",
-      "sha256": "853d0ecc6739d3e353589553fee42677160eb3529d6aad0093406a416f243131"
+      "sha256": "7b580a809d5f06a908dd2c9ea05dde00f144f3ea4e1bfd7e5df6d84f22837c8b"
     },
     {
       "path": "fmea.json",
-      "sha256": "196fb9e894837b241f2986f04dc26d77483675857bbbb0e747f8f528eced96c5"
+      "sha256": "e3efe7e521fcb9cd3991984d506a340f6b888b305e7e290dcc5ae51e0ff0cbe5"
     },
     {
       "path": "fmea.csv",
-      "sha256": "6976734326b813e323df9f95f852a82c4f0c74784553ef431405dd009e310b6e"
+      "sha256": "406aa1129665a7bd9ba3a4e48841e764b364067ef6c8fff7f1a8b732e1905f21"
     },
     {
       "path": "safety-case.json",
-      "sha256": "8e8373915f9e50348d3139c62a2c6c5360adfde3be6a1eb25d0df7bed6017cde"
+      "sha256": "d3aed69d3ca0bc312a4d9b20a46fe6fbca93aef4889791c094a038e626fd5804"
     },
     {
       "path": "safety-case.md",
-      "sha256": "6ee8b61d926d04a8df40780c2b5b2e67b91db7e6fb0d247919b4417f2d7531d7"
+      "sha256": "390326eef7fb4189757b8a95f21dcfec2385e5efe017614bbe257f47e9182b02"
     },
     {
       "path": "safety-case.mermaid",
@@ -30,31 +30,31 @@
     },
     {
       "path": "sbom.json",
-      "sha256": "47b910f39afdf37814fee8e6c086d101ceb04c9af0375903824c8822bb06d7b3"
+      "sha256": "dc42b13824614aff0741ced0eda86f305ab4f8fae7f8bbc3e1509ffcbd647bdf"
     },
     {
       "path": "provenance.json",
-      "sha256": "c4ae93ce297d795a00bf6ee528b378e858b060b94c5504be7e5bcb27af5c82ba"
+      "sha256": "64b92e44dfdc121325f6514a45d2838310f662c3be570bafea5dba0540b85842"
     },
     {
       "path": "artifact-manifest.json",
-      "sha256": "7b3dcebc755cc4c82495674a2a99f572c36f5ec9f4c38dd754cf7b7f60939b05"
+      "sha256": "ad3623001810422a4778d6cda735a3943b80afb0e3aa22a87ea0317442fb3a54"
     },
     {
       "path": "qualify-report.json",
-      "sha256": "712f789c9b00bbd13f138a6c35247c2e1870644d4da22ca94b08c6b98dedd88f"
+      "sha256": "79b08c2885825fe455f92ca1bcfc52d9bffed19ea482edf73791de5ea0d9d276"
     },
     {
       "path": "tara.json",
-      "sha256": "6d632283f14ee9576a3e0778d33bbf75022713a79b2105703e2e316175cc4aa9"
+      "sha256": "7465929e09fce5931e85f52172fd92843127746bd7512ad728d1a70b9e6393b1"
     },
     {
       "path": "tara.md",
-      "sha256": "36887fb9a3a63193e7f97052a52384eb38fb9d235c6823a9c0744bce3942c6b2"
+      "sha256": "3e9e39c919462a0a4918aae58bb3eee38397dfbede07a5da34cde1469d3ab12c"
     }
   ],
   "format": "x-FuSa manifest v1",
-  "generatedAt": "2026-06-19T16:51:16Z",
+  "generatedAt": "2026-06-19T18:23:28Z",
   "kind": "artifact-manifest",
   "language": "cpp",
   "schemaVersion": "1.10",
