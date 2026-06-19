@@ -116,3 +116,13 @@ add_test(NAME rcp_relay COMMAND test_relay)
 add_executable(test_cli test_cli.cpp)
 target_link_libraries(test_cli PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_cli COMMAND test_cli)
+
+# ── Transport / bridge stubs + remaining modules ─────────────────────────────
+
+foreach(mod
+    canbr ddsbr doipbr grpcbridge linbr mqttbr restbridge someipbr udsbr
+    tsn mdns powerstate tls)
+  add_executable(test_${mod} test_${mod}.cpp)
+  target_link_libraries(test_${mod} PRIVATE rcp::rcp Catch2::Catch2WithMain)
+  add_test(NAME rcp_${mod} COMMAND test_${mod})
+endforeach()

@@ -1,11 +1,17 @@
-// fusa:req REQ-CFG-001
-// fusa:req REQ-CFG-002
-// fusa:req REQ-CFG-003
+// fusa:test REQ-CFG-001
+// fusa:test REQ-CFG-002
+// fusa:test REQ-CFG-003
+// fusa:test REQ-CFG-004
+// fusa:test REQ-CFG-005
+// fusa:test REQ-CFG-006
 #include <catch2/catch_test_macros.hpp>
 
 #include "rcp/config.hpp"
 #include "rcp/mock.hpp"
 #include "rcp/proxy.hpp"
+
+#include <stdexcept>
+#include <string>
 
 using namespace rcp;
 
@@ -60,4 +66,17 @@ TEST_CASE("config: load duplicate zone returns ErrAlreadyExists", "[config]") {
     proxy::ProxyRegistry preg;
     auto ec = config::load(json, preg);
     REQUIRE(ec == ErrAlreadyExists);
+}
+
+TEST_CASE("config: ParseError is a std::runtime_error subclass", "[config][REQ-CFG-006]") {
+    // Catchable as std::runtime_error (and thus std::exception) and carries a message.
+    bool caught = false;
+    try {
+        config::parse_json(R"({ "zones": [{ "zone": "Nope" }] })");
+    } catch (const std::runtime_error& e) {
+        caught = true;
+        REQUIRE(std::string(e.what()).find("Nope") != std::string::npos);
+    }
+    REQUIRE(caught);
+    REQUIRE(std::is_base_of<std::runtime_error, config::ParseError>::value);
 }

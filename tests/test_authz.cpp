@@ -1,11 +1,19 @@
-// fusa:req REQ-AUTH-001
-// fusa:req REQ-AUTH-002
-// fusa:req REQ-AUTH-003
-// fusa:req REQ-AUTH-004
+// fusa:test REQ-AUTH-001
+// fusa:test REQ-AUTH-002
+// fusa:test REQ-AUTH-003
+// fusa:test REQ-AUTH-004
+// fusa:test REQ-AUTH-005
+// fusa:test REQ-AUTH-006
+// fusa:test REQ-AUTH-007
+// fusa:test REQ-AUTH-008
 #include <catch2/catch_test_macros.hpp>
 
 #include "rcp/authz.hpp"
 #include "rcp/mock.hpp"
+
+#include <atomic>
+#include <thread>
+#include <vector>
 
 using namespace rcp;
 
@@ -91,9 +99,63 @@ TEST_CASE("authz: identity_fn overrides set_identity", "[authz]") {
     REQUIRE_FALSE(ctrl->send(Context{}, cmd, resp));
 }
 
-TEST_CASE("authz: zone() delegates to inner", "[authz]") {
+TEST_CASE("authz: zone() delegates to inner", "[authz][REQ-AUTH-005]") {
     auto policy = std::make_shared<authz::AccessPolicy>();
     auto inner  = make_ctrl(Zone::RearLeft);
     auto ctrl   = authz::new_controller(inner, policy);
     REQUIRE(ctrl->zone() == Zone::RearLeft);
+}
+
+TEST_CASE("authz: subscribe() delegates to inner", "[authz][REQ-AUTH-006]") {
+    auto policy = std::make_shared<authz::AccessPolicy>();
+    auto inner  = make_ctrl(Zone::FrontLeft);
+    auto ctrl   = authz::new_controller(inner, policy);
+
+    std::shared_ptr<StatusChannel> ch;
+    auto ec = ctrl->subscribe(Context{}, ch);
+    REQUIRE_FALSE(ec);
+    REQUIRE(ch != nullptr);
+    REQUIRE_FALSE(ctrl->close());
+}
+
+TEST_CASE("authz: close() delegates to inner", "[authz][REQ-AUTH-007]") {
+    auto policy = std::make_shared<authz::AccessPolicy>();
+    auto inner  = make_ctrl(Zone::FrontLeft);
+    auto ctrl   = authz::new_controller(inner, policy);
+
+    REQUIRE_FALSE(ctrl->close());
+    // After the inner controller is closed, sends through it report ErrClosed.
+    Command cmd;
+    cmd.zone = Zone::FrontLeft;
+    Response resp;
+    REQUIRE(inner->send(Context{}, cmd, resp) == ErrClosed);
+}
+
+TEST_CASE("authz: ErrForbidden is a distinct error code", "[authz][REQ-AUTH-008]") {
+    REQUIRE(authz::ErrForbidden);
+    REQUIRE(authz::ErrForbidden != ErrClosed);
+    REQUIRE(authz::ErrForbidden != ErrBusy);
+    REQUIRE(std::string(authz::ErrForbidden.category().name()) == "rcp.authz");
+}
+
+TEST_CASE("authz: AccessPolicy permits concurrently without data races",
+          "[authz][REQ-AUTH-004]") {
+    auto policy = std::make_shared<authz::AccessPolicy>();
+    policy->allow({"alice", {Zone::FrontLeft}, {CommandType::Set}});
+
+    std::atomic<int> permits{0};
+    std::vector<std::thread> ts;
+    for (int t = 0; t < 8; ++t) {
+        ts.emplace_back([&] {
+            for (int i = 0; i < 5000; ++i) {
+                // Concurrent readers (permit) interleaved with a writer (allow).
+                if (policy->permit("alice", Zone::FrontLeft, CommandType::Set))
+                    permits.fetch_add(1, std::memory_order_relaxed);
+                if ((i & 0x3ff) == 0)
+                    policy->allow({"tmp", {Zone::Central}, {}});
+            }
+        });
+    }
+    for (auto& th : ts) th.join();
+    REQUIRE(permits.load() == 8 * 5000);
 }

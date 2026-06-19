@@ -1,7 +1,7 @@
-// fusa:req REQ-CLI-001
-// fusa:req REQ-CLI-002
-// fusa:req REQ-CLI-003
-// fusa:req REQ-CLI-004
+// fusa:test REQ-CLI-001
+// fusa:test REQ-CLI-002
+// fusa:test REQ-CLI-003
+// fusa:test REQ-CLI-004
 
 // RELAY CLI conformance tests (spec §11 command surface, §12 JSON documents).
 //

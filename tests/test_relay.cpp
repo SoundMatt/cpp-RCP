@@ -1,8 +1,8 @@
-// fusa:req REQ-RELAY-001
-// fusa:req REQ-RELAY-002
-// fusa:req REQ-RELAY-003
-// fusa:req REQ-RELAY-004
-// fusa:req REQ-RELAY-005
+// fusa:test REQ-RELAY-001
+// fusa:test REQ-RELAY-002
+// fusa:test REQ-RELAY-003
+// fusa:test REQ-RELAY-004
+// fusa:test REQ-RELAY-005
 
 // RELAY conformance tests (RELAY spec §18.2, §5.1, §5.2, §10.3, §14, §19.4).
 //
