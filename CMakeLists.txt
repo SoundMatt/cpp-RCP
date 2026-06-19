@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(cpp-rcp
-    VERSION 0.3.0
+    VERSION 1.0.1
     DESCRIPTION "Remote Control Protocol for automotive zonal architecture (C++)"
     HOMEPAGE_URL "https://github.com/SoundMatt/cpp-RCP"
     LANGUAGES CXX
