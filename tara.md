@@ -1,7 +1,7 @@
 # TARA — cpp-RCP
 
 Standard: ISO 21434:2021 Ch.9  
-Generated: 2026-06-17T14:38:25Z
+Generated: 2026-06-19T14:08:36Z
 
 | ID | Asset | Threat | Feasibility | Impact | Risk | Level | Treatment |
 |---|---|---|---|---|---|---|---|
