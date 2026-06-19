@@ -2,6 +2,7 @@
 // fusa:test REQ-CLI-002
 // fusa:test REQ-CLI-003
 // fusa:test REQ-CLI-004
+// fusa:test REQ-CLI-005
 
 // RELAY CLI conformance tests (spec §11 command surface, §12 JSON documents).
 //
@@ -42,6 +43,16 @@ std::string capture(const std::vector<std::string>& args, int& code) {
     return out.str();
 }
 
+// capture_in drives the streaming overload with NDJSON on stdin.
+std::string capture_in(const std::vector<std::string>& args, const std::string& stdin_data,
+                       int& code, std::string* errout = nullptr) {
+    std::istringstream in(stdin_data);
+    std::ostringstream out, err;
+    code = run(args, in, out, err);
+    if (errout) *errout = err.str();
+    return out.str();
+}
+
 } // namespace
 
 // ── §11.3 exit codes ──────────────────────────────────────────────────────────
@@ -75,7 +86,7 @@ TEST_CASE("cli: version --format json has all required fields", "[cli][conforman
         REQUIRE(has_key(s, k));
     }
     REQUIRE(s.find("\"language\":\"cpp\"") != std::string::npos);
-    REQUIRE(s.find("\"spec_version\":\"1.0\"") != std::string::npos);
+    REQUIRE(s.find("\"spec_version\":\"1.10\"") != std::string::npos);
     REQUIRE(s.find("\"protocol_int\":5") != std::string::npos);
 }
 
@@ -120,4 +131,57 @@ TEST_CASE("cli: status --format json has all required fields", "[cli][conformanc
     REQUIRE(s.find("\"healthy\":true") != std::string::npos);
     REQUIRE(s.find("\"connected\":false") != std::string::npos);
     REQUIRE(s.find("\"details\":{}") != std::string::npos);
+}
+
+// ── §11.2 streaming send --format json sink (crossbar spoke) ──────────────────
+
+TEST_CASE("cli: send is declared in capabilities", "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    auto s = capture({"capabilities"}, code);
+    REQUIRE(code == rcp::cli::kOk);
+    REQUIRE(s.find("\"send\"") != std::string::npos);
+}
+
+TEST_CASE("cli: send --format json publishes each NDJSON message", "[cli][conformance][REQ-CLI-005]") {
+    // Three well-formed relay.Message lines addressed to standard zones.
+    const std::string nd =
+        "{\"protocol\":5,\"id\":\"FrontLeft\",\"payload\":\"AQ==\",\"meta\":{\"rcp.command_type\":\"1\"}}\n"
+        "{\"protocol\":5,\"id\":\"RearRight\",\"seq\":7}\n"
+        "{\"protocol\":5,\"id\":\"Central\",\"meta\":{\"rcp.priority\":\"2\"}}\n";
+    int code = 0;
+    auto out = capture_in({"send", "--format", "json"}, nd, code);
+    REQUIRE(code == rcp::cli::kOk);
+    REQUIRE(out.find("published 3 message(s)") != std::string::npos);
+}
+
+TEST_CASE("cli: send skips malformed and undeliverable lines without aborting",
+          "[cli][conformance][REQ-CLI-005]") {
+    const std::string nd =
+        "not json\n"
+        "{\"id\":\"FrontLeft\"}\n"          // deliverable
+        "{\"id\":\"Nonexistent\"}\n"        // unknown zone -> skipped
+        "\n";                               // blank -> skipped
+    int code = 0;
+    std::string errout;
+    auto out = capture_in({"send", "--format", "json"}, nd, code, &errout);
+    REQUIRE(code == rcp::cli::kOk);
+    REQUIRE(out.find("published 1 message(s)") != std::string::npos);
+    REQUIRE(errout.find("skipping malformed") != std::string::npos);
+}
+
+TEST_CASE("cli: send without --format json returns invalid-args (2)",
+          "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    capture_in({"send"}, "", code);
+    REQUIRE(code == rcp::cli::kInvalidArgs);
+}
+
+TEST_CASE("cli: send base64 payload decodes into the published command",
+          "[cli][conformance][REQ-CLI-005]") {
+    // "AQID" -> bytes {1,2,3}; empty stream variant just checks clean EOF handling.
+    int code = 0;
+    auto out = capture_in({"send", "--format", "json"},
+                          "{\"id\":\"FrontLeft\",\"payload\":\"AQID\"}\n", code);
+    REQUIRE(code == rcp::cli::kOk);
+    REQUIRE(out.find("published 1 message(s)") != std::string::npos);
 }

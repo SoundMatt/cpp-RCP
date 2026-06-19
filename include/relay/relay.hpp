@@ -24,11 +24,14 @@ namespace relay {
 
 // ── Spec version (§19.4) ─────────────────────────────────────────────────────
 
-constexpr std::string_view kRelaySpecVersion = "1.0";
+constexpr std::string_view kRelaySpecVersion = "1.10";
 
-// NOTE: keep in sync with RELAY spec/version.json. RELAY v1.0 (stable) carries
-// no normative changes from v0.3 — it promotes the spec and freezes §5/§10/§12/
-// §15. RCP's ToMessage()/FromMessage() mappings are unchanged.
+// NOTE: keep in sync with RELAY spec/version.json. cpp-RCP targets RELAY v1.10
+// (stable). It is core-conformant (§17): version/capabilities/status, canonical
+// types, the §8 interface, lifecycle, and error sentinels. The §11.2 streaming
+// JSON crossbar spoke is provided via the CLI; `convert`/interop (§20.3
+// tooling-conformance) is not declared. RCP's ToMessage()/FromMessage() mappings
+// are unchanged from v1.0.
 
 // ── Protocol identifiers (§3) ────────────────────────────────────────────────
 
@@ -224,6 +227,11 @@ public:
     virtual std::pair<Message, std::error_code>
         call(Context ctx, const Message& req) = 0;
 };
+
+// INode is the spec §13.7 cross-language name for the application node interface.
+// The interface is Node (idiomatic C++); INode is the mandated alias so the same
+// concept is recognisable across the Go/Rust/C++ ports.
+using INode = Node;
 
 } // namespace relay
 

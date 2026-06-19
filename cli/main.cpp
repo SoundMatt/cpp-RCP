@@ -14,5 +14,5 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         args.emplace_back(argv[i]);
     }
-    return rcp::cli::run(args, std::cout, std::cerr);
+    return rcp::cli::run(args, std::cin, std::cout, std::cerr);
 }
