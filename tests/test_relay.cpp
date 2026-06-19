@@ -21,8 +21,8 @@ using namespace std::chrono_literals;
 
 // ── §19.4: SpecVersion constant ───────────────────────────────────────────────
 
-TEST_CASE("relay: kRelaySpecVersion is 1.0", "[relay][conformance]") {
-    REQUIRE(relay::kRelaySpecVersion == "1.0");
+TEST_CASE("relay: kRelaySpecVersion is 1.10", "[relay][conformance]") {
+    REQUIRE(relay::kRelaySpecVersion == "1.10");
 }
 
 // ── §3: Protocol enum ─────────────────────────────────────────────────────────

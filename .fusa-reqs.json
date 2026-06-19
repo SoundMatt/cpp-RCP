@@ -2647,6 +2647,14 @@
       "standard": "relay",
       "level": "QM",
       "asil": "QM"
+    },
+    {
+      "id": "REQ-CLI-005",
+      "title": "CLI send --format json streaming NDJSON sink (RELAY \u00a711.2)",
+      "text": "The `send --format json` subcommand shall read relay.Message values as NDJSON on stdin (one per line) and publish each via message_to_command to the matching zone controller until EOF; malformed or undeliverable lines shall be reported and skipped without aborting the stream. `send` without `--format json` shall return exit code 2.",
+      "standard": "relay",
+      "level": "QM",
+      "asil": "QM"
     }
   ]
 }

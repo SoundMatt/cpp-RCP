@@ -338,7 +338,7 @@ jobs:
 
   # ── cpp-FuSa: requirements traceability (≥80% coverage gate) ─────────────────
   cpfusa-trace:
-    name: cpfusa trace (≥80% coverage)
+    name: cpfusa trace (100% coverage)
     runs-on: ubuntu-22.04
     needs: [build-and-test, cpfusa-build]
     steps:
@@ -357,8 +357,9 @@ jobs:
       - name: Traceability gaps report
         run: /tmp/cpfusa/build/cpfusa trace --gaps || true
 
-      - name: Enforce ≥80% requirement coverage
-        run: /tmp/cpfusa/build/cpfusa trace --req-coverage 80
+      # RELAY §20.1: every requirement MUST be traced AND tested (100%).
+      - name: Enforce 100% requirement coverage
+        run: /tmp/cpfusa/build/cpfusa trace --req-coverage 100
 
   # ── cpp-FuSa: ctest integration → .fusa-evidence.json ────────────────────────
   cpfusa-verify:
