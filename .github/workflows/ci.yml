@@ -85,6 +85,42 @@ jobs:
           name: compile-commands
           path: build/compile_commands.json
 
+  # ── RELAY conformance gate (spec §12) ────────────────────────────────────────
+  relay-conform:
+    name: relay conform (RELAY §12 conformance)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout cpp-RCP
+        uses: actions/checkout@v4
+
+      - name: Checkout RELAY (authoritative conformance validator)
+        uses: actions/checkout@v4
+        with:
+          repository: SoundMatt/RELAY
+          path: RELAY
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build relay conformance tool
+        working-directory: RELAY
+        run: go build -o "$RUNNER_TEMP/relay" ./cmd/relay
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Build cpp-rcp CLI
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DRELAY_BUILD_CLI=ON -G Ninja
+          cmake --build build --target cpp-rcp --parallel
+
+      - name: Run relay conform (strict)
+        run: '"$RUNNER_TEMP/relay" conform --strict build/cpp-rcp'
+
   # ── clang-tidy ───────────────────────────────────────────────────────────────
   clang-tidy:
     name: clang-tidy
