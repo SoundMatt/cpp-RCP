@@ -1,6 +1,11 @@
-// fusa:req REQ-CAPI-001
-// fusa:req REQ-CAPI-002
-// fusa:req REQ-CAPI-003
+// fusa:test REQ-CAPI-001
+// fusa:test REQ-CAPI-002
+// fusa:test REQ-CAPI-003
+// fusa:test REQ-CAPI-004
+// fusa:test REQ-CAPI-005
+// fusa:test REQ-CAPI-006
+// fusa:test REQ-CAPI-007
+// fusa:test REQ-CAPI-008
 #include <catch2/catch_test_macros.hpp>
 
 #include "rcp/capi_impl.hpp"
