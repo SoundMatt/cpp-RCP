@@ -7,11 +7,11 @@
     }
   ],
   "format": "x-FuSa SBOM v1",
-  "generatedAt": "2026-06-19T18:23:28Z",
+  "generatedAt": "2026-07-27T17:34:14Z",
   "kind": "sbom",
   "language": "cpp",
   "module": "github.com/SoundMatt/cpp-FuSa",
-  "schemaVersion": "1.10",
+  "schemaVersion": "1.10.12",
   "tool": "cpp-FuSa",
-  "toolVersion": "0.12.5"
+  "toolVersion": "0.14.3"
 }
