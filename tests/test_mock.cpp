@@ -50,6 +50,7 @@
 #include <rcp/mock.hpp>
 
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -216,6 +217,47 @@ TEST_CASE("Controller::subscribe returns ErrClosed after close", "[controller][R
     ctrl.close();
     std::shared_ptr<StatusChannel> ch;
     REQUIRE(ctrl.subscribe(Context::background(), ch) == ErrClosed);
+}
+
+TEST_CASE("Controller::subscribe concurrent with close is race-free", "[controller][REQ-CTRL-008]") {
+    // Regression test: subscribe() and close() used to check `closed_` and
+    // mutate `subs_` under separate critical sections, so a subscribe() could
+    // observe "open" and still add its channel to subs_ after close() had
+    // already run and cleared it — the added channel would only self-heal
+    // later via its own watcher thread polling `closed_`, not synchronously
+    // as part of close(). Now both are serialized under the same mutex, so
+    // whenever a subscribe() call succeeds concurrently with close(), close()
+    // is guaranteed to see (and synchronously close) that channel itself —
+    // checkable immediately after both threads join, with no sleep.
+    for (int iter = 0; iter < 200; ++iter) {
+        auto ctrl = std::make_unique<mock::Controller>(Zone::FrontLeft);
+
+        std::vector<std::shared_ptr<StatusChannel>> channels;
+        std::mutex channels_mu;
+
+        std::vector<std::thread> subscribers;
+        for (int i = 0; i < 4; ++i) {
+            subscribers.emplace_back([&] {
+                std::shared_ptr<StatusChannel> ch;
+                if (!ctrl->subscribe(Context::background(), ch)) {
+                    std::lock_guard<std::mutex> lk(channels_mu);
+                    channels.push_back(std::move(ch));
+                }
+            });
+        }
+        std::thread closer([&] { ctrl->close(); });
+
+        for (auto& t : subscribers) t.join();
+        closer.join();
+
+        // No sleep: with the fix, every channel a successful subscribe() handed
+        // back is guaranteed closed by the time close() has returned, because
+        // close() (having won or lost the race under the shared lock) either
+        // never sees the channel or closes it itself before releasing the lock.
+        for (auto& ch : channels) {
+            REQUIRE(ch->is_closed());
+        }
+    }
 }
 
 TEST_CASE("Controller::zone returns declared zone", "[controller][REQ-CTRL-009]") {

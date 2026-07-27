@@ -86,7 +86,7 @@ TEST_CASE("cli: version --format json has all required fields", "[cli][conforman
         REQUIRE(has_key(s, k));
     }
     REQUIRE(s.find("\"language\":\"cpp\"") != std::string::npos);
-    REQUIRE(s.find("\"spec_version\":\"1.10\"") != std::string::npos);
+    REQUIRE(s.find("\"spec_version\":\"1.11\"") != std::string::npos);
     REQUIRE(s.find("\"protocol_int\":5") != std::string::npos);
 }
 
@@ -105,12 +105,14 @@ TEST_CASE("cli: capabilities has all required fields and kind", "[cli][conforman
     auto s = capture({"capabilities"}, code);
     REQUIRE(code == rcp::cli::kOk);
     REQUIRE(braces_balanced(s));
-    for (auto k : {"kind", "tool", "version", "spec_version", "commands",
-                   "transports", "features", "interfaces",
-                   "optional_interfaces", "adapt"}) {
+    for (auto k : {"kind", "tool", "protocol", "protocol_int", "version",
+                   "spec_version", "commands", "transports", "features",
+                   "interfaces", "optional_interfaces", "adapt"}) {
         REQUIRE(has_key(s, k));
     }
     REQUIRE(s.find("\"kind\":\"capabilities\"") != std::string::npos);
+    REQUIRE(s.find("\"protocol\":\"RCP\"") != std::string::npos);
+    REQUIRE(s.find("\"protocol_int\":5") != std::string::npos);
     REQUIRE(s.find("\"adapt\":true") != std::string::npos);
     // commands MUST contain the three mandatory subcommands.
     REQUIRE(s.find("\"version\"") != std::string::npos);
@@ -184,4 +186,52 @@ TEST_CASE("cli: send base64 payload decodes into the published command",
                           "{\"id\":\"FrontLeft\",\"payload\":\"AQID\"}\n", code);
     REQUIRE(code == rcp::cli::kOk);
     REQUIRE(out.find("published 1 message(s)") != std::string::npos);
+}
+
+// ── §11.2 protocol-flags send: --zone/--type/--payload (RCP row) ──────────────
+
+TEST_CASE("cli: send --zone --type dispatches a single command (text)",
+          "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    auto s = capture({"send", "--zone", "FrontLeft", "--type", "set"}, code);
+    REQUIRE(code == rcp::cli::kOk);
+    REQUIRE(s.find("FrontLeft") != std::string::npos);
+}
+
+TEST_CASE("cli: send --zone --type --payload dispatches with a decoded hex payload (json)",
+          "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    auto s = capture({"send", "--zone", "RearRight", "--type", "get",
+                      "--payload", "0102", "--format", "json"}, code);
+    REQUIRE(code == rcp::cli::kOk);
+    REQUIRE(s.find("\"sent\":true") != std::string::npos);
+    REQUIRE(s.find("\"zone\":\"RearRight\"") != std::string::npos);
+}
+
+TEST_CASE("cli: send missing --type returns invalid-args (2)",
+          "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    capture({"send", "--zone", "FrontLeft"}, code);
+    REQUIRE(code == rcp::cli::kInvalidArgs);
+}
+
+TEST_CASE("cli: send with an unrecognised --type returns invalid-args (2)",
+          "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    capture({"send", "--zone", "FrontLeft", "--type", "bogus"}, code);
+    REQUIRE(code == rcp::cli::kInvalidArgs);
+}
+
+TEST_CASE("cli: send with malformed --payload hex returns invalid-args (2)",
+          "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    capture({"send", "--zone", "FrontLeft", "--type", "set", "--payload", "zz"}, code);
+    REQUIRE(code == rcp::cli::kInvalidArgs);
+}
+
+TEST_CASE("cli: send to an unknown zone returns a protocol error (1)",
+          "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    capture({"send", "--zone", "Nonexistent", "--type", "set"}, code);
+    REQUIRE(code == rcp::cli::kError);
 }

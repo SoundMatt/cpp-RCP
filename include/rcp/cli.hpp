@@ -21,6 +21,7 @@
 #include <rcp/mock.hpp>
 #include <rcp/version.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <istream>
 #include <map>
@@ -77,6 +78,8 @@ inline std::string capabilities_json() {
     return std::string("{")
         + "\"kind\":\"capabilities\","
         + "\"tool\":\"cpp-rcp\","
+        + "\"protocol\":\"RCP\","
+        + "\"protocol_int\":" + std::to_string(static_cast<int>(relay::Protocol::RCP)) + ","
         + "\"version\":\"" + std::string(kVersion) + "\","
         + "\"spec_version\":\"" + spec + "\","
         + "\"commands\":[\"version\",\"capabilities\",\"status\",\"send\"],"
@@ -115,6 +118,8 @@ inline std::string usage() {
         "  version            Print tool and spec version\n"
         "  capabilities       Print the RELAY capabilities document (JSON)\n"
         "  status             Print self-assessed health\n"
+        "  send --zone <name> --type <cmdtype> [--payload <hex>] [--format text|json]\n"
+        "                     Dispatch a single command to a zone controller (RELAY §11.2)\n"
         "  send --format json Read relay.Message NDJSON on stdin and publish each\n"
         "                     (RELAY §11.2 streaming sink / crossbar spoke)\n");
 }
@@ -147,6 +152,45 @@ inline bool b64_decode(const std::string& in, std::vector<std::uint8_t>& out) {
         if (bits >= 8) { bits -= 8; out.push_back(static_cast<std::uint8_t>((buf >> bits) & 0xFF)); }
     }
     return true;
+}
+
+// hex_decode decodes a plain hex string (even number of [0-9a-fA-F] digits, no
+// "0x" prefix or separators) into bytes. Returns false on odd length or a
+// non-hex character.
+inline bool hex_decode(const std::string& in, std::vector<std::uint8_t>& out) {
+    auto val = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    out.clear();
+    if (in.size() % 2 != 0) return false;
+    for (std::size_t i = 0; i < in.size(); i += 2) {
+        int hi = val(in[i]);
+        int lo = val(in[i + 1]);
+        if (hi < 0 || lo < 0) return false;
+        out.push_back(static_cast<std::uint8_t>((hi << 4) | lo));
+    }
+    return true;
+}
+
+// cmd_type_from_string parses a §11.2 `send --type` flag value (a case-
+// insensitive CommandType name) into a CommandType. Returns false for an
+// unrecognised name.
+inline bool cmd_type_from_string(const std::string& s, CommandType& out) {
+    std::string lower;
+    lower.reserve(s.size());
+    for (char c : s) lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    if (lower == "noop")     { out = CommandType::Noop;     return true; }
+    if (lower == "set")      { out = CommandType::Set;      return true; }
+    if (lower == "get")      { out = CommandType::Get;      return true; }
+    if (lower == "reset")    { out = CommandType::Reset;    return true; }
+    if (lower == "watchdog") { out = CommandType::Watchdog; return true; }
+    if (lower == "sleep")    { out = CommandType::Sleep;    return true; }
+    if (lower == "wake")     { out = CommandType::Wake;     return true; }
+    if (lower == "update")   { out = CommandType::Update;   return true; }
+    return false;
 }
 
 // JVal is a minimal parsed JSON value.
@@ -299,6 +343,77 @@ inline bool message_from_json(const std::string& line, relay::Message& msg) {
     return true;
 }
 
+// send_one implements the §11.2 protocol-flags form of `send` for RCP:
+// `--zone <name> --type <cmdtype> [--payload <hex>]`. It dispatches a single
+// Command to the matching in-process mock zone controller — the same mock
+// backend send_stream uses, since cpp-rcp's CLI has no external transport of
+// its own — and reports the result. Exit: 0 sent, 1 error, 2 invalid args.
+inline int send_one(const std::vector<std::string>& args, bool json,
+                    std::ostream& out, std::ostream& err) {
+    std::string zone_flag, type_flag, payload_flag;
+    bool have_zone = false, have_type = false, have_payload = false;
+    for (std::size_t i = 1; i < args.size(); ++i) {
+        if (args[i] == "--zone" && i + 1 < args.size()) {
+            zone_flag = args[++i];
+            have_zone = true;
+        } else if (args[i] == "--type" && i + 1 < args.size()) {
+            type_flag = args[++i];
+            have_type = true;
+        } else if (args[i] == "--payload" && i + 1 < args.size()) {
+            payload_flag = args[++i];
+            have_payload = true;
+        } else if (args[i] == "--format") {
+            ++i; // already validated by format_is_json
+        }
+    }
+    if (!have_zone || !have_type) {
+        err << "usage: cpp-rcp send --zone <name> --type <cmdtype> "
+               "[--payload <hex>] [--format text|json]\n";
+        return kInvalidArgs;
+    }
+
+    CommandType type{};
+    if (!cmd_type_from_string(type_flag, type)) {
+        err << "error: invalid --type '" << type_flag << "'\n";
+        return kInvalidArgs;
+    }
+    std::vector<std::uint8_t> payload;
+    if (have_payload && !hex_decode(payload_flag, payload)) {
+        err << "error: invalid --payload hex\n";
+        return kInvalidArgs;
+    }
+
+    // A zone name that doesn't parse maps to Zone::Unknown, which is not a
+    // registered zone either — it fails the same lookup below as a genuinely
+    // unregistered zone, matching send_stream's existing not-found handling.
+    Zone zone = zone_from_relay_id(zone_flag);
+
+    Command cmd;
+    cmd.zone    = zone;
+    cmd.type    = type;
+    cmd.payload = payload;
+
+    mock::Registry reg;
+    std::shared_ptr<Controller> ctrl;
+    if (reg.lookup(zone, ctrl)) {
+        err << "send: zone '" << zone_flag << "' not found\n";
+        return kError;
+    }
+    Response resp;
+    if (ctrl->send(Context{}, cmd, resp)) {
+        err << "send: zone " << to_string(zone) << ": send failed\n";
+        return kError;
+    }
+
+    if (json) {
+        out << "{\"sent\":true,\"zone\":\"" << zone_to_relay_id(zone)
+            << "\",\"status\":\"" << to_string(resp.status) << "\"}\n";
+    } else {
+        out << "sent to " << zone_to_relay_id(zone) << " (" << to_string(resp.status) << ")\n";
+    }
+    return kOk;
+}
+
 // send_stream implements `send --format json` (RELAY §11.2): read relay.Message
 // values as NDJSON on `in`, publish each via message_to_command → the matching
 // mock zone controller until EOF. Malformed/undeliverable lines are reported and
@@ -369,11 +484,25 @@ inline int run(const std::vector<std::string>& args, std::istream& in,
         bool bad = false;
         bool json = format_is_json(args, &bad);
         if (bad) { err << "error: invalid --format\n"; return kInvalidArgs; }
+
+        bool has_protocol_flags = false;
+        for (std::size_t i = 1; i < args.size(); ++i) {
+            if (args[i] == "--zone" || args[i] == "--type" || args[i] == "--payload") {
+                has_protocol_flags = true;
+                break;
+            }
+        }
+        if (has_protocol_flags) {
+            // §11.2 protocol-flags form: --zone <name> --type <cmdtype> [--payload <hex>].
+            return send_one(args, json, out, err);
+        }
         if (!json) {
-            // Only the §11.2 streaming JSON sink form is supported.
-            err << "usage: cpp-rcp send --format json  (NDJSON relay.Message on stdin)\n";
+            err << "usage: cpp-rcp send --format json  (NDJSON relay.Message on stdin)\n"
+                   "   or: cpp-rcp send --zone <name> --type <cmdtype> [--payload <hex>] "
+                   "[--format text|json]\n";
             return kInvalidArgs;
         }
+        // §11.2 streaming JSON sink form (crossbar spoke).
         return send_stream(in, out, err);
     }
 

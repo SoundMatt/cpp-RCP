@@ -70,7 +70,7 @@ The project focuses on:
 | **Protocol bridges** | v0.39.0 | DoIP bridge | Bridge zone controller diagnostics over ISO 13400 (stub) ✅ |
 | **Platform** | v0.40.0 | RTOS / bare-metal | C API (`capi.h` + `capi_impl.hpp`) for Zephyr/FreeRTOS targets ✅ |
 | **Certification** | v0.41.0 | Formal verification | TLA+ specs for health SM, watchdog protocol, anti-replay guard ✅ |
-| **Certification** | v0.42.0 | ISO 21434 | TARA.md, CYBERSECURITY.md, IEC 62443 SL-2 gap analysis ✅ |
+| **Certification** | v0.42.0 | ISO 21434 | TARA-ANALYSIS.md, CYBERSECURITY.md, IEC 62443 SL-2 gap analysis ✅ |
 | **Certification** | v0.43.0 | Certification | ASIL-D gap analysis, structural coverage report, AUDIT_PACK.md ✅ |
 
 ---
@@ -453,7 +453,7 @@ The project focuses on:
 - Security requirements mapped to TARA findings; implemented controls (TLS, Authorization, E2E replay guard, rate limiting, mDNS authentication) traced as countermeasures
 - IEC 62443 SL-2 gap report (`iec62443-gap-report.json`) — closes open items from `.fusa-iec62443.json`
 - Penetration test evidence: structured attack scenarios against UDP, TLS, admin HTTP, gRPC, and REST endpoints
-- `TARA.md` and `CYBERSECURITY.md` published alongside the safety case
+- `TARA-ANALYSIS.md` and `CYBERSECURITY.md` published alongside the safety case
 
 ### 43. Certification (v0.43.0) ✅
 
