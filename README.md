@@ -11,10 +11,73 @@ Feature and API equivalent of [go-RCP](https://github.com/SoundMatt/go-RCP).
 
 ## Headers
 
+cpp-RCP ships ~40 public headers under `include/rcp/` and `include/relay/`,
+grouped below by concern (matching the RELAY spec §13.7.2 module-name
+registry categories where applicable). Every header is self-contained and
+documented with a header-comment; this table is an index, not a full API
+reference.
+
+### Core / RELAY integration
+
 | Header | Description |
 |---|---|
 | `<rcp/rcp.hpp>` | Core interfaces: `Controller`, `Registry`, `Command`, `Response`, `Status`, `Zone`, `Context`, `StatusChannel` |
+| `<rcp/adapt.hpp>` | `Adapt()` — the RELAY §10.3 entry point, wraps a `Controller` as a `relay::Caller`; `ToMessage`/`FromMessage` conversions |
+| `<relay/relay.hpp>` | `relay::` namespace types (§18.2): `Protocol`, `Message`, `Errc` sentinels, `Channel<T>`, `Context`, `Node`, `Caller` |
 | `<rcp/mock.hpp>` | In-process mock controller and registry — zero I/O, default for unit tests |
+| `<rcp/cli.hpp>` | RELAY-conformant CLI (§11/§12): `version`/`capabilities`/`status`/`send`; `cli/main.cpp` is a thin wrapper around it |
+| `<rcp/version.hpp>` | Binary version string — single source of truth for the CLI |
+| `<rcp/capi.h>` / `<rcp/capi_impl.hpp>` | C ABI / FFI surface for RTOS/bare-metal targets (Zephyr/FreeRTOS) |
+
+### Protocol bridges
+
+| Header | Description |
+|---|---|
+| `<rcp/canbr.hpp>` | CAN / CAN-FD bridge — maps RCP commands to CAN frames via SocketCAN |
+| `<rcp/linbr.hpp>` | LIN bridge — maps RCP commands to LIN master-frame requests |
+| `<rcp/ddsbr.hpp>` | DDS bridge — publishes RCP commands as DDS typed topics |
+| `<rcp/mqttbr.hpp>` | MQTT bridge — publishes commands to MQTT topics |
+| `<rcp/someipbr.hpp>` | SOME/IP bridge — routes commands over SOME/IP service discovery |
+| `<rcp/restbridge.hpp>` | REST/HTTP bridge — maps commands to `POST /zones/{zone}/command` |
+| `<rcp/grpcbridge.hpp>` | gRPC bridge — translates RCP wire frames to gRPC unary/streaming RPCs |
+| `<rcp/doipbr.hpp>` | DoIP (ISO 13400) bridge — encapsulates UDS requests over TCP/IP |
+| `<rcp/udsbr.hpp>` | UDS (ISO 14229) bridge — wraps RCP commands as UDS service requests |
+
+### RCP control-plane concerns
+
+| Header | Description |
+|---|---|
+| `<rcp/authz.hpp>` | Command-level access control (ISO 21434 / IEC 62443 SL-2) |
+| `<rcp/e2e.hpp>` | End-to-end communication protection (ISO 26262 Part 7 E2E profile) |
+| `<rcp/deadline.hpp>` | Liveness deadline monitor for zone controller Status streams |
+| `<rcp/watchdog.hpp>` | Watchdog keeper — periodic `CommandType::Watchdog` kicks (ASIL-B) |
+| `<rcp/federation.hpp>` | Multi-HPC federation: cross-HPC zone forwarding with lease-based ownership |
+| `<rcp/redundancy.hpp>` | Hot-standby registry and HPC failover for ASIL-B fault tolerance |
+| `<rcp/firmware.hpp>` | Zone controller OTA firmware update session |
+| `<rcp/faultinject.hpp>` | Structured fault injection for validating safety mechanisms |
+| `<rcp/config.hpp>` | Zone registry loader from JSON/YAML configuration files |
+| `<rcp/admin.hpp>` | In-process Admin API: zone listing, SSE events, Prometheus metrics |
+| `<rcp/ratelimit.hpp>` | Per-zone token-bucket admission control against command flooding |
+| `<rcp/powerstate.hpp>` | Zone controller power state manager (Sleep/Wake) |
+| `<rcp/prioqueue.hpp>` | Per-zone priority queue honouring `Priority::Critical` > `High` > `Normal` |
+| `<rcp/proxy.hpp>` | Transparent zone proxy for cascaded zonal topologies |
+| `<rcp/zonegroup.hpp>` | Atomic multi-zone command broadcast with typed zone group sets |
+| `<rcp/dyndata.hpp>` | Runtime schema registry and dynamic payload encoding |
+| `<rcp/loan.hpp>` | `LoaningController` — zero-copy payload loaning via a pre-allocated pool |
+| `<rcp/record.hpp>` | Binary record and replay of RCP traffic |
+| `<rcp/observe.hpp>` | OpenTelemetry-style observability: spans, gauges, counters |
+| `<rcp/mdns.hpp>` | mDNS/DNS-SD zone controller discovery (RFC 6762/6763) |
+
+### Transports
+
+| Header | Description |
+|---|---|
+| `<rcp/udp.hpp>` | Pure-C++ UDP transport for the RCP protocol |
+| `<rcp/tls.hpp>` | Mutual TLS transport for zone controller communication |
+| `<rcp/shmem.hpp>` | Zero-copy intra-host command delivery via shared in-process memory |
+| `<rcp/tsn.hpp>` | IEEE 802.1Qbv-aware UDP transport adapter for hard real-time Ethernet |
+| `<rcp/wire.hpp>` | Binary frame codec shared by the UDP and TLS transports |
+| `<rcp/sim.hpp>` | Timing-realistic zone controller simulator for SiL/HIL testing |
 
 ## Build
 

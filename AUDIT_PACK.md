@@ -11,7 +11,7 @@
 | Document | Location | Status |
 |----------|----------|--------|
 | HARA (Hazard Analysis & Risk Assessment) | `HARA.md` | Complete |
-| TARA (Threat Analysis & Risk Assessment) | `TARA.md` | Complete |
+| TARA (Threat Analysis & Risk Assessment) | `TARA-ANALYSIS.md` | Complete |
 | Cybersecurity Architecture | `CYBERSECURITY.md` | Complete |
 | Formal Verification | `FORMAL_VERIFICATION.md` | Complete |
 | Safety Requirements | `.fusa-reqs.json` | 198 requirements |

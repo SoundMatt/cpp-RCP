@@ -106,12 +106,16 @@ public:
 
     std::error_code subscribe(const rcp::Context&              ctx,
                                std::shared_ptr<StatusChannel>&  out) override {
-        if (closed_.load(std::memory_order_acquire))
-            return ErrClosed;
-
         auto ch = std::make_shared<StatusChannel>(16);
         {
+            // Check closed_ and append under the same critical section close()
+            // uses, so a subscribe() racing a close() cannot observe "open" and
+            // then add to subs_ after close() has already cleared it (REQ-CTRL-008;
+            // RELAY spec §6.2/6.3/6.6 require a deterministic ErrClosed here, not
+            // a transiently-valid channel).
             std::lock_guard<std::mutex> lk(mu_);
+            if (closed_.load(std::memory_order_acquire))
+                return ErrClosed;
             subs_.push_back(ch);
         }
 
@@ -152,9 +156,11 @@ public:
     }
 
     std::error_code close() override {
+        // The closed_ exchange lives under mu_ too, so it is properly serialized
+        // against subscribe()'s check-and-append critical section above.
+        std::lock_guard<std::mutex> lk(mu_);
         bool was_open = !closed_.exchange(true, std::memory_order_acq_rel);
         if (!was_open) return {};
-        std::lock_guard<std::mutex> lk(mu_);
         for (auto& s : subs_) s->close();
         subs_.clear();
         return {};

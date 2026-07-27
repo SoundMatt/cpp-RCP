@@ -24,14 +24,14 @@ namespace relay {
 
 // ── Spec version (§19.4) ─────────────────────────────────────────────────────
 
-constexpr std::string_view kRelaySpecVersion = "1.10";
+constexpr std::string_view kRelaySpecVersion = "1.11";
 
-// NOTE: keep in sync with RELAY spec/version.json. cpp-RCP targets RELAY v1.10
+// NOTE: keep in sync with RELAY spec/version.json. cpp-RCP targets RELAY v1.11
 // (stable). It is core-conformant (§17): version/capabilities/status, canonical
 // types, the §8 interface, lifecycle, and error sentinels. The §11.2 streaming
-// JSON crossbar spoke is provided via the CLI; `convert`/interop (§20.3
-// tooling-conformance) is not declared. RCP's ToMessage()/FromMessage() mappings
-// are unchanged from v1.0.
+// JSON crossbar spoke and the protocol-flags single-message send are provided
+// via the CLI; `convert`/interop (§20.3 tooling-conformance) is not declared.
+// RCP's ToMessage()/FromMessage() mappings are unchanged from v1.0.
 
 // ── Protocol identifiers (§3) ────────────────────────────────────────────────
 
