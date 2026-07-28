@@ -233,7 +233,7 @@ struct ResponseQueueConfig {
 
 constexpr uint32_t kOptConditionalRequests = 0x0000'0001; // compound/triggered/timed/chained requests (v2.5.0)
 constexpr uint32_t kOptSafetyRequests      = 0x0000'0002; // E2E CRC safe points + safety-request variants (v2.6.0)
-constexpr uint32_t kOptFragmentation       = 0x0000'0004; // multi-segment requests (v2.8.0, go/no-go pending)
+constexpr uint32_t kOptFragmentation       = 0x0000'0004; // multi-segment requests — bit reserved, never set: ROADMAP.md milestone 52's already-decided fragmentation no-go (v2.8.0)
 
 // ── TablePointer ──────────────────────────────────────────────────────────────
 // The pointer/capacity pair pattern used for each of the five bootstrap

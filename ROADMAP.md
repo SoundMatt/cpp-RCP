@@ -698,6 +698,24 @@ still not claimed — see this file's own disclaimer pattern in
 
 ### 52. Fragmentation — Go/No-Go Decision (v2.8.0)
 
+**Done (v2.8.0):** this milestone's call was made in prose (below) before
+any of its downstream consequences landed, and every one of those
+consequences was already built and cross-referencing "ROADMAP.md milestone
+52" as settled fact by the time this close-out PR was opened: the
+single-AVTPDU UART RX-FIFO/`read_size` bound in `rcp/uart.hpp`, the
+equivalent SPI framing note in `rcp/spi.hpp`, the CAN XL
+`kMaxXlPayloadSingleAvtpdu` vs. `kMaxXlPayloadSpec` split in `rcp/can.hpp`,
+the `ms` ("more segments") field comment in `rcp/wire.hpp`, and the
+`REQ-UART-006`/`REQ-CANEP-004` traceability entries in `.fusa-reqs.json`.
+This milestone formally closes the decision itself: the
+`kOptFragmentation` bit comment in `rcp/regmap.hpp` — the one remaining
+place in the tree still describing the call as "pending" — now reads
+consistently with the rest of the codebase (reserved, never set, per this
+already-decided no-go), and `rcp::kVersion`/the CMake project version move
+to `2.8.0` to mark the milestone as landed. No wire-format, endpoint, or
+safety-mechanism behavior changes in this milestone — it is a documentation
+and version close-out only.
+
 **Decision: no-go for this cycle.** Fragmentation (the `ms`/`segment_num`
 mechanism for splitting one logical request/response across multiple
 AVTPDUs) is explicitly called out in the specification itself as optional
