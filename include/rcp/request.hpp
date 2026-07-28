@@ -17,19 +17,27 @@
 // sequencer-state advance/reset, cancellation semantics, and the request
 // lifecycle state machine an OPEN Alliance TC18 Remote Control Protocol
 // Specification v0.5.1_RC server needs once it goes beyond the mandatory
-// "standard" request kind (extraction §2.4, §2.7, §3.1, §3.11, §3.14).
+// "standard" request kind (extraction §2.4, §2.7, §3.1, §3.11, §3.14). This
+// is RELAY spec §13.7.2's `request` standard-module-name entry: "conditional-
+// request taxonomy (compound, compound-wait, triggered, chained, timed) and
+// sequencers" — both halves already lived together in this one file, so the
+// module (originally rcp/sequencer.hpp) is renamed rcp/request.hpp to match
+// the registry rather than split; SequencerTable stays as the internal name
+// for the sequencer-state sub-concept it specifically models.
 //
 // ROADMAP.md milestone 49, "Conditional-Request Taxonomy & Sequencers
-// (v2.5.0)": this header rides on top of rcp/wire.hpp's existing ACF_GBB
-// support (v2.0.0) and rcp/regmap.hpp's existing `sequencer_states` storage
-// (v2.1.0) without changing either — the mtv=0 repurposing trick is a new
-// decode path over already-implemented fields, and sequencer *behavior*
-// (default value, advance-on-finalization) is built on top of regmap.hpp's
-// already-allocated storage rather than duplicating it. It also consumes
-// rcp/spi.hpp's compound_wait_matches and rcp/i2c.hpp's
-// compound_wait_matches_bits as the per-endpoint-type condition-comparison
-// rules a real compound-wait dispatch loop would call once it decides a
-// compound-wait request is due; this header does not re-implement either.
+// (v2.5.0)": this header rides on top of rcp/acf.hpp's existing ACF_GBB
+// support (v2.0.0, split from the original rcp/wire.hpp into rcp/avtp.hpp
+// and rcp/acf.hpp per RELAY spec §13.7.2) and rcp/regmap.hpp's existing
+// `sequencer_states` storage (v2.1.0) without changing either — the mtv=0
+// repurposing trick is a new decode path over already-implemented fields,
+// and sequencer *behavior* (default value, advance-on-finalization) is built
+// on top of regmap.hpp's already-allocated storage rather than duplicating
+// it. It also consumes rcp/spi.hpp's compound_wait_matches and
+// rcp/i2c.hpp's compound_wait_matches_bits as the per-endpoint-type
+// condition-comparison rules a real compound-wait dispatch loop would call
+// once it decides a compound-wait request is due; this header does not
+// re-implement either.
 //
 // ROADMAP.md milestone 50, "E2E CRC Safe Points & Safety-Request Variants
 // (v2.6.0)", extends this taxonomy in place rather than superseding it: the
@@ -50,16 +58,17 @@
 // mapping, the param-byte layout within the repurposed timestamp slot, and
 // the request-ledger data model chosen in this file are this
 // implementation's own encoding of that behavior, same as the equivalent
-// disclaimers in rcp/wire.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
-// rcp/spi.hpp, and rcp/i2c.hpp. This header models the taxonomy, the
-// bundling rules, and the state machine's transitions and effects — it does
-// not implement a running scheduler thread; wiring select_next_due()'s
-// output into an actual dispatch loop is left to the embedding application,
-// same as every other endpoint header in this codebase.
+// disclaimers in rcp/avtp.hpp, rcp/acf.hpp, rcp/regmap.hpp,
+// rcp/endpoint.hpp, rcp/spi.hpp, and rcp/i2c.hpp. This header models the
+// taxonomy, the bundling rules, and the state machine's transitions and
+// effects — it does not implement a running scheduler thread; wiring
+// select_next_due()'s output into an actual dispatch loop is left to the
+// embedding application, same as every other endpoint header in this
+// codebase.
 #pragma once
 
+#include <rcp/acf.hpp>
 #include <rcp/regmap.hpp>
-#include <rcp/wire.hpp>
 
 #include <algorithm>
 #include <array>
@@ -71,11 +80,11 @@
 #include <vector>
 
 namespace rcp {
-namespace sequencer {
+namespace request {
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
-enum class SequencerErrc : int {
+enum class RequestErrc : int {
     timestamp_not_repurposed     = 1, // mtv=1: message_timestamp is a real timestamp, not a request_type opcode
     unknown_request_type         = 2, // byte 0 of the repurposed slot is not one of the defined opcodes
     index_out_of_range           = 3, // SequencerTable index >= table size
@@ -87,32 +96,32 @@ enum class SequencerErrc : int {
     compound_bundle_incomplete   = 9, // compound/compound-wait claimed without every required companion capability
 };
 
-inline const std::error_category& sequencer_category() noexcept {
+inline const std::error_category& request_category() noexcept {
     struct Cat : std::error_category {
-        const char* name() const noexcept override { return "rcp.sequencer"; }
+        const char* name() const noexcept override { return "rcp.request"; }
         std::string message(int ev) const override {
-            switch (static_cast<SequencerErrc>(ev)) {
-            case SequencerErrc::timestamp_not_repurposed:
-                return "rcp/sequencer: mtv=1 — message_timestamp is not a repurposed request_type slot";
-            case SequencerErrc::unknown_request_type:
-                return "rcp/sequencer: unrecognized request_type opcode";
-            case SequencerErrc::index_out_of_range:
-                return "rcp/sequencer: sequencer index out of range";
-            case SequencerErrc::unknown_transaction:
-                return "rcp/sequencer: transaction_num is not tracked by this ledger";
-            case SequencerErrc::invalid_lifecycle_transition:
-                return "rcp/sequencer: requested lifecycle transition is not the next state in sequence";
-            case SequencerErrc::transaction_num_collision:
-                return "rcp/sequencer: transaction_num is already tracked by this ledger";
-            case SequencerErrc::request_not_found:
-                return "rcp/sequencer: REQUEST_NOT_FOUND";
-            case SequencerErrc::request_canceled:
-                return "rcp/sequencer: REQUEST_CANCELED";
-            case SequencerErrc::compound_bundle_incomplete:
-                return "rcp/sequencer: compound support requires compound-wait, clear-non-safestate, "
+            switch (static_cast<RequestErrc>(ev)) {
+            case RequestErrc::timestamp_not_repurposed:
+                return "rcp/request: mtv=1 — message_timestamp is not a repurposed request_type slot";
+            case RequestErrc::unknown_request_type:
+                return "rcp/request: unrecognized request_type opcode";
+            case RequestErrc::index_out_of_range:
+                return "rcp/request: sequencer index out of range";
+            case RequestErrc::unknown_transaction:
+                return "rcp/request: transaction_num is not tracked by this ledger";
+            case RequestErrc::invalid_lifecycle_transition:
+                return "rcp/request: requested lifecycle transition is not the next state in sequence";
+            case RequestErrc::transaction_num_collision:
+                return "rcp/request: transaction_num is already tracked by this ledger";
+            case RequestErrc::request_not_found:
+                return "rcp/request: REQUEST_NOT_FOUND";
+            case RequestErrc::request_canceled:
+                return "rcp/request: REQUEST_CANCELED";
+            case RequestErrc::compound_bundle_incomplete:
+                return "rcp/request: compound support requires compound-wait, clear-non-safestate, "
                        "and >=4 sequencers together, not compound alone";
             default:
-                return "rcp/sequencer: unknown error";
+                return "rcp/request: unknown error";
             }
         }
     };
@@ -120,18 +129,18 @@ inline const std::error_category& sequencer_category() noexcept {
     return instance;
 }
 
-inline std::error_code make_error_code(SequencerErrc e) noexcept {
-    return {static_cast<int>(e), sequencer_category()};
+inline std::error_code make_error_code(RequestErrc e) noexcept {
+    return {static_cast<int>(e), request_category()};
 }
 
 // ── request_type opcode — the message_timestamp-repurposing trick ────────────
 // When an ACF_GBB message's `mtv` bit is clear, the 64-bit message_timestamp
 // slot it would otherwise carry (and which ACF_GBB always reserves space for
-// regardless of `mtv`, per rcp/wire.hpp) is repurposed: its first byte
+// regardless of `mtv`, per rcp/acf.hpp) is repurposed: its first byte
 // becomes this opcode, and the remaining 7 bytes carry opcode-specific
 // parameters (extraction §2.7). The eight opcodes below are every kind this
 // milestone defines: five conditional request kinds plus three cancellation
-// kinds. The mandatory "standard" request kind (rcp::wire::RequestKind) has
+// kinds. The mandatory "standard" request kind (rcp::acf::RequestKind) has
 // no opcode here at all — it is always carried as ACF_ABB, which has no
 // message_timestamp slot to repurpose in the first place.
 
@@ -206,7 +215,7 @@ constexpr bool is_safety_variant(RequestTypeOpcode type) noexcept {
 
 // encode_request_type packs `type` into the top byte and `params` into the
 // remaining 7 bytes of a 64-bit value, most-significant byte first — the
-// same big-endian convention rcp/wire.hpp's put_u64 uses elsewhere in this
+// same big-endian convention rcp/avtp.hpp's put_u64 uses elsewhere in this
 // codebase, kept consistent here even though this file does not call that
 // (internal, unexported) helper directly.
 constexpr uint64_t encode_request_type(RequestTypeOpcode type, const std::array<uint8_t, 7>& params) noexcept {
@@ -226,9 +235,9 @@ constexpr uint64_t encode_request_type(RequestTypeOpcode type, const std::array<
 inline std::error_code decode_request_type(bool mtv, uint64_t message_timestamp,
                                             RequestTypeOpcode& out_type,
                                             std::array<uint8_t, 7>& out_params) noexcept {
-    if (mtv) return make_error_code(SequencerErrc::timestamp_not_repurposed);
+    if (mtv) return make_error_code(RequestErrc::timestamp_not_repurposed);
     const uint8_t byte0 = static_cast<uint8_t>((message_timestamp >> 56) & 0xFF);
-    if (!is_valid_request_type(byte0)) return make_error_code(SequencerErrc::unknown_request_type);
+    if (!is_valid_request_type(byte0)) return make_error_code(RequestErrc::unknown_request_type);
     out_type = static_cast<RequestTypeOpcode>(byte0);
     for (size_t i = 0; i < 7; ++i)
         out_params[i] = static_cast<uint8_t>((message_timestamp >> (48 - 8 * i)) & 0xFF);
@@ -239,13 +248,13 @@ inline std::error_code decode_request_type(bool mtv, uint64_t message_timestamp,
 // conditional/cancellation request: always ACF_GBB, always mtv=false (the
 // repurposing trick above requires it), with `cs` set per the caller's
 // request-kind-specific meaning (see the `cs` section below). Callers pass
-// the result to rcp::wire::encode_acf_gbb alongside encode_request_type's
+// the result to rcp::acf::encode_acf_gbb alongside encode_request_type's
 // output as the message_timestamp argument — no new wire encoding is
 // introduced here, only this semantic layer over the existing one.
-inline wire::AcfMessageInfo make_conditional_request(wire::ByteBusId bus_id, uint8_t transaction_num,
-                                                       bool cs) noexcept {
-    wire::AcfMessageInfo info;
-    info.acf_msg_type    = wire::kAcfMsgTypeGbb;
+inline acf::AcfMessageInfo make_conditional_request(avtp::ByteBusId bus_id, uint8_t transaction_num,
+                                                      bool cs) noexcept {
+    acf::AcfMessageInfo info;
+    info.acf_msg_type    = acf::kAcfMsgTypeGbb;
     info.mtv              = false;
     info.byte_bus_id      = bus_id;
     info.transaction_num  = transaction_num;
@@ -334,7 +343,7 @@ inline std::optional<size_t> select_next_due(const std::vector<DueCandidate>& du
 }
 
 // ── The `cs` field's two request-kind-specific meanings ───────────────────────
-// AcfMessageInfo::cs (rcp/wire.hpp) is a single wire bit whose meaning
+// AcfMessageInfo::cs (rcp/acf.hpp) is a single wire bit whose meaning
 // depends entirely on which conditional request kind it rides on (extraction
 // §2.4): for compound-wait it selects when the wait condition is first
 // checked; for chained it selects whether a successor cares about its
@@ -388,7 +397,7 @@ inline std::error_code validate_feature_bundles(const FeatureSet& f) noexcept {
     if (!claims_compound_support) return {};
     const bool complete = f.compound && f.compound_wait && f.clear_non_safestate &&
                            f.sequencer_count >= kMinCompoundSequencers;
-    return complete ? std::error_code{} : make_error_code(SequencerErrc::compound_bundle_incomplete);
+    return complete ? std::error_code{} : make_error_code(RequestErrc::compound_bundle_incomplete);
 }
 
 // implemented_options_bits reports the svr_implemented_options bit(s)
@@ -426,7 +435,7 @@ public:
     size_t size() const noexcept { return states_.size(); }
 
     std::error_code state_of(size_t index, regmap::SequencerState& out) const noexcept {
-        if (index >= states_.size()) return make_error_code(SequencerErrc::index_out_of_range);
+        if (index >= states_.size()) return make_error_code(RequestErrc::index_out_of_range);
         out = states_[index];
         return {};
     }
@@ -441,7 +450,7 @@ public:
     // not match" for a failure of the call itself.
     std::error_code try_advance(size_t index, regmap::SequencerState expected_start,
                                  bool& out_advanced) noexcept {
-        if (index >= states_.size()) return make_error_code(SequencerErrc::index_out_of_range);
+        if (index >= states_.size()) return make_error_code(RequestErrc::index_out_of_range);
         if (states_[index] == expected_start) {
             states_[index] = static_cast<regmap::SequencerState>(states_[index] + 1);
             out_advanced = true;
@@ -533,7 +542,7 @@ public:
     // construct a fresh ledger).
     std::error_code submit(RequestRecord rec) noexcept {
         if (find(rec.transaction_num) != nullptr)
-            return make_error_code(SequencerErrc::transaction_num_collision);
+            return make_error_code(RequestErrc::transaction_num_collision);
         rec.state       = RequestState::Pending;
         rec.arrival_seq = next_arrival_seq_++;
         records_.push_back(std::move(rec));
@@ -575,10 +584,10 @@ public:
     // executing requests finish", extraction §2.7).
     std::error_code cancel_single(uint8_t txn) noexcept {
         auto* rec = find_mut(txn);
-        if (rec == nullptr) return make_error_code(SequencerErrc::request_not_found);
+        if (rec == nullptr) return make_error_code(RequestErrc::request_not_found);
         if (rec->state == RequestState::UnderExecution || rec->state == RequestState::Finalized ||
             rec->state == RequestState::Canceled)
-            return make_error_code(SequencerErrc::request_not_found);
+            return make_error_code(RequestErrc::request_not_found);
         cascade_cancel(txn);
         return {};
     }
@@ -609,7 +618,7 @@ public:
 
     std::error_code outcome_of(uint8_t txn, std::error_code& out) const noexcept {
         const auto* rec = find(txn);
-        if (rec == nullptr) return make_error_code(SequencerErrc::unknown_transaction);
+        if (rec == nullptr) return make_error_code(RequestErrc::unknown_transaction);
         out = rec->outcome.value_or(std::error_code{});
         return {};
     }
@@ -625,8 +634,8 @@ private:
 
     std::error_code transition(uint8_t txn, RequestState from, RequestState to) noexcept {
         auto* rec = find_mut(txn);
-        if (rec == nullptr) return make_error_code(SequencerErrc::unknown_transaction);
-        if (rec->state != from) return make_error_code(SequencerErrc::invalid_lifecycle_transition);
+        if (rec == nullptr) return make_error_code(RequestErrc::unknown_transaction);
+        if (rec->state != from) return make_error_code(RequestErrc::invalid_lifecycle_transition);
         rec->state = to;
         return {};
     }
@@ -642,7 +651,7 @@ private:
             rec->state == RequestState::Canceled)
             return;
         rec->state   = RequestState::Canceled;
-        rec->outcome = make_error_code(SequencerErrc::request_canceled);
+        rec->outcome = make_error_code(RequestErrc::request_canceled);
         for (uint8_t succ : rec->chained_successors) cascade_cancel(succ);
     }
 
@@ -672,11 +681,11 @@ private:
     size_t                      next_arrival_seq_ = 0;
 };
 
-} // namespace sequencer
+} // namespace request
 } // namespace rcp
 
-// Enable std::error_code construction from rcp::sequencer::SequencerErrc.
+// Enable std::error_code construction from rcp::request::RequestErrc.
 namespace std {
 template <>
-struct is_error_code_enum<rcp::sequencer::SequencerErrc> : true_type {};
+struct is_error_code_enum<rcp::request::RequestErrc> : true_type {};
 } // namespace std

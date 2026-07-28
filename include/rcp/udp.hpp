@@ -18,7 +18,7 @@
 //
 // Frame format is defined in rcp/legacy_wire.hpp — the pre-replacement
 // 16-byte Zone/Command/Response/Status frame, not the TC18 AVTPDU/ACF codec
-// now in rcp/wire.hpp. This transport is rebuilt to carry real AVTPDU
+// now in rcp/avtp.hpp and rcp/acf.hpp. This transport is rebuilt to carry real AVTPDU
 // frames at v2.13.0 (ROADMAP.md); until then it deliberately keeps using
 // the old frame format so it keeps building and working against the
 // still-current Zone/Command model.

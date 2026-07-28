@@ -24,13 +24,13 @@ using namespace rcp::e2e;
 using rcp::regmap::EndpointGenericConfig;
 using rcp::regmap::RequestStreamConfig;
 using rcp::regmap::RxSafetyMeasure;
-using rcp::sequencer::RequestLedger;
-using rcp::sequencer::RequestRecord;
-using rcp::sequencer::RequestTypeOpcode;
-using rcp::sequencer::SequencerTable;
-using rcp::sequencer::request_record_for;
-using rcp::wire::AcfMessageInfo;
-using rcp::wire::StreamId;
+using rcp::request::RequestLedger;
+using rcp::request::RequestRecord;
+using rcp::request::RequestTypeOpcode;
+using rcp::request::SequencerTable;
+using rcp::request::request_record_for;
+using rcp::acf::AcfMessageInfo;
+using rcp::avtp::StreamId;
 
 namespace {
 
@@ -90,7 +90,7 @@ TEST_CASE("coverage_buffer layout is stream_id + avtp_timestamp + ACF header + p
     std::vector<uint8_t> payload{1, 2, 3};
 
     auto buf = coverage_buffer(sid, uint32_t{0xDEADBEEF}, info, payload);
-    REQUIRE(buf.size() == 8 + 4 + rcp::wire::kAcfCommonHeaderLen + payload.size());
+    REQUIRE(buf.size() == 8 + 4 + rcp::acf::kAcfCommonHeaderLen + payload.size());
 
     // stream_id occupies the first 8 bytes, big-endian.
     REQUIRE(buf[0] == sid.mac[0]);
@@ -132,12 +132,12 @@ TEST_CASE("apply_acf_length_adjustment adds exactly one quadlet", "[e2e][REQ-E2E
 
 TEST_CASE("apply_frame_length_adjustment adds exactly four octets to NTSCF and TSCF headers",
           "[e2e][REQ-E2E-003]") {
-    rcp::wire::NtscfHeader ntscf;
+    rcp::avtp::NtscfHeader ntscf;
     ntscf.control_data_length = 20;
     apply_frame_length_adjustment(ntscf);
     REQUIRE(ntscf.control_data_length == 20 + kCrcLengthAdjustOctets);
 
-    rcp::wire::TscfHeader tscf;
+    rcp::avtp::TscfHeader tscf;
     tscf.control_data_length = 30;
     apply_frame_length_adjustment(tscf);
     REQUIRE(tscf.control_data_length == 30 + kCrcLengthAdjustOctets);
@@ -286,8 +286,8 @@ TEST_CASE("apply_watchdog_overflow purges normal requests but retains safety-tag
 
     REQUIRE(purged == 1);
     REQUIRE(wd.in_safe_state());
-    REQUIRE(ledger.find(1)->state == rcp::sequencer::RequestState::Canceled);
-    REQUIRE(ledger.find(2)->state == rcp::sequencer::RequestState::Pending);
+    REQUIRE(ledger.find(1)->state == rcp::request::RequestState::Canceled);
+    REQUIRE(ledger.find(2)->state == rcp::request::RequestState::Pending);
 }
 
 TEST_CASE("apply_watchdog_overflow purges nothing and does not enter safe state when disabled",
@@ -299,7 +299,7 @@ TEST_CASE("apply_watchdog_overflow purges nothing and does not enter safe state 
     RxWatchdog wd;
     REQUIRE(apply_watchdog_overflow(cfg, wd, ledger) == 0);
     REQUIRE_FALSE(wd.in_safe_state());
-    REQUIRE(ledger.find(1)->state == rcp::sequencer::RequestState::Pending);
+    REQUIRE(ledger.find(1)->state == rcp::request::RequestState::Pending);
 }
 
 TEST_CASE("apply_queue_overflow implements the same purge-normal/retain-safety rule via a "
@@ -315,8 +315,8 @@ TEST_CASE("apply_queue_overflow implements the same purge-normal/retain-safety r
     RxWatchdog wd;
     REQUIRE(apply_queue_overflow(cfg, wd, ledger) == 1);
     REQUIRE(wd.in_safe_state());
-    REQUIRE(ledger.find(1)->state == rcp::sequencer::RequestState::Canceled);
-    REQUIRE(ledger.find(2)->state == rcp::sequencer::RequestState::Pending);
+    REQUIRE(ledger.find(1)->state == rcp::request::RequestState::Canceled);
+    REQUIRE(ledger.find(2)->state == rcp::request::RequestState::Pending);
 }
 
 // ── Safe-state gating ─────────────────────────────────────────────────────────

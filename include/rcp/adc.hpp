@@ -47,7 +47,7 @@
 // text from that document is reproduced here. The concrete averaging
 // combinator (arithmetic mean at both levels) and cadence-pattern API shape
 // chosen in this file are this implementation's own, same as the equivalent
-// disclaimers in rcp/wire.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
+// disclaimers in rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
 // rcp/gpio.hpp, and rcp/spi.hpp.
 #pragma once
 

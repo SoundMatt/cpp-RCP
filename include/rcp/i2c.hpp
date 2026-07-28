@@ -23,7 +23,7 @@
 // the extraction leaves the mapping of I2C's `i2c_mode` field (device
 // speed grade — Standard/Fast/Fast-mode-Plus/High-Speed) onto wire values
 // ambiguous beyond the coarse `AcfMessageInfo::hs` "high-speed requested"
-// flag rcp/wire.hpp already reserves for this purpose. This header
+// flag rcp/acf.hpp already reserves for this purpose. This header
 // therefore only decodes that coarse bit (see i2c_mode_of below) and does
 // not attempt to further distinguish the standard-speed grades from each
 // other; extending i2c_mode_of to do so must wait for a spec errata pass
@@ -33,7 +33,7 @@
 // an internal structured extraction of the specification named above; no
 // text from that document is reproduced here. The concrete transfer-shape
 // and trigger-signal id encoding chosen in this file are this
-// implementation's own, same as the equivalent disclaimers in rcp/wire.hpp,
+// implementation's own, same as the equivalent disclaimers in rcp/avtp.hpp,
 // rcp/regmap.hpp, rcp/endpoint.hpp, rcp/gpio.hpp, and rcp/spi.hpp.
 #pragma once
 

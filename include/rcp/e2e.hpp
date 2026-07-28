@@ -16,7 +16,7 @@
 // End-to-end CRC safe points — the OPEN Alliance TC18 Remote Control
 // Protocol Specification v0.5.1_RC's actual E2E integrity mechanism, plus
 // the per-request-stream watchdog and safe-state primitives that the
-// safety-tagged (0x8x) request variants (rcp/sequencer.hpp) depend on
+// safety-tagged (0x8x) request variants (rcp/request.hpp) depend on
 // (extraction §3.8, §4.4, §4.7, §6 item 4).
 //
 // ROADMAP.md milestone 50, "E2E CRC Safe Points & Safety-Request Variants
@@ -25,19 +25,20 @@
 // — the prior ad-hoc CRC-16/CCITT-FALSE + sequence-counter + replay-window
 // wrapper around rcp.hpp's Controller is discarded, not adapted. Nothing
 // else in this tree depended on that old API (only this file's own test
-// did), so no legacy shim is needed here, unlike rcp/wire.hpp's
+// did), so no legacy shim is needed here, unlike rcp/avtp.hpp's/rcp/acf.hpp's
 // rcp/legacy_wire.hpp split at v2.0.0.
 //
-// This header rides on top of rcp/wire.hpp's AcfMessageInfo/StreamId
-// (v2.0.0), rcp/regmap.hpp's RequestStreamConfig/EndpointGenericConfig
+// This header rides on top of rcp/acf.hpp's AcfMessageInfo and
+// rcp/avtp.hpp's StreamId (v2.0.0, split from the original rcp/wire.hpp per
+// RELAY spec §13.7.2), rcp/regmap.hpp's RequestStreamConfig/EndpointGenericConfig
 // (v2.1.0, expanded to their full v2.6.0 field set alongside this header),
-// and rcp/sequencer.hpp's RequestRecord/RequestLedger/SequencerTable
-// (v2.5.0/v2.6.0) without modifying any of their core framing — the CRC
-// coverage builder below serializes an already-built AcfMessageInfo rather
-// than reaching into rcp/wire.hpp's codec internals, and the
-// watchdog-overflow queue behavior reuses
-// rcp::sequencer::RequestLedger::cancel_all(non_safestate_only) directly
-// rather than reimplementing cancellation.
+// and rcp/request.hpp's RequestRecord/RequestLedger/SequencerTable
+// (v2.5.0/v2.6.0, renamed from rcp/sequencer.hpp per RELAY spec §13.7.2)
+// without modifying any of their core framing — the CRC coverage builder
+// below serializes an already-built AcfMessageInfo rather than reaching
+// into rcp/acf.hpp's codec internals, and the watchdog-overflow queue
+// behavior reuses rcp::request::RequestLedger::cancel_all(non_safestate_only)
+// directly rather than reimplementing cancellation.
 //
 // Field names and behavior below implement TC18's *behavior* as described
 // in an internal structured extraction of the specification named above;
@@ -46,16 +47,17 @@
 // class shapes chosen in this file are this implementation's own encoding
 // of that behavior — full bit-for-bit conformance against other TC18
 // implementations is not claimed, same as the equivalent disclaimers in
-// rcp/wire.hpp, rcp/regmap.hpp, and rcp/sequencer.hpp. This header
-// provides primitives, not a running scheduler or timer thread — deciding
-// *when* to call overflowed()/kick()/should_emit_info_notification() is
-// left to the embedding application, same as every other header in this
+// rcp/avtp.hpp, rcp/acf.hpp, rcp/regmap.hpp, and rcp/request.hpp. This
+// header provides primitives, not a running scheduler or timer thread —
+// deciding *when* to call overflowed()/kick()/should_emit_info_notification()
+// is left to the embedding application, same as every other header in this
 // codebase.
 #pragma once
 
+#include <rcp/acf.hpp>
+#include <rcp/avtp.hpp>
 #include <rcp/regmap.hpp>
-#include <rcp/sequencer.hpp>
-#include <rcp/wire.hpp>
+#include <rcp/request.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -164,15 +166,15 @@ constexpr uint16_t kCrcLengthAdjustOctets   = 4; // +4 octets on an outer AVTPDU
 // kCrcLengthAdjustQuadlets. Call this before encode_acf_abb/encode_acf_gbb
 // so the trailing CRC's length is already baked into the header the CRC
 // itself covers.
-inline void apply_acf_length_adjustment(wire::AcfMessageInfo& info) noexcept {
+inline void apply_acf_length_adjustment(acf::AcfMessageInfo& info) noexcept {
     info.acf_msg_length = static_cast<uint16_t>(info.acf_msg_length + kCrcLengthAdjustQuadlets);
 }
 
 // apply_frame_length_adjustment mutates an outer AVTPDU header's
 // control_data_length in place, per kCrcLengthAdjustOctets — the paired
 // +4 octet adjustment at the frame level. Templated over
-// wire::NtscfHeader/wire::TscfHeader since both carry a control_data_length
-// field of the same name but rcp/wire.hpp deliberately keeps them as two
+// avtp::NtscfHeader/avtp::TscfHeader since both carry a control_data_length
+// field of the same name but rcp/avtp.hpp deliberately keeps them as two
 // independent structs with no common base to adjust through instead.
 template <typename Header>
 inline void apply_frame_length_adjustment(Header& hdr) noexcept {
@@ -200,19 +202,19 @@ inline void put_u64_be(std::vector<uint8_t>& buf, uint64_t v) {
 // already have apply_acf_length_adjustment() applied if the caller wants
 // the trailer's length reflected in the coverage — this function only
 // serializes whatever AcfMessageInfo it is given.
-inline std::vector<uint8_t> coverage_buffer(const wire::StreamId& stream_id,
+inline std::vector<uint8_t> coverage_buffer(const avtp::StreamId& stream_id,
                                              std::optional<uint32_t> avtp_timestamp,
-                                             const wire::AcfMessageInfo& info,
+                                             const acf::AcfMessageInfo& info,
                                              const std::vector<uint8_t>& payload) {
     std::vector<uint8_t> buf;
-    buf.reserve(8 + 4 + wire::kAcfCommonHeaderLen + payload.size());
+    buf.reserve(8 + 4 + acf::kAcfCommonHeaderLen + payload.size());
 
     detail::put_u64_be(buf, stream_id.to_u64());
     detail::put_u32_be(buf, avtp_timestamp.value_or(0)); // zero-filled stand-in under NTSCF
 
-    uint8_t hdr[wire::kAcfCommonHeaderLen];
-    wire::encode_acf_message_info(info, hdr);
-    buf.insert(buf.end(), hdr, hdr + wire::kAcfCommonHeaderLen);
+    uint8_t hdr[acf::kAcfCommonHeaderLen];
+    acf::encode_acf_message_info(info, hdr);
+    buf.insert(buf.end(), hdr, hdr + acf::kAcfCommonHeaderLen);
 
     buf.insert(buf.end(), payload.begin(), payload.end());
     return buf;
@@ -220,8 +222,8 @@ inline std::vector<uint8_t> coverage_buffer(const wire::StreamId& stream_id,
 
 // compute_crc is coverage_buffer() + crc32() in one call — the usual way a
 // caller actually wants this used.
-inline uint32_t compute_crc(const wire::StreamId& stream_id, std::optional<uint32_t> avtp_timestamp,
-                             const wire::AcfMessageInfo& info, const std::vector<uint8_t>& payload) {
+inline uint32_t compute_crc(const avtp::StreamId& stream_id, std::optional<uint32_t> avtp_timestamp,
+                             const acf::AcfMessageInfo& info, const std::vector<uint8_t>& payload) {
     return crc32(coverage_buffer(stream_id, avtp_timestamp, info, payload));
 }
 
@@ -239,8 +241,8 @@ inline void append_crc(std::vector<uint8_t>& frame, uint32_t crc) {
 // and compares it against `received_crc` (as decoded from a frame's
 // trailing 4 octets). Returns E2eErrc::crc_error — the CRC_ERROR failure
 // path — on mismatch.
-inline std::error_code verify_crc(const wire::StreamId& stream_id, std::optional<uint32_t> avtp_timestamp,
-                                   const wire::AcfMessageInfo& info, const std::vector<uint8_t>& payload,
+inline std::error_code verify_crc(const avtp::StreamId& stream_id, std::optional<uint32_t> avtp_timestamp,
+                                   const acf::AcfMessageInfo& info, const std::vector<uint8_t>& payload,
                                    uint32_t received_crc) {
     if (compute_crc(stream_id, avtp_timestamp, info, payload) != received_crc)
         return make_error_code(E2eErrc::crc_error);
@@ -270,7 +272,7 @@ inline bool crc_required(const regmap::EndpointGenericConfig& cfg, MessageRole r
 // caller's server actually implements the E2E CRC safe-point / safety-
 // request mechanism — an explicit, testable single call site rather than a
 // bit a caller might set by hand and forget to gate on real support,
-// mirroring rcp::sequencer::implemented_options_bits' equivalent pattern.
+// mirroring rcp::request::implemented_options_bits' equivalent pattern.
 inline uint32_t implemented_options_bit(bool safety_requests_implemented) noexcept {
     return safety_requests_implemented ? regmap::kOptSafetyRequests : 0;
 }
@@ -328,7 +330,7 @@ private:
 // ── RxWatchdog — rx_wd_* / rx_ovrflw_safestate_enable (extraction §3.8) ──────
 // Per-request-stream watchdog and safe-state latch. Deciding *when* to call
 // kick()/overflowed() (i.e. running a timer loop) is left to the embedding
-// application, same as rcp::sequencer::select_next_due's equivalent
+// application, same as rcp::request::select_next_due's equivalent
 // "primitives, not a scheduler" split.
 class RxWatchdog {
 public:
@@ -378,12 +380,12 @@ private:
 // canceled exactly as clear-non-safestate (0x06) would, while safety-tagged
 // (0x8x) records are left untouched so they can go on to drive the
 // endpoint through its safe-state sequence. This reuses
-// sequencer::RequestLedger::cancel_all directly rather than reimplementing
-// cancellation — see rcp/sequencer.hpp's header comment. Returns the count
+// request::RequestLedger::cancel_all directly rather than reimplementing
+// cancellation — see rcp/request.hpp's header comment. Returns the count
 // cancel_all() itself returns (0 if the feature is disabled, since nothing
 // is purged in that case).
 inline size_t apply_watchdog_overflow(const regmap::RequestStreamConfig& cfg, RxWatchdog& wd,
-                                       sequencer::RequestLedger& ledger) noexcept {
+                                       request::RequestLedger& ledger) noexcept {
     if (!cfg.rx_wd_safestate_enable) return 0;
     wd.enter_safe_state();
     return ledger.cancel_all(/*non_safestate_only=*/true);
@@ -394,7 +396,7 @@ inline size_t apply_watchdog_overflow(const regmap::RequestStreamConfig& cfg, Rx
 // be configured, via cfg.rx_ovrflw_safestate_enable, to drive the endpoint
 // into safe state and purge normal requests the same way.
 inline size_t apply_queue_overflow(const regmap::RequestStreamConfig& cfg, RxWatchdog& wd,
-                                    sequencer::RequestLedger& ledger) noexcept {
+                                    request::RequestLedger& ledger) noexcept {
     if (!cfg.rx_ovrflw_safestate_enable) return 0;
     wd.enter_safe_state();
     return ledger.cancel_all(/*non_safestate_only=*/true);
@@ -415,7 +417,7 @@ inline size_t apply_queue_overflow(const regmap::RequestStreamConfig& cfg, RxWat
 // "safe state" is structural: cfg.rx_safestate_sequencer currently holding
 // exactly cfg.rx_safe_sequencer_state.
 inline bool endpoint_in_configured_safe_state(const regmap::RequestStreamConfig& cfg,
-                                               const sequencer::SequencerTable& sequencers,
+                                               const request::SequencerTable& sequencers,
                                                bool force_high_impedance_asserted) noexcept {
     if (cfg.rx_safety_measure == regmap::RxSafetyMeasure::ForceHighImpedance)
         return force_high_impedance_asserted;
@@ -428,9 +430,9 @@ inline bool endpoint_in_configured_safe_state(const regmap::RequestStreamConfig&
 // may_execute_now gates dispatch of one decoded request record: a
 // non-safety record is always eligible as far as this rule is concerned
 // (subject to whatever other checks the caller already applies elsewhere);
-// a safety-tagged (0x8x, sequencer::RequestRecord::is_safety) record is
+// a safety-tagged (0x8x, request::RequestRecord::is_safety) record is
 // only eligible once `endpoint_in_safe_state` is true.
-inline bool may_execute_now(const sequencer::RequestRecord& rec, bool endpoint_in_safe_state) noexcept {
+inline bool may_execute_now(const request::RequestRecord& rec, bool endpoint_in_safe_state) noexcept {
     return !rec.is_safety || endpoint_in_safe_state;
 }
 

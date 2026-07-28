@@ -38,7 +38,7 @@
 // text from that document is reproduced here. The concrete request/response
 // field widths, the native-CRC algorithm, and the trigger-signal id
 // encoding chosen in this file are this implementation's own, same as the
-// equivalent disclaimers in rcp/wire.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
+// equivalent disclaimers in rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
 // and rcp/e2e.hpp.
 #pragma once
 

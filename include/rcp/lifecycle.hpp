@@ -27,7 +27,7 @@
 // rules and locking policy chosen in this file are this implementation's
 // own encoding of that behavior — full bit-for-bit register-map
 // conformance against other TC18 implementations is a later-milestone
-// concern, same as rcp/wire.hpp's disclaimer for the wire codec.
+// concern, same as rcp/avtp.hpp's disclaimer for the wire codec.
 #pragma once
 
 #include <cstdint>

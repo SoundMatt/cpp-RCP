@@ -6,6 +6,6 @@
 namespace rcp {
 
 // Semantic version of the cpp-RCP implementation (matches the latest git tag).
-constexpr std::string_view kVersion = "2.7.0";
+constexpr std::string_view kVersion = "2.7.1";
 
 } // namespace rcp

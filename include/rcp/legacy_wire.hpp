@@ -14,10 +14,12 @@
 // Binary frame codec for the pre-replacement Zone/Command/Response/Status
 // model, used today only as the internal frame format of rcp/udp.hpp.
 //
-// This is the old bespoke 16-byte header that rcp/wire.hpp carried before
-// the TC18 protocol-replacement roadmap (ROADMAP.md, "44. Wire Format Core
-// (v2.0.0)"). rcp/wire.hpp itself has been rebuilt as the IEEE 1722
-// AVTPDU/ACF codec; this file exists solely so rcp/udp.hpp keeps building
+// This is the old bespoke 16-byte header that this module (then named
+// rcp/wire.hpp) carried before the TC18 protocol-replacement roadmap
+// (ROADMAP.md, "44. Wire Format Core (v2.0.0)"). The new format has been
+// built as the IEEE 1722 AVTPDU/ACF codec, in rcp/avtp.hpp and rcp/acf.hpp
+// (split per RELAY spec §13.7.2's standard module-name registry); this file
+// exists solely so rcp/udp.hpp keeps building
 // and working against the still-current Zone/Command/Response/Status types
 // until the Phase 13/14 model replacement (v2.1.0 onward) removes them and
 // rcp/udp.hpp is rebuilt against the new wire format (v2.13.0, per the

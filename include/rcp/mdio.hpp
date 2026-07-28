@@ -27,7 +27,7 @@
 // an internal structured extraction of the specification named above; no
 // text from that document is reproduced here. The concrete request/response
 // field widths and register-key composition chosen in this file are this
-// implementation's own, same as the equivalent disclaimers in rcp/wire.hpp,
+// implementation's own, same as the equivalent disclaimers in rcp/avtp.hpp,
 // rcp/regmap.hpp, and rcp/endpoint.hpp.
 #pragma once
 

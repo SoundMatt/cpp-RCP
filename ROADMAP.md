@@ -980,6 +980,36 @@ orthogonal to the protocol replacement.
 | `relay/relay.hpp` | KEEP AS-IS | Protocol-agnostic `Message`/`Channel`/`Node`/`Caller`/`Errc` types have no dependency on `rcp::` internals; only the RCP-side mapping in `adapt.hpp` needs rework |
 | Safety/certification tooling (`.fusa*.json`, `fmea.*`, `HARA.md`, `TARA-ANALYSIS.md`, `SAFETY_PLAN.md`, `CYBERSECURITY.md`, `AUDIT_PACK.md`, `tla/`, `cmake/`, `tooling/`) | KEEP AS-IS | Genuinely orthogonal process/tooling scaffolding; regenerated with new requirement IDs at the Certification Refresh milestone (v2.18.0) rather than redesigned |
 
+### Post-hoc naming reconciliation (RELAY spec §13.7.2, issue #45)
+
+RELAY spec v1.14 expanded §13.7.2's standard module-name registry with
+canonical names for the RCP protocol-core concerns this Phase 13 rewrite
+builds, prompted by comparing this effort against the equivalent go/rust/c
+RCP replacements. Two naming deltas from milestone 44/49 above were
+corrected to match, without any behavior change:
+
+- `rcp/wire.hpp` (milestone 44, v2.0.0) is split into `rcp/avtp.hpp`
+  (AVTPDU/NTSCF/TSCF header framing) and `rcp/acf.hpp` (ACF_ABB/ACF_GBB
+  message format) — the registry names these two concerns separately.
+  Every table/paragraph above that refers to `rcp/wire.hpp` as the then-
+  current file is describing the shape of the milestone 44/49/50/51 work as
+  it shipped at the time; the file itself now lives under those two names.
+  `rcp/legacy_wire.hpp` (the pre-replacement 16-byte codec) is unaffected
+  and keeps its name.
+- `rcp/sequencer.hpp` (milestone 49, v2.5.0) is renamed `rcp/request.hpp` to
+  match the registry's `request` entry ("conditional-request taxonomy... and
+  sequencers") — the file's contents already covered exactly that combined
+  scope, so this was a rename, not a split; `SequencerTable` keeps its name
+  as the internal sequencer-state sub-concept within the module.
+- `rcp/lifecycle.hpp`, `rcp/regmap.hpp`, `rcp/discovery.hpp`, and
+  `rcp/e2e.hpp` already matched the registry and were left unchanged.
+- `rcp/fragment.hpp` is not created: milestone 52 (v2.8.0) above already
+  decided fragmentation no-go for this cycle, so there is no fragmentation
+  logic anywhere in this tree to extract into a module.
+- `canbr.hpp`/`linbr.hpp`'s DEPRECATE call above (vs. go-RCP's ADAPT) is a
+  real cross-repo architectural difference, not a naming issue, and is
+  intentionally left unresolved here — see issue #45.
+
 ---
 ### Appendix A — Legacy Roadmap (v0.1.0–v1.11, superseded)
 ---

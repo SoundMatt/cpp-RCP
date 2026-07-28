@@ -62,7 +62,7 @@
 // ROADMAP.md milestone 45 ("RC Server Lifecycle & Register-Map Model,
 // v2.1.0") for why this file could not simply be deleted at that milestone.
 // The new stream/endpoint/register-map model that supersedes the types
-// below lives in rcp/wire.hpp (v2.0.0), rcp/lifecycle.hpp, and
+// below lives in rcp/avtp.hpp/rcp/acf.hpp (v2.0.0), rcp/lifecycle.hpp, and
 // rcp/regmap.hpp (both v2.1.0); do not build new functionality on top of
 // Zone/Command/Controller/Registry going forward.
 #pragma once
