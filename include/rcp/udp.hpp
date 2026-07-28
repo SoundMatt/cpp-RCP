@@ -16,11 +16,16 @@
 // On POSIX (Linux, macOS): full implementation using BSD sockets.
 // On Windows: stub that returns std::errc::function_not_supported.
 //
-// Frame format is defined in rcp/wire.hpp.
+// Frame format is defined in rcp/legacy_wire.hpp — the pre-replacement
+// 16-byte Zone/Command/Response/Status frame, not the TC18 AVTPDU/ACF codec
+// now in rcp/wire.hpp. This transport is rebuilt to carry real AVTPDU
+// frames at v2.13.0 (ROADMAP.md); until then it deliberately keeps using
+// the old frame format so it keeps building and working against the
+// still-current Zone/Command model.
 #pragma once
 
 #include "rcp.hpp"
-#include "wire.hpp"
+#include "legacy_wire.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -107,7 +112,7 @@ public:
     void publish(const std::vector<uint8_t>& payload) {
         uint32_t seq = ++seq_;
         Status st{zone_, seq, healthy_.load(), payload};
-        auto frame = wire::encode_status(st);
+        auto frame = legacy_wire::encode_status(st);
         std::lock_guard<std::mutex> lk(mu_);
         for (auto& kv : subscribers_) {
             ::sendto(fd_, frame.data(), frame.size(), 0,
@@ -146,33 +151,33 @@ private:
     }
 
     void serve() {
-        std::vector<uint8_t> buf(wire::HeaderLen + wire::MaxPayload);
+        std::vector<uint8_t> buf(legacy_wire::HeaderLen + legacy_wire::MaxPayload);
         sockaddr_in client{};
         socklen_t   clen = sizeof(client);
         while (!closed_.load()) {
             ssize_t n = ::recvfrom(fd_, buf.data(), buf.size(), 0,
                                     reinterpret_cast<sockaddr*>(&client), &clen);
             if (n <= 0) break;
-            if (static_cast<size_t>(n) < wire::HeaderLen) continue;
+            if (static_cast<size_t>(n) < legacy_wire::HeaderLen) continue;
             switch (buf[3]) {
-            case wire::TypeCommand: {
+            case legacy_wire::TypeCommand: {
                 Command cmd;
-                if (wire::decode_command(buf.data(), static_cast<size_t>(n), cmd)) break;
+                if (legacy_wire::decode_command(buf.data(), static_cast<size_t>(n), cmd)) break;
                 Response resp;
                 {
                     std::lock_guard<std::mutex> lk(mu_);
                     if (handler_) resp = handler_(cmd);
                     else          resp = Response{cmd.id, zone_, ResponseStatus::OK, {}};
                 }
-                auto frame = wire::encode_response(resp);
+                auto frame = legacy_wire::encode_response(resp);
                 ::sendto(fd_, frame.data(), frame.size(), 0,
                          reinterpret_cast<sockaddr*>(&client), clen);
                 break;
             }
-            case wire::TypeSubscribe:
+            case legacy_wire::TypeSubscribe:
                 subscribers_[addr_key(client)] = client;
                 break;
-            case wire::TypeUnsubscribe:
+            case legacy_wire::TypeUnsubscribe:
                 subscribers_.erase(addr_key(client));
                 break;
             default:
@@ -222,7 +227,7 @@ public:
         if (!cmd.payload.empty()) safe.payload = cmd.payload;
         safe.id = id;
 
-        auto frame  = wire::encode_command(safe);
+        auto frame  = legacy_wire::encode_command(safe);
         auto result = std::make_shared<std::promise<Response>>();
         auto future = result->get_future();
         {
@@ -266,7 +271,7 @@ public:
         }
 
         // Send subscribe control frame.
-        auto frame = wire::encode_control(wire::TypeSubscribe, zone_);
+        auto frame = legacy_wire::encode_control(legacy_wire::TypeSubscribe, zone_);
         ::send(fd_, frame.data(), frame.size(), 0);
 
         std::thread([this, weak_ch = std::weak_ptr<StatusChannel>(ch), ctx]() mutable {
@@ -277,7 +282,7 @@ public:
             }
             // Send unsubscribe.
             if (!closed_.load()) {
-                auto frame2 = wire::encode_control(wire::TypeUnsubscribe, zone_);
+                auto frame2 = legacy_wire::encode_control(legacy_wire::TypeUnsubscribe, zone_);
                 ::send(fd_, frame2.data(), frame2.size(), 0);
             }
             auto c = weak_ch.lock();
@@ -321,15 +326,15 @@ private:
     std::thread read_thread_;
 
     void read_loop() {
-        std::vector<uint8_t> buf(wire::HeaderLen + wire::MaxPayload);
+        std::vector<uint8_t> buf(legacy_wire::HeaderLen + legacy_wire::MaxPayload);
         while (!closed_.load()) {
             ssize_t n = ::recv(fd_, buf.data(), buf.size(), 0);
             if (n <= 0) break;
-            if (static_cast<size_t>(n) < wire::HeaderLen) continue;
+            if (static_cast<size_t>(n) < legacy_wire::HeaderLen) continue;
             switch (buf[3]) {
-            case wire::TypeResponse: {
+            case legacy_wire::TypeResponse: {
                 Response resp;
-                if (wire::decode_response(buf.data(), static_cast<size_t>(n), resp)) break;
+                if (legacy_wire::decode_response(buf.data(), static_cast<size_t>(n), resp)) break;
                 std::lock_guard<std::mutex> lk(mu_);
                 auto it = pending_.find(resp.command_id);
                 if (it != pending_.end()) {
@@ -337,9 +342,9 @@ private:
                 }
                 break;
             }
-            case wire::TypeStatus: {
+            case legacy_wire::TypeStatus: {
                 Status st;
-                if (wire::decode_status(buf.data(), static_cast<size_t>(n), st)) break;
+                if (legacy_wire::decode_status(buf.data(), static_cast<size_t>(n), st)) break;
                 std::lock_guard<std::mutex> lk(mu_);
                 for (auto& s : subs_) s->push(st);
                 break;
