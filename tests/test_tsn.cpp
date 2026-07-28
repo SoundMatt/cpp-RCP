@@ -13,7 +13,7 @@
 // priority→PCP mapping and the pass-through behaviour, which are portable.
 #include <catch2/catch_test_macros.hpp>
 
-#include "rcp/mock.hpp"
+#include "rcp/legacy_mock.hpp"
 #include "rcp/tsn.hpp"
 
 using namespace rcp;
@@ -50,7 +50,7 @@ TEST_CASE("tsn: send applies priority class then delegates to inner",
     // Capture the command type/priority the inner controller actually receives,
     // proving the wrapper forwards after applying the (platform-gated) PCP.
     Priority seen = Priority::Normal;
-    auto inner = std::make_shared<mock::Controller>(
+    auto inner = std::make_shared<legacy_mock::Controller>(
         Zone::FrontLeft, [&](const Command& c) {
             seen = c.priority;
             return Response{c.id, Zone::FrontLeft, ResponseStatus::OK, {}};
@@ -69,7 +69,7 @@ TEST_CASE("tsn: send applies priority class then delegates to inner",
 }
 
 TEST_CASE("tsn: subscribe delegates to inner", "[tsn][REQ-TSN-006]") {
-    auto inner = std::make_shared<mock::Controller>(Zone::Central);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::Central);
     auto ctrl  = tsn::new_controller(inner, -1, tsn::default_tsn_config());
 
     std::shared_ptr<StatusChannel> ch;

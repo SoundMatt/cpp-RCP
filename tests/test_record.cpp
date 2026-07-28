@@ -8,7 +8,7 @@
 // fusa:test REQ-REC-008
 #include <catch2/catch_test_macros.hpp>
 
-#include "rcp/mock.hpp"
+#include "rcp/legacy_mock.hpp"
 #include "rcp/record.hpp"
 
 #include <filesystem>
@@ -19,7 +19,7 @@ using namespace rcp;
 
 TEST_CASE("record: recording controller captures entries", "[record]") {
     auto rec   = std::make_shared<record::Record>();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl  = record::new_controller(inner, rec);
 
     Command cmd;
@@ -35,7 +35,7 @@ TEST_CASE("record: recording controller captures entries", "[record]") {
 
 TEST_CASE("record: multiple sends produce sequential entries", "[record]") {
     auto rec   = std::make_shared<record::Record>();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl  = record::new_controller(inner, rec);
 
     for (int i = 0; i < 3; ++i) {
@@ -52,7 +52,7 @@ TEST_CASE("record: multiple sends produce sequential entries", "[record]") {
 
 TEST_CASE("record: write_binary creates file", "[record]") {
     auto rec   = std::make_shared<record::Record>();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl  = record::new_controller(inner, rec);
 
     Command cmd;
@@ -73,7 +73,7 @@ TEST_CASE("record: write_binary creates file", "[record]") {
 
 TEST_CASE("record: entry timestamps are monotonically non-decreasing", "[record][REQ-REC-006]") {
     auto rec   = std::make_shared<record::Record>();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl  = record::new_controller(inner, rec);
 
     for (int i = 0; i < 20; ++i) {
@@ -92,7 +92,7 @@ TEST_CASE("record: entry timestamps are monotonically non-decreasing", "[record]
 
 TEST_CASE("record: forwards inner send result unchanged", "[record][REQ-REC-007]") {
     auto rec   = std::make_shared<record::Record>();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     REQUIRE_FALSE(inner->close()); // closed inner returns ErrClosed
     auto ctrl  = record::new_controller(inner, rec);
 
@@ -106,7 +106,7 @@ TEST_CASE("record: forwards inner send result unchanged", "[record][REQ-REC-007]
 
 TEST_CASE("record: Record tolerates concurrent appends", "[record][REQ-REC-008]") {
     auto rec   = std::make_shared<record::Record>();
-    auto inner = std::make_shared<mock::Controller>(Zone::Central);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::Central);
     auto ctrl  = record::new_controller(inner, rec);
 
     constexpr int kThreads = 8;
@@ -128,7 +128,7 @@ TEST_CASE("record: Record tolerates concurrent appends", "[record][REQ-REC-008]"
 
 TEST_CASE("record: playback replays entries against target", "[record][REQ-REC-004][REQ-REC-005]") {
     auto rec   = std::make_shared<record::Record>();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl  = record::new_controller(inner, rec);
 
     Command cmd;
@@ -140,7 +140,7 @@ TEST_CASE("record: playback replays entries against target", "[record][REQ-REC-0
 
     REQUIRE(rec->size() == 1);
 
-    auto target = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto target = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     record::Playback pb(target, *rec, {0.0}); // no delays
     REQUIRE_FALSE(pb.run_all(Context{}));
 }

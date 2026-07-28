@@ -7,7 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "rcp/config.hpp"
-#include "rcp/mock.hpp"
+#include "rcp/legacy_mock.hpp"
 #include "rcp/proxy.hpp"
 
 #include <stdexcept>
@@ -43,8 +43,8 @@ TEST_CASE("config: load registers controllers", "[config]") {
         ]
     })";
 
-    mock::Registry reg;
-    // Remove pre-registered zones first (mock::Registry pre-populates all 5)
+    legacy_mock::Registry reg;
+    // Remove pre-registered zones first (legacy_mock::Registry pre-populates all 5)
     // We test that load succeeds when zones are not yet registered.
     // Use a proxy registry which starts empty.
     proxy::ProxyRegistry preg;

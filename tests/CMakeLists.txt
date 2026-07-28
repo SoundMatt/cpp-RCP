@@ -6,6 +6,10 @@ add_executable(test_mock test_mock.cpp)
 target_link_libraries(test_mock PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_mock COMMAND test_mock)
 
+add_executable(test_legacy_mock test_legacy_mock.cpp)
+target_link_libraries(test_legacy_mock PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_legacy_mock COMMAND test_legacy_mock)
+
 add_executable(test_avtp test_avtp.cpp)
 target_link_libraries(test_avtp PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_avtp COMMAND test_avtp)

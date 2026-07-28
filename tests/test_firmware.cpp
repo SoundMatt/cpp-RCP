@@ -9,7 +9,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "rcp/firmware.hpp"
-#include "rcp/mock.hpp"
+#include "rcp/legacy_mock.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -17,20 +17,20 @@
 using namespace rcp;
 
 TEST_CASE("firmware: state machine starts Idle", "[firmware]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     firmware::FirmwareSession session(ctrl);
     REQUIRE(session.state() == firmware::SessionState::Idle);
 }
 
 TEST_CASE("firmware: initiate transitions to Initiated", "[firmware]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     firmware::FirmwareSession session(ctrl);
     REQUIRE_FALSE(session.initiate(Context{}, "1.2.3"));
     REQUIRE(session.state() == firmware::SessionState::Initiated);
 }
 
 TEST_CASE("firmware: double initiate fails", "[firmware]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     firmware::FirmwareSession session(ctrl);
     REQUIRE_FALSE(session.initiate(Context{}, "1.0"));
     auto ec = session.initiate(Context{}, "1.0");
@@ -38,7 +38,7 @@ TEST_CASE("firmware: double initiate fails", "[firmware]") {
 }
 
 TEST_CASE("firmware: transfer requires Initiated state", "[firmware]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     firmware::FirmwareSession session(ctrl);
     std::vector<uint8_t> image(8192, 0xAA);
     auto ec = session.transfer(Context{}, image);
@@ -46,7 +46,7 @@ TEST_CASE("firmware: transfer requires Initiated state", "[firmware]") {
 }
 
 TEST_CASE("firmware: full happy path", "[firmware]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     firmware::FirmwareSession session(ctrl);
 
     REQUIRE_FALSE(session.initiate(Context{}, "2.0.0"));
@@ -69,7 +69,7 @@ TEST_CASE("firmware: full happy path", "[firmware]") {
 
 TEST_CASE("firmware: transfer chunks image in chunk_size segments with per-chunk progress",
           "[firmware][REQ-FW-006][REQ-FW-008]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     firmware::Config cfg;
     cfg.chunk_size = 1024;
     firmware::FirmwareSession session(ctrl, cfg);
@@ -97,7 +97,7 @@ TEST_CASE("firmware: transfer chunks image in chunk_size segments with per-chunk
 }
 
 TEST_CASE("firmware: rollback resets to Idle", "[firmware][REQ-FW-007]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     firmware::FirmwareSession session(ctrl);
     REQUIRE_FALSE(session.initiate(Context{}, "1.0"));
     REQUIRE_FALSE(session.transfer(Context{}, std::vector<uint8_t>(1, 0)));

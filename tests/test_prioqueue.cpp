@@ -8,13 +8,13 @@
 // fusa:test REQ-PQ-008
 
 #include <catch2/catch_test_macros.hpp>
-#include <rcp/mock.hpp>
+#include <rcp/legacy_mock.hpp>
 #include <rcp/prioqueue.hpp>
 
 using namespace rcp;
 
-static std::shared_ptr<mock::Controller> make_mock(Zone z = Zone::FrontLeft) {
-    auto ctrl = std::make_shared<mock::Controller>(z);
+static std::shared_ptr<legacy_mock::Controller> make_mock(Zone z = Zone::FrontLeft) {
+    auto ctrl = std::make_shared<legacy_mock::Controller>(z);
     return ctrl;
 }
 

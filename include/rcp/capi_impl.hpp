@@ -4,6 +4,14 @@
 // declared in capi.h.  Bridges flat C handles to the C++ mock controller
 // and in-process registry.
 //
+// Still built on rcp.hpp's pre-replacement Zone/Command/Controller/Registry
+// model and rcp/legacy_mock.hpp's Controller/Registry backing it (renamed
+// from rcp/mock.hpp at ROADMAP.md milestone 56, v2.12.0, when that name
+// became the new RC Server simulator — see rcp/legacy_mock.hpp's header
+// comment). Per the Satellite Package Disposition table's entry for
+// `capi.h`/`capi_impl.hpp`, this file's own REPLACE against the new
+// request model is v2.16.0 scope, not this milestone's.
+//
 // fusa:req REQ-CAPI-001
 // fusa:req REQ-CAPI-002
 // fusa:req REQ-CAPI-003
@@ -15,18 +23,18 @@
 #pragma once
 
 #include "capi.h"
-#include "mock.hpp"
+#include "legacy_mock.hpp"
 #include "rcp.hpp"
 
 // ── Backing storage layout ────────────────────────────────────────────────────
 // We use placement-new into caller-supplied buffers to avoid heap allocation.
 
 struct rcp_registry_s {
-    rcp::mock::Registry impl;
+    rcp::legacy_mock::Registry impl;
 };
 
 struct rcp_ctrl_s {
-    std::shared_ptr<rcp::mock::Controller> impl;
+    std::shared_ptr<rcp::legacy_mock::Controller> impl;
 };
 
 static_assert(sizeof(rcp_registry_s) <= 512, "rcp_registry_s too large");
@@ -50,7 +58,7 @@ inline rcp_err_t rcp_registry_close(rcp_registry_h reg) {
 inline rcp_err_t rcp_ctrl_init(rcp_zone_t zone, void* buf, size_t buf_len, rcp_ctrl_h* out) {
     if (buf_len < sizeof(rcp_ctrl_s)) return RCP_ERR_NOMEM;
     auto* h = new (buf) rcp_ctrl_s{};
-    h->impl = std::make_shared<rcp::mock::Controller>(static_cast<rcp::Zone>(zone));
+    h->impl = std::make_shared<rcp::legacy_mock::Controller>(static_cast<rcp::Zone>(zone));
     *out = h;
     return RCP_OK;
 }

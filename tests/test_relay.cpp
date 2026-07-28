@@ -11,7 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <rcp/adapt.hpp>
-#include <rcp/mock.hpp>
+#include <rcp/legacy_mock.hpp>
 #include <relay/relay.hpp>
 
 #include <thread>
@@ -143,19 +143,19 @@ TEST_CASE("relay: Channel recv returns nullopt after close with empty queue", "[
 // ── §10.3: Adapt() wraps Controller as relay::Caller ─────────────────────────
 
 TEST_CASE("relay: Adapt() returns non-null relay::Caller", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::mock::Controller>(rcp::Zone::FrontLeft);
+    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
     auto caller = rcp::Adapt(ctrl);
     REQUIRE(caller != nullptr);
 }
 
 TEST_CASE("relay: Adapt() protocol() returns RCP", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::mock::Controller>(rcp::Zone::FrontLeft);
+    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
     auto caller = rcp::Adapt(ctrl);
     REQUIRE(caller->protocol() == relay::Protocol::RCP);
 }
 
 TEST_CASE("relay: Adapt() call() sends command and returns response", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::mock::Controller>(rcp::Zone::FrontLeft);
+    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
     auto caller = rcp::Adapt(ctrl);
 
     relay::Message req;
@@ -171,7 +171,7 @@ TEST_CASE("relay: Adapt() call() sends command and returns response", "[relay][a
 }
 
 TEST_CASE("relay: Adapt() send() succeeds", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::mock::Controller>(rcp::Zone::FrontLeft);
+    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
     auto caller = rcp::Adapt(ctrl);
 
     relay::Message msg;
@@ -183,7 +183,7 @@ TEST_CASE("relay: Adapt() send() succeeds", "[relay][adapt]") {
 }
 
 TEST_CASE("relay: Adapt() subscribe() returns valid channel", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::mock::Controller>(rcp::Zone::FrontLeft);
+    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
     auto caller = rcp::Adapt(ctrl);
 
     auto [ch, ec] = caller->subscribe();
@@ -213,7 +213,7 @@ TEST_CASE("relay: Adapt() subscribe() returns valid channel", "[relay][adapt]") 
 }
 
 TEST_CASE("relay: Adapt() close() idempotent", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::mock::Controller>(rcp::Zone::FrontLeft);
+    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
     auto caller = rcp::Adapt(ctrl);
     REQUIRE_FALSE(caller->close());
     REQUIRE_FALSE(caller->close()); // second call must be no-op
@@ -265,7 +265,7 @@ TEST_CASE("relay: SubscriberOptions has topic_name field, default empty",
     REQUIRE(opts.topic_name.empty());
 
     // RCP adapter must ignore topic_name (only DDS routes on it, §14.1).
-    auto ctrl   = std::make_shared<rcp::mock::Controller>(rcp::Zone::FrontLeft);
+    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
     auto caller = rcp::Adapt(ctrl);
     opts.topic_name = "ignored-by-rcp";
     auto [ch, ec] = caller->subscribe(opts);

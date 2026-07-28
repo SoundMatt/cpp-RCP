@@ -353,6 +353,86 @@
       "asil": "ASIL-A"
     },
     {
+      "id": "REQ-MOCK-001",
+      "title": "Server starts HW_UNCONFIGURED with a representative two-endpoint register map",
+      "text": "rcp::mock::Server shall construct with rcp::lifecycle::ServerLifecycle in state HwUnconfigured and an rcp::regmap::RegisterMap whose endpoint_count, generic_configs, functional_configs, and ep_id_mapping describe exactly two endpoints: GPIO at endpoint id/byte_bus_id 1 and SPI at endpoint id/byte_bus_id 2.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-002",
+      "title": "advance_to_rcp_configured drives the lifecycle straight to RCP_CONFIGURED",
+      "text": "rcp::mock::Server::advance_to_rcp_configured shall advance the server's ServerLifecycle from HwUnconfigured through HwConfigured to RcpConfigured and return a falsy std::error_code, since Server supplies no PlausibilityCheck of its own.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-003",
+      "title": "EP0 read answers the register map's magic number for any client",
+      "text": "rcp::mock::Server::dispatch, for a read request addressed to regmap::kEp0, shall return a ReadResponse whose payload is the RegisterMap::magic field encoded big-endian, for any client identity, per Ep0::check_read_access's unrestricted-read rule.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-004",
+      "title": "EP0 write via dispatch is always rejected",
+      "text": "rcp::mock::Server::dispatch, for a write request addressed to regmap::kEp0, shall return regmap::RegMapErrc::request_rejected and an ErrorResponse, since whole-map writes are only reachable through Ep0::write_whole_map directly, not through dispatch.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-005",
+      "title": "write_whole_map requires the root client",
+      "text": "rcp::mock::Server::ep0()'s write_whole_map shall return regmap::RegMapErrc::unauthorized_access for any client that is not the current root client, and shall apply the replacement RegisterMap when called by the root client.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-006",
+      "title": "Operational GPIO/SPI requests are rejected before RCP_CONFIGURED",
+      "text": "rcp::mock::Server::dispatch, for a request addressed to the GPIO or SPI endpoint while the server's lifecycle state is not RcpConfigured, shall return regmap::RegMapErrc::request_rejected and an ErrorResponse without touching either endpoint's live state.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-007",
+      "title": "GPIO write applies evt[2:0] semantics and read reflects the new state",
+      "text": "rcp::mock::Server::dispatch, for a write request addressed to the GPIO endpoint while RcpConfigured, shall decode the request's evt[2:0] field as an endpoint::WriteSemantics, apply it to the endpoint's live pin-value bitmask via gpio::GpioEndpoint::handle_write, and a subsequent read request shall observe the resulting value.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-008",
+      "title": "GPIO write with evt_ack set produces an Acknowledge response",
+      "text": "rcp::mock::Server::dispatch, for a GPIO write request with AcfMessageInfo::evt_ack set, shall build its response via acf::ResponseKind::Acknowledge instead of WriteResponse.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-009",
+      "title": "SPI transfer answers with the scripted POCI-in bytes for the addressed channel",
+      "text": "rcp::mock::Server::dispatch, for a request addressed to the SPI endpoint while RcpConfigured, shall decode the request's evt[2:0] field as a channel selector, drive spi::SpiEndpoint::transfer with the request payload as PICO-out data and whatever bytes set_spi_poci last scripted for that channel as POCI-in data, and answer with those POCI-in bytes as a ReadResponse.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-010",
+      "title": "dispatch to an unmapped byte_bus_id reports invalid_parameter",
+      "text": "rcp::mock::Server::dispatch, for a request whose byte_bus_id addresses neither EP0, GPIO, nor SPI, shall return regmap::RegMapErrc::invalid_parameter and an ErrorResponse.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-CTRL-001",
       "title": "Controller::send returns StatusOK with no handler",
       "text": "When no Handler is configured, Controller::send shall return a Response with status=ResponseStatus::OK.",
@@ -1250,64 +1330,56 @@
     },
     {
       "id": "REQ-SIM-001",
-      "title": "send() returns OK by default",
-      "text": "sim::Controller::send() shall return ResponseStatus::OK unless a fault has been injected.",
+      "title": "dispatch forwards to the wrapped mock::Server by default",
+      "text": "sim::Simulator::dispatch shall, absent an injected fault, forward its request unchanged to the wrapped mock::Server::dispatch and return its result.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-002",
-      "title": "zone() returns configured zone",
-      "text": "sim::Controller::zone() shall return the Zone value from the Config struct.",
+      "title": "fault() causes dispatch to fail without touching the server",
+      "text": "sim::Simulator::fault(ec) shall cause every subsequent dispatch() call to return ec and an ErrorResponse without calling mock::Server::dispatch, until recover() is called.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-003",
-      "title": "Constant latency model",
-      "text": "When LatencyModel::Constant is configured, send() shall sleep for exactly base_latency before returning.",
+      "title": "recover() restores normal dispatch",
+      "text": "sim::Simulator::recover() shall clear any injected fault and restore dispatch() to forwarding requests to the wrapped mock::Server.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-004",
-      "title": "Jitter latency model",
-      "text": "When LatencyModel::Jitter is configured, send() shall sleep for a duration uniformly distributed in [base_latency, base_latency + jitter].",
+      "title": "Constant latency model always reports base_latency",
+      "text": "sim::Simulator::simulated_latency_ms, when Config::latency_model is LatencyModel::Constant, shall always return Config::base_latency.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-005",
-      "title": "fault() causes send to fail",
-      "text": "fault(ec) shall cause all subsequent send() calls to return ec instead of delegating to the handler.",
+      "title": "Jitter latency model reports a delay within [base_latency, base_latency+jitter]",
+      "text": "sim::Simulator::simulated_latency_ms, when Config::latency_model is LatencyModel::Jitter, shall return a value uniformly distributed in [base_latency, base_latency + jitter].",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-006",
-      "title": "recover() restores normal operation",
-      "text": "recover() shall clear any injected fault and restore send() to OK responses.",
+      "title": "dispatch kicks a registered stream's watchdog on every accepted request",
+      "text": "sim::Simulator::dispatch shall call watchdog::Manager::on_request_received for stream_key when that stream is registered (via register_stream), resetting its watchdog per rcp/watchdog.hpp's reset-by-any-inbound-request rule.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-007",
-      "title": "Status published on interval",
-      "text": "If Config::status_interval > 0, the simulator shall publish a Status on that cadence to all subscribers.",
-      "standard": "iso26262",
-      "level": "ASIL-B",
-      "asil": "ASIL-B"
-    },
-    {
-      "id": "REQ-SIM-008",
-      "title": "close() stops background threads",
-      "text": "close() shall terminate the status and watchdog background threads without hanging.",
+      "title": "dispatch on an unregistered stream does not touch the watchdog manager",
+      "text": "sim::Simulator::dispatch, for a stream_key never passed to register_stream, shall not call watchdog::Manager::on_request_received and shall leave that stream unregistered.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"

@@ -8,7 +8,7 @@
 // fusa:test REQ-OBS-008
 #include <catch2/catch_test_macros.hpp>
 
-#include "rcp/mock.hpp"
+#include "rcp/legacy_mock.hpp"
 #include "rcp/observe.hpp"
 
 #include <map>
@@ -51,7 +51,7 @@ private:
 
 TEST_CASE("observe: span recorded on successful send", "[observe]") {
     auto sink  = std::make_shared<observe::InMemorySink>();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl  = observe::new_controller(inner, sink);
 
     Command cmd;
@@ -69,7 +69,7 @@ TEST_CASE("observe: span recorded on successful send", "[observe]") {
 
 TEST_CASE("observe: multiple sends accumulate spans", "[observe]") {
     auto sink  = std::make_shared<observe::InMemorySink>();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl  = observe::new_controller(inner, sink);
 
     for (int i = 0; i < 5; ++i) {
@@ -86,7 +86,7 @@ TEST_CASE("observe: multiple sends accumulate spans", "[observe]") {
 
 TEST_CASE("observe: span duration is non-negative", "[observe]") {
     auto sink  = std::make_shared<observe::InMemorySink>();
-    auto inner = std::make_shared<mock::Controller>(Zone::Central);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::Central);
     auto ctrl  = observe::new_controller(inner, sink);
 
     Command cmd;
@@ -101,7 +101,7 @@ TEST_CASE("observe: span duration is non-negative", "[observe]") {
 }
 
 TEST_CASE("observe: noop sink does not crash", "[observe][REQ-OBS-005]") {
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl  = observe::new_controller(inner); // default noop sink
 
     Command cmd;
@@ -113,7 +113,7 @@ TEST_CASE("observe: noop sink does not crash", "[observe][REQ-OBS-005]") {
 
 TEST_CASE("observe: commands.total counter increments per send", "[observe][REQ-OBS-007]") {
     auto sink  = std::make_shared<CountingSink>();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl  = observe::new_controller(inner, sink);
 
     for (int i = 0; i < 3; ++i) {
@@ -128,7 +128,7 @@ TEST_CASE("observe: commands.total counter increments per send", "[observe][REQ-
 TEST_CASE("observe: span captures error code and error counter increments on failure",
           "[observe][REQ-OBS-004][REQ-OBS-008]") {
     auto sink  = std::make_shared<CountingSink>();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     REQUIRE_FALSE(inner->close()); // a closed controller fails every send with ErrClosed
     auto ctrl  = observe::new_controller(inner, sink);
 
@@ -145,7 +145,7 @@ TEST_CASE("observe: span captures error code and error counter increments on fai
 TEST_CASE("observe: InMemorySink is thread-safe under concurrent spans",
           "[observe][REQ-OBS-006]") {
     auto sink  = std::make_shared<observe::InMemorySink>();
-    auto inner = std::make_shared<mock::Controller>(Zone::Central);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::Central);
     auto ctrl  = observe::new_controller(inner, sink);
 
     constexpr int kThreads = 8;
