@@ -12,6 +12,7 @@
 // fusa:req REQ-REGMAP-012
 // fusa:req REQ-REGMAP-013
 // fusa:req REQ-REGMAP-014
+// fusa:req REQ-REGMAP-015
 
 // RC Server register-map data model and EP0 pseudo-endpoint — the
 // whole-device configuration surface an OPEN Alliance TC18 Remote Control
@@ -39,6 +40,14 @@
 // scope here — this milestone only defines the generic/functional config
 // split and an opaque byte-blob functional config slot; interpreting that
 // slot's contents per endpoint type is v2.3.0 onward.
+//
+// ROADMAP.md milestone 50, "E2E CRC Safe Points & Safety-Request Variants
+// (v2.6.0)": RequestStreamConfig's per-stream watchdog/safe-state fields
+// and EndpointGenericConfig's per-endpoint CRC-enable toggles are expanded
+// to their full field set at this milestone, superseding the three
+// placeholder fields v2.1.0 reserved layout for. The behavior that reads
+// and acts on these fields lives in rcp/e2e.hpp and rcp/sequencer.hpp, not
+// here — same config-vs-behavior split as everything else in this header.
 #pragma once
 
 #include <rcp/lifecycle.hpp>
@@ -106,6 +115,16 @@ struct EndpointGenericConfig {
     std::vector<uint16_t> hw_pin_indices; // indices into RegisterMap::hw_pin_map this endpoint claims
     uint16_t              request_queue_size  = 0;
     uint16_t              response_queue_size = 0;
+
+    // Per-endpoint opt-in E2E CRC "safe mode" (extraction §4.4, §4.7),
+    // ROADMAP.md milestone 50 (v2.6.0) — independently toggled per message
+    // role, since a given endpoint's request/ack/response traffic can have
+    // different integrity needs. Behavior lives in rcp/e2e.hpp; this struct
+    // only owns the durable configuration bits, same split as every other
+    // config-vs-behavior boundary in this codebase.
+    bool ep_req_crc_enable      = false;
+    bool ep_ack_crc_enable      = false;
+    bool ep_response_crc_enable = false;
 };
 
 struct EndpointFunctionalConfig {
@@ -119,19 +138,69 @@ struct HwPinMapEntry {
     uint8_t  function = 0; // pin function/mode selector; meaning is endpoint-type-defined
 };
 
+// ── Sequencer-state registers (extraction §3.11, §3.16) ──────────────────────
+// Persistent 8-bit values; behavior lives in rcp/sequencer.hpp (v2.5.0).
+// Declared here, ahead of RequestStreamConfig below, since that struct's
+// rx_safe_sequencer_state field (v2.6.0) needs the type name already
+// in scope.
+
+using SequencerState = uint8_t;
+
+// ── rx_safety_measure selector (extraction §3.8) ──────────────────────────────
+// Which mechanism a safety-tagged (0x8x) request drives the endpoint
+// through once it is in safe state — ROADMAP.md milestone 50 (v2.6.0).
+// Behavior lives in rcp/e2e.hpp; this enum is the durable register value
+// selecting between the two.
+
+enum class RxSafetyMeasure : uint8_t {
+    ForceHighImpedance = 0, // hold outputs high-impedance; no sequencer consulted
+    RunSafeSequencer   = 1, // "safe" is rx_safestate_sequencer reading rx_safe_sequencer_state
+};
+
 // ── Request-stream config (extraction §3.8) ──────────────────────────────────
-// rx_wd_timeout_s / rx_wd_action / rx_safety_measure exist here purely as
-// durable register storage for now — the roadmap is explicit that only the
-// *fields* need to exist at this milestone; the watchdog/safe-state behavior
-// that reads and acts on them is wired up at v2.6.0. Storing a value here
-// before then has no observable effect.
+// The full per-request-stream watchdog and safe-state register set
+// ROADMAP.md milestone 50 (v2.6.0) calls for. Behavior that reads and acts
+// on these fields lives in rcp/e2e.hpp (watchdog overflow, CRC
+// enforcement, sequence checking, safe-state gating) and
+// rcp/sequencer.hpp (the 0x8x safety-tagged request variants these fields
+// exist to support) — this struct is durable storage only, same
+// config-vs-behavior split used throughout this header.
+//
+// This supersedes the three placeholder fields (rx_wd_timeout_s,
+// rx_wd_action, rx_safety_measure as a bare uint8_t) v2.1.0 added purely to
+// reserve register-map layout ahead of this milestone's real field list.
 
 struct RequestStreamConfig {
     wire::StreamId stream_id{};
-    uint16_t       queue_size      = 0;
-    uint8_t        rx_wd_timeout_s = 0; // watchdog timeout in seconds; unwired until v2.6.0
-    uint8_t        rx_wd_action    = 0; // watchdog-expiry action selector; unwired until v2.6.0
-    uint8_t        rx_safety_measure = 0; // safety-measure selector; unwired until v2.6.0
+    uint16_t       queue_size = 0;
+
+    // Watchdog (extraction §3.8). rx_wd_timeout_interval's unit
+    // (milliseconds) is this implementation's own choice, same as every
+    // other concrete-width decision elsewhere in this header.
+    uint32_t rx_wd_timeout_interval = 0;
+    bool     rx_wd_enable           = false;
+    bool     rx_wd_safestate_enable = false; // watchdog overflow drives the endpoint into safe state
+    bool     rx_wd_info_enable      = false; // repeating notification while latched in safe state
+
+    // E2E CRC enforcement (extraction §3.8, §4.7): per-request drop vs.
+    // whole-stream latch on a CRC_ERROR outcome.
+    bool rx_enforce_e2e = false;
+
+    // Monotonic sequence-number check — orthogonal to the watchdog above; a
+    // stream can enforce either, both, or neither independently.
+    bool rx_enforce_seq          = false;
+    bool rx_seq_safestate_enable = false;
+
+    // Request-queue overrun is a distinct trigger from watchdog expiry that
+    // can also be configured to drive the endpoint into safe state.
+    bool rx_ovrflw_safestate_enable = false;
+
+    // Which mechanism a safety-tagged request drives the endpoint through
+    // once in safe state, and (for RunSafeSequencer only) which sequencer
+    // and target state together define "safe".
+    RxSafetyMeasure rx_safety_measure      = RxSafetyMeasure::ForceHighImpedance;
+    uint16_t        rx_safestate_sequencer = 0;
+    SequencerState  rx_safe_sequencer_state = 0;
 };
 
 // ── EP-ID / byte_bus_id mapping table (extraction §3.9) ──────────────────────
@@ -155,14 +224,6 @@ struct ResponseQueueConfig {
     uint16_t response_queue_size = 0;
     uint16_t ack_queue_size      = 0;
 };
-
-// ── Sequencer-state registers (extraction §3.11, §3.16) ──────────────────────
-// Persistent 8-bit values; the sequencer behavior that reads and advances
-// them is a v2.5.0 concern. This milestone only allocates durable, stably
-// addressed storage for them so later milestones don't need a register-map
-// layout change to introduce that behavior.
-
-using SequencerState = uint8_t;
 
 // ── svr_implemented_options bitmask ──────────────────────────────────────────
 // Advertises which optional protocol features this server implements. Bits

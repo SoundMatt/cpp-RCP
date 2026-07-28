@@ -504,6 +504,64 @@ the Phase 13 introduction above.
 
 ### 50. E2E CRC Safe Points & Safety-Request Variants (v2.6.0)
 
+**Done (v2.6.0):** `rcp/e2e.hpp` is REPLACED in full, per the Satellite
+Package Disposition table's entry for this file — the pre-replacement
+CRC-16/CCITT-FALSE + sequence-counter + replay-window wrapper around
+`rcp.hpp`'s `Controller` is discarded outright, not adapted; nothing else in
+the tree depended on that old API, so no `legacy_e2e.hpp` split was needed
+the way `rcp/legacy_wire.hpp` was at v2.0.0. `crc32`/`detail::crc32_update`
+implement the specification's actual end-to-end CRC via the standard
+table-less right-shifting construction for a RefIn=true/RefOut=true CRC
+(polynomial `0xF4ACFB13`, init `0xFFFFFFFF`, final XOR `0xFFFFFFFF`).
+`coverage_buffer`/`compute_crc` assemble and hash exactly `stream_id` +
+`avtp_timestamp` (zero-filled — `std::nullopt` — under NTSCF) + the full ACF
+shared header + payload; `apply_acf_length_adjustment` and
+`apply_frame_length_adjustment` implement the +1 quadlet / +4 octet
+pre-adjustment respectively, layered on top of `rcp/wire.hpp`'s existing ACF
+codec without changing that codec's core framing. `crc_required` gates CRC
+checking per message role off `regmap::EndpointGenericConfig`'s three new
+`ep_req_crc_enable`/`ep_ack_crc_enable`/`ep_response_crc_enable` toggles, and
+`E2eErrc::crc_error` is the `CRC_ERROR` failure path, following the
+category/message pattern `RegMapErrc`/`LifecycleErrc`/`SequencerErrc`
+already established. `RxStreamGuard` implements `rx_enforce_e2e`'s
+per-request-drop-vs-whole-stream-latch choice; `RxSequenceGuard` implements
+`rx_enforce_seq`'s monotonic check, independent of the watchdog; `RxWatchdog`
+implements `rx_wd_enable`/`rx_wd_timeout_interval` overflow detection, the
+safe-state latch, and `rx_wd_info_enable`'s repeating-notification flag;
+`apply_watchdog_overflow`/`apply_queue_overflow` implement the
+purge-normal/retain-safety queue rule for their respective triggers
+(`rx_wd_safestate_enable`/`rx_ovrflw_safestate_enable`) by calling
+`rcp::sequencer::RequestLedger::cancel_all(non_safestate_only=true)`
+directly rather than reimplementing cancellation — that call already existed
+from v2.5.0's clear-non-safestate support and needed no changes.
+`endpoint_in_configured_safe_state` implements both `rx_safety_measure`
+strategies (`RxSafetyMeasure::ForceHighImpedance`'s externally-asserted flag
+vs. `RunSafeSequencer`'s `rx_safestate_sequencer`-reads-`rx_safe_sequencer_state`
+check), and `may_execute_now` is the load-bearing safe-state gate: a
+safety-tagged request is only ever eligible once that check reports true.
+`rcp/regmap.hpp`'s `RequestStreamConfig` is expanded from its three
+placeholder fields (`rx_wd_timeout_s`/`rx_wd_action`/`rx_safety_measure` as a
+bare `uint8_t`) to the full eleven-field set the roadmap calls for, plus the
+new `RxSafetyMeasure` enum; `EndpointGenericConfig` gains the three CRC
+toggles above. `rcp/sequencer.hpp` gains the three MSB-set safety-tagged
+opcodes — `RequestTypeOpcode::CompoundSafety` (`0x8F`), `CompoundWaitSafety`
+(`0x8B`), `TriggeredSafety` (`0x8E`) — accepted by `is_valid_request_type`/
+`decode_request_type` and mapped by `category_of` onto their base opcode's
+existing priority category; `is_safety_variant` is the single source of
+truth for which opcodes are safety-tagged, and the new `request_record_for`
+factory derives `RequestRecord::is_safety` from it automatically rather than
+leaving that assignment to each call site by hand. New coverage lives in
+`tests/test_e2e.cpp` (REQ-E2E-001..014, entirely rewritten — the prior
+REQ-E2E-001..008 described the discarded CRC-16 scheme and no longer
+apply), `tests/test_sequencer.cpp` (REQ-SEQ-010..012, added), and
+`tests/test_regmap.cpp` (REQ-REGMAP-009 rewritten for the expanded field
+set, REQ-REGMAP-015 added), traced in `.fusa-reqs.json`. Full wire-level
+conformance against other TC18 implementations is still not claimed — see
+this file's own disclaimer pattern in `rcp/wire.hpp`/`rcp/regmap.hpp`/
+`rcp/sequencer.hpp` — but this is the milestone the Phase 13 introduction
+above names as "the point at which the mandatory baseline plus safe-points
+exist."
+
 - Implement the specification's actual end-to-end CRC: 32-bit, polynomial
   `0xF4ACFB13`, initial value `0xFFFFFFFF`, final XOR `0xFFFFFFFF`, both
   input and output reflection enabled — **not** the ad-hoc CRC-16/CCITT
