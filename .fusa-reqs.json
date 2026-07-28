@@ -2999,6 +2999,158 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ENDPOINT-001",
+      "title": "GPIO and SPI endpoint-type ids",
+      "text": "rcp::endpoint::kEndpointTypeGpio shall equal 0x02 and rcp::endpoint::kEndpointTypeSpi shall equal 0x03, matching the ep_type ids this milestone assigns for the GPIO and SPI endpoint types.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ENDPOINT-002",
+      "title": "evt[2:0] write-semantics decode",
+      "text": "rcp::endpoint::write_semantics_of shall map evt_op values 0-7 to Replace/Or/And/Xor/Reserved/Add/Subtract/Reconfigure respectively, masking its argument to the low 3 bits before conversion.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ENDPOINT-003",
+      "title": "Generic bitmask write combinators",
+      "text": "rcp::endpoint::apply_bitmask_write shall compute Replace/Or/And/Xor of `current` and `operand` correctly for WriteSemantics::Replace/Or/And/Xor respectively.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ENDPOINT-004",
+      "title": "Saturating add/subtract",
+      "text": "rcp::endpoint::apply_bitmask_write's Add and Subtract semantics, and the underlying rcp::endpoint::saturating_add/saturating_subtract helpers, shall clamp at the representable range's max/0 respectively rather than wrapping on overflow/underflow.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ENDPOINT-005",
+      "title": "Reserved and Reconfigure are not generic combinators",
+      "text": "rcp::endpoint::apply_bitmask_write shall return EndpointErrc::reserved_write_semantics for WriteSemantics::Reserved and EndpointErrc::non_combinable_write_semantics for WriteSemantics::Reconfigure, and EndpointErrc shall report a non-empty diagnostic message in its own error_category.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ENDPOINT-006",
+      "title": "Generic trigger-signal table",
+      "text": "rcp::endpoint::TriggerRegistry::notify shall queue a signal for drain() only when that signal id is currently enabled, disable() shall stop further notifications for that id from queuing, and drain() shall return queued signal ids in occurrence order and clear the queue.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-001",
+      "title": "GPIO payload is a 4-byte big-endian bitmask",
+      "text": "rcp::gpio::kGpioPayloadLen shall be 4 and kMaxPins shall be 32; encode_gpio_payload/decode_gpio_payload shall round-trip a PinMask value in big-endian byte order, and decode_gpio_payload shall return wire::WireErrc::short_buffer when given fewer than kGpioPayloadLen bytes.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-002",
+      "title": "GPIO write semantics: generic combinators",
+      "text": "rcp::gpio::apply_gpio_write shall apply Replace/Or/And/Xor to GpioState::values via rcp::endpoint::apply_bitmask_write.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-003",
+      "title": "GPIO write semantics: saturating Add/Subtract",
+      "text": "rcp::gpio::apply_gpio_write shall apply the saturating Add/Subtract rule to GpioState::values, clamping instead of wrapping, using the same rcp::endpoint saturation helpers PWM_OUT is expected to reuse at v2.4.0.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-004",
+      "title": "GPIO write semantics: Reserved rejected, Reconfigure retargets directions",
+      "text": "rcp::gpio::apply_gpio_write shall return an error without modifying GpioState for WriteSemantics::Reserved, and shall replace GpioState::directions (leaving GpioState::values unchanged) for WriteSemantics::Reconfigure.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-005",
+      "title": "GPIO per-pin change/rising/falling trigger signals",
+      "text": "rcp::gpio::evaluate_gpio_triggers shall notify a pin's Change signal on any bit transition and additionally its Rising or Falling signal depending on transition direction, reporting only signals the caller's rcp::endpoint::TriggerRegistry had armed, and shall notify nothing for a pin whose bit did not change.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-006",
+      "title": "GPIO functional config block wiring",
+      "text": "rcp::gpio::encode_gpio_functional_config/decode_gpio_functional_config shall round-trip a pin-direction mask and per-pin enabled-edge bitmasks through rcp::regmap::EndpointFunctionalConfig::data, and decode_gpio_functional_config shall return wire::WireErrc::short_buffer for an undersized blob.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-007",
+      "title": "GpioEndpoint request-dispatch pattern",
+      "text": "rcp::gpio::GpioEndpoint::handle_write shall apply one write request's semantics and operand to its internal state, evaluate the resulting transition's trigger signals, and report the endpoint's new pin-value bitmask, in one call.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-008",
+      "title": "GpioEndpoint error propagation and GpioErrc category",
+      "text": "rcp::gpio::GpioEndpoint::handle_write shall propagate an underlying write-semantics error without modifying its endpoint state, and rcp::gpio::GpioErrc shall report a non-empty diagnostic message in its own error_category.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SPI-001",
+      "title": "SPI channel selection via evt[2:0]",
+      "text": "rcp::spi::kMaxChannels shall be 6; rcp::spi::channel_of shall accept evt[2:0] values 0-5 as channel selectors (masking its input to the low 3 bits first) and return SpiErrc::channel_out_of_range for 6 and 7.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SPI-002",
+      "title": "SPI compound-wait status-byte truncation rule",
+      "text": "rcp::spi::compound_wait_matches shall compare only the first kCompoundWaitCompareLen (4) bytes of a status transfer against the expected pattern, ignoring any difference beyond that window, shall reject a status transfer longer than kMaxStatusBytes (20), and shall return false when the truncated comparison window is empty.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SPI-003",
+      "title": "SPI raw PICO-out/POCI-in transfer",
+      "text": "rcp::spi::SpiEndpoint::transfer shall record the sent and received bytes for the given channel independently of every other channel's last transfer, and shall return SpiErrc::channel_out_of_range for a channel >= kMaxChannels without recording anything.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SPI-004",
+      "title": "SPI transfer-complete and per-CS trigger signals",
+      "text": "rcp::spi::SpiEndpoint::transfer shall notify CsAssert, then TransferComplete, then CsDeassert for the transferred channel's rcp::endpoint::TriggerRegistry, spi_signal_id shall assign a distinct SignalId to every (channel, signal) pair, and a channel's armed signals shall not affect notification delivery for any other channel.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SPI-005",
+      "title": "SpiErrc is a distinct error category with a non-empty message",
+      "text": "rcp::spi::make_error_code(SpiErrc::channel_out_of_range) shall report rcp::spi::spi_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
     }
   ]
 }
