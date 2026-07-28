@@ -3503,6 +3503,214 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LINEP-001",
+      "title": "LIN's ep_type id is 0x06",
+      "text": "rcp::endpoint::kEndpointTypeLin shall equal 0x06.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LINEP-002",
+      "title": "LIN is a raw-byte-pusher with no frame-level concepts",
+      "text": "rcp::lin::LinEndpoint::transfer shall record the exact byte sequences passed as out_bytes and in_bytes, retrievable via last_sent()/last_received(), performing no checksum selection, PID generation, schedule-table lookup, or any other LIN frame-structure interpretation of either sequence, including for an empty byte sequence.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LINEP-003",
+      "title": "LIN TransferComplete and NoResponse trigger signals",
+      "text": "rcp::lin::LinEndpoint::transfer shall notify only TransferComplete for a responded transfer (responded=true) and shall notify only NoResponse and return LinErrc::no_response for an unresponded transfer (responded=false).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LINEP-004",
+      "title": "LinErrc is a distinct error category with a non-empty message",
+      "text": "rcp::lin::make_error_code(LinErrc::no_response) shall report rcp::lin::lin_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CANEP-001",
+      "title": "CAN's ep_type id is 0x0B",
+      "text": "rcp::endpoint::kEndpointTypeCan shall equal 0x0B.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CANEP-002",
+      "title": "CAN identifier range validation",
+      "text": "rcp::can::validate_identifier shall accept a CanIdentifier whose value is within its own width's range (0..0x7FF for extended=false, 0..0x1FFFFFFF for extended=true) and shall return CanErrc::identifier_out_of_range for a value exceeding that range.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CANEP-003",
+      "title": "CAN frame-format payload ceilings, data frames only",
+      "text": "rcp::can::validate_frame shall accept a CanDataFrame whose data length is within its FrameFormat's own ceiling (kMaxClassicalPayload=8 for Classical, kMaxFdPayload=64 for Fd) and shall return CanErrc::payload_exceeds_format_limit when that ceiling is exceeded; this header shall define no remote-frame request or response shape.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CANEP-004",
+      "title": "CAN XL accepted single-AVTPDU payload limitation",
+      "text": "rcp::can::validate_frame shall accept a FrameFormat::Xl frame whose data length is within kMaxXlPayloadSingleAvtpdu, shall return CanErrc::xl_payload_exceeds_single_avtpdu_bound for a length between kMaxXlPayloadSingleAvtpdu (exclusive) and kMaxXlPayloadSpec (inclusive), and shall return CanErrc::payload_exceeds_format_limit for a length exceeding kMaxXlPayloadSpec (2054), consistent with ROADMAP.md milestone 52's already-decided fragmentation no-go.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CANEP-005",
+      "title": "CAN per-phase bit-timing register sets",
+      "text": "rcp::can::CanEndpoint::configure_bit_timing shall store the arbitration, fd_data, and xl_data CanBitTimingPhase register sets independently of one another, retrievable unchanged via bit_timing().",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CANEP-006",
+      "title": "CAN-XL-specific acceptance/receive filters",
+      "text": "rcp::can::CanEndpoint::receive shall accept every frame when its format-scoped filter bank is empty, shall drop a frame matching no entry in that bank when the bank is non-empty (per rcp::can::acceptance_filter_matches's masked-id comparison), and shall match a FrameFormat::Xl frame against xl_receive_filters rather than the general acceptance_filters bank whenever xl_receive_filters is non-empty.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CANEP-007",
+      "title": "CAN has no trigger-signal table; CanErrc is a distinct error category",
+      "text": "rcp::can::CanEndpoint shall expose no TriggerRegistry accessor or signal-id helper, unlike every other device-facing endpoint type in this codebase, and rcp::can::make_error_code(CanErrc::identifier_out_of_range) shall report rcp::can::can_category() as its category with a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ISELED-001",
+      "title": "ISELED's ep_type id is 0x0C",
+      "text": "rcp::endpoint::kEndpointTypeIseled shall equal 0x0C.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ISELED-002",
+      "title": "ISELED Instruction/Address/Data request and Address/Data(/CRC) response shape",
+      "text": "rcp::iseled::IseledEndpoint::transact shall record the exact IseledRequest (instruction/address/data) and IseledResponse (address/data/optional native_crc) fields passed to it, retrievable via last_request()/last_response().",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ISELED-003",
+      "title": "ISELED native CRC is additional to, not a replacement for, the general E2E CRC",
+      "text": "rcp::iseled::verify_native_crc shall succeed without error when IseledResponse::native_crc is std::nullopt, shall succeed when native_crc equals compute_native_crc8(crc_coverage_bytes(response)), and shall return IseledErrc::native_crc_mismatch when it does not; this header shall have no dependency on and shall not call into rcp/e2e.hpp.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ISELED-004",
+      "title": "ISELED TransferComplete and NativeCrcError trigger signals",
+      "text": "rcp::iseled::IseledEndpoint::transact shall notify only TransferComplete for a transaction whose response native CRC verifies (or carries none), and shall notify only NativeCrcError and return IseledErrc::native_crc_mismatch for a transaction whose response native CRC does not verify.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ISELED-005",
+      "title": "IseledErrc is a distinct error category with a non-empty message",
+      "text": "rcp::iseled::make_error_code(IseledErrc::native_crc_mismatch) shall report rcp::iseled::iseled_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDIO-001",
+      "title": "MDIO's ep_type id is 0x0D",
+      "text": "rcp::endpoint::kEndpointTypeMdio shall equal 0x0D.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDIO-002",
+      "title": "MDIO address-range validation",
+      "text": "rcp::mdio::validate_request shall return MdioErrc::phy_address_out_of_range for phy_address > kMaxPhyAddress, MdioErrc::device_or_reg_out_of_range for device_or_reg > kMaxDeviceOrRegField, and shall accept every field at or below its own bound.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDIO-003",
+      "title": "MDIO Clause22 flat register write-then-read round-trip",
+      "text": "rcp::mdio::MdioEndpoint::handle_request shall, for MdioClause::Clause22, return the value most recently written to a given (phy_address, device_or_reg) register on a subsequent read, and shall return 0 for a register that has never been written.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDIO-004",
+      "title": "MDIO Clause45 device+register addressing is distinct from Clause22's address space",
+      "text": "rcp::mdio::MdioEndpoint::handle_request shall key a Clause45 access on (phy_address, device_or_reg, register_address) such that it never observes a value written via MdioClause::Clause22 at the same phy_address/device_or_reg bit pattern, or vice versa, and shall notify TransferComplete on every request regardless of clause.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDIO-005",
+      "title": "MdioErrc is a distinct error category with a non-empty message",
+      "text": "rcp::mdio::make_error_code(MdioErrc::phy_address_out_of_range) shall report rcp::mdio::mdio_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WAKEUP-001",
+      "title": "Wakeup control's ep_type id is 0x01",
+      "text": "rcp::endpoint::kEndpointTypeWakeup shall equal 0x01.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WAKEUP-002",
+      "title": "SleepCMD is a fixed opcode, distinct from rcp::sequencer's RequestTypeOpcode taxonomy",
+      "text": "rcp::wakeup::kSleepCmd shall equal 0xA5; rcp::wakeup::decode_sleep_cmd shall accept only that exact byte value and return WakeupErrc::not_sleep_cmd for every other byte (including 0x8x safety-tagged sequencer opcode bytes); rcp::wakeup::WakeupEndpoint::handle_sleep_cmd shall transition to asleep on kSleepCmd and shall leave state unchanged and return an error for any other byte.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WAKEUP-003",
+      "title": "Wake-source pin monitoring",
+      "text": "rcp::wakeup::WakeupEndpoint::record_wake_source_event shall set the corresponding bit in wake_source_pins() and shall clear is_asleep(), and clear_wake_source_pins() shall reset the accumulated mask to 0 without affecting is_asleep() or the handshake-pending state.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WAKEUP-004",
+      "title": "Repeating WakeUp message handshake for hot-start-from-Sleep",
+      "text": "rcp::wakeup::WakeupEndpoint::record_wake_source_event shall arm wakeup_message_pending() until acknowledge_wakeup() is called, wakeup_message_pending() shall continue reporting true across repeated calls while armed, and handle_sleep_cmd(kSleepCmd) shall clear any handshake left pending from a prior wake cycle.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WAKEUP-005",
+      "title": "WakeupErrc is a distinct error category with a non-empty message",
+      "text": "rcp::wakeup::make_error_code(WakeupErrc::not_sleep_cmd) shall report rcp::wakeup::wakeup_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
     }
   ]
 }
