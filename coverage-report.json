@@ -15,6 +15,15 @@
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/adc.hpp",
+      "linePct": 90.3225806451613,
+      "linesHit": 56,
+      "linesTotal": 62
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/admin.hpp",
       "linePct": 100.0,
       "linesHit": 35,
@@ -177,6 +186,15 @@
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/i2c.hpp",
+      "linePct": 94.5945945945946,
+      "linesHit": 35,
+      "linesTotal": 37
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/legacy_wire.hpp",
       "linePct": 89.07563025210084,
       "linesHit": 106,
@@ -271,6 +289,15 @@
       "linePct": 80.32786885245902,
       "linesHit": 49,
       "linesTotal": 61
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/pwm.hpp",
+      "linePct": 94.28571428571429,
+      "linesHit": 33,
+      "linesTotal": 35
     },
     {
       "branchPct": 0.0,
@@ -379,6 +406,15 @@
       "linePct": 95.0,
       "linesHit": 19,
       "linesTotal": 20
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/uart.hpp",
+      "linePct": 82.75862068965517,
+      "linesHit": 48,
+      "linesTotal": 58
     },
     {
       "branchPct": 0.0,
@@ -511,8 +547,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/char_traits.h",
-      "linePct": 15.909090909090908,
-      "linesHit": 7,
+      "linePct": 18.181818181818183,
+      "linesHit": 8,
       "linesTotal": 44
     },
     {
@@ -547,9 +583,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/deque.tcc",
-      "linePct": 36.61971830985915,
-      "linesHit": 26,
-      "linesTotal": 71
+      "linePct": 31.95020746887967,
+      "linesHit": 77,
+      "linesTotal": 241
     },
     {
       "branchPct": 0.0,
@@ -844,8 +880,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/shared_ptr_base.h",
-      "linePct": 94.38775510204081,
-      "linesHit": 185,
+      "linePct": 93.87755102040816,
+      "linesHit": 184,
       "linesTotal": 196
     },
     {
@@ -889,8 +925,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_algobase.h",
-      "linePct": 55.06072874493927,
-      "linesHit": 136,
+      "linePct": 56.2753036437247,
+      "linesHit": 139,
       "linesTotal": 247
     },
     {
@@ -907,9 +943,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_deque.h",
-      "linePct": 82.78145695364239,
-      "linesHit": 125,
-      "linesTotal": 151
+      "linePct": 86.40350877192982,
+      "linesHit": 197,
+      "linesTotal": 228
     },
     {
       "branchPct": 0.0,
@@ -1024,9 +1060,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_uninitialized.h",
-      "linePct": 82.66666666666667,
+      "linePct": 71.26436781609195,
       "linesHit": 62,
-      "linesTotal": 75
+      "linesTotal": 87
     },
     {
       "branchPct": 0.0,
@@ -1096,8 +1132,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/vector.tcc",
-      "linePct": 64.31718061674009,
-      "linesHit": 146,
+      "linePct": 65.63876651982379,
+      "linesHit": 149,
       "linesTotal": 227
     },
     {
@@ -1326,15 +1362,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-07-28T17:02:24Z",
-  "linePct": 67.5310707456979,
+  "generatedAt": "2026-07-28T17:43:05Z",
+  "linePct": 67.49064519786823,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 5651,
+    "hitLines": 5952,
     "totalBranches": 0,
-    "totalLines": 8368
+    "totalLines": 8819
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0

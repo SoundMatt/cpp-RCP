@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-07-28T17:02:24Z",
+  "generatedAt": "2026-07-28T17:43:05Z",
   "items": [
     {
       "artifact": ".fusa-reqs.json",
       "category": "Requirements",
       "present": true,
-      "sha256": "3d787029e0df227a770e945129fa1fb2576a7a7eb051cc9a3102a4557c7dddd5"
+      "sha256": "2569c3a330b483fedff25d6eb09da0598c2b23567466f5733ceaf0b8e77c8fd7"
     },
     {
       "artifact": ".fusa.json",
@@ -35,73 +35,73 @@
       "artifact": "fmea.json",
       "category": "Safety",
       "present": true,
-      "sha256": "684e59855f1818130e2e7b222592635314642f2ad29a4fb20f7894d43a11b35d"
+      "sha256": "64c9bcf7eec17f77c5304d98c8fef67e5380dad68215ba909510e8fcd0679f2f"
     },
     {
       "artifact": "tara.json",
       "category": "Safety",
       "present": true,
-      "sha256": "c5c1a4ad368db2d49bc7f6c56db1aac57ad3677225e88fbc9e18fb803a90f440"
+      "sha256": "2d2704a33b78237107056cb57d7894d4c24c5c12d9366133c31edd94b6cacd9f"
     },
     {
       "artifact": "safety-case.json",
       "category": "Safety",
       "present": true,
-      "sha256": "18134c2cf9a497051b47de6c721f897443664a16711e02184a9109aff5360f5c"
+      "sha256": "6be262ce45ee7c4bf5a1c4cf50b6930988511f05c9e48260dfb264f98d0ce359"
     },
     {
       "artifact": "qualify-report.json",
       "category": "Qualification",
       "present": true,
-      "sha256": "6ec2c9bca063047d7fcfebfe8fd3475f4668ee7e77e43ef2569c8ff68dcf1661"
+      "sha256": "0ca43d09cf90981a1323315c114ad3892215999e6cc607b782ad8b0a208e1e10"
     },
     {
       "artifact": "sbom.json",
       "category": "Release",
       "present": true,
-      "sha256": "099bebad70341ae8c4baae84769105ec6bcee9c1e4d5c054d96ed8216db0b701"
+      "sha256": "018b60dd799826d5fe1f36afe546f69134c7ad0903c24a78ad3877678a2b7e67"
     },
     {
       "artifact": "provenance.json",
       "category": "Release",
       "present": true,
-      "sha256": "e422b3f1ebf3b28ccd8106f27127b45487f43a1a84e710a84751d57c08ede7a3"
+      "sha256": "060148f086083a763208be883be590d435f4b2a9d8d832f6908bd805a3e85a64"
     },
     {
       "artifact": "artifact-manifest.json",
       "category": "Release",
       "present": true,
-      "sha256": "5832a5098f6505cf131a1fcf7a2b9018051b3731db48f2af06e2796119c964d6"
+      "sha256": "437ebe5dcc93c682c6df502f67528b1ff9a9a608576496abf38a5eac6f106270"
     },
     {
       "artifact": "audit-pack.zip",
       "category": "Audit",
       "present": true,
-      "sha256": "17dc6791fe44e9776e65d74c699070d21b538639f614a9155a3b28743c5bda26"
+      "sha256": "28c3ae8e9ecb88bb48de20dc811228a720a6b7a4c3f27e010260d283aceb343b"
     },
     {
       "artifact": "iso26262-gap-report.json",
       "category": "Gap Analysis",
       "present": true,
-      "sha256": "d83cac96ba4285ea4f3a92b93d31a30bcd0589f8ea3b98da54646d09a7d8bbd2"
+      "sha256": "fc5ab95a7f3948d871a868b17cc12ca8d14484a6d3393642063cca430cb8635e"
     },
     {
       "artifact": "iec61508-gap-report.json",
       "category": "Gap Analysis",
       "present": true,
-      "sha256": "b0eeaf0abc5af3e569d39a590f2ee0061748f268eab75258e65b0efc82c0e163"
+      "sha256": "1cf893b6b00e98dbaca842b9c2fbad6fd8f6b4835cda3f78b0de3e7ee52dbdbf"
     },
     {
       "artifact": "do178-gap-report.json",
       "category": "Gap Analysis",
       "present": true,
-      "sha256": "350026ffe1947dc2e9f71280c014251454d2eb934849387a65c2c613f60ab348"
+      "sha256": "d5fa8f15c07aab366e73b874771ca12ec19659eca668a42f5673b6de6af0eafe"
     },
     {
       "artifact": "sas.json",
       "category": "Summary",
       "present": true,
-      "sha256": "93c2bbbcef5e00cacab9e5ee25345c99365920c2c9ce6608929f9114436faed6"
+      "sha256": "aacaab5a43453a6f42b805c69cd6abe00c5eb494b5fbc6a68421074965e11a56"
     }
   ],
   "project": "cpp-RCP",
