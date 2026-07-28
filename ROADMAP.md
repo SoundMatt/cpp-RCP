@@ -798,6 +798,64 @@ pattern in `rcp/lifecycle.hpp`/`rcp/regmap.hpp`/`rcp/wakeup.hpp`.
 - Depends on: RC Server lifecycle & register map (v2.1.0), E2E safe points
   (v2.6.0)
 
+**Done (v2.10.0):** `rcp/watchdog.hpp` is replaced in full, per the
+Satellite Package Disposition table's entry for this file — the prior
+client-driven `CommandType::Watchdog` kick model built on `rcp.hpp`'s
+`Zone`/`Command`/`Controller` is discarded, not adapted. The actual
+per-stream watchdog timeout/latch primitive already existed as
+`rcp::e2e::RxWatchdog` (v2.6.0); this milestone's real work is the driver
+layer around it. `watchdog::StreamWatchdog::kick_from_request` resets a
+stream's watchdog on every accepted inbound request regardless of kind or
+safety tag, matching the "reset by *any* inbound request" rule directly;
+`StreamWatchdog::check` reads a live `regmap::RequestStreamConfig` on every
+poll, reports `HealthEvent::overflowed` on timeout, and — only when
+`rx_wd_safestate_enable` is set — calls `rcp::e2e::apply_watchdog_overflow`
+to latch safe state and purge normal (non-safety) requests from the
+supplied `request::RequestLedger`, exactly the v2.6.0 purge-normal/
+retain-safety rule reused unmodified. `watchdog::Manager` multiplexes
+`StreamWatchdog` across every request stream the embedding application
+registers, keyed by an opaque `uint64_t` (typically an
+`avtp::StreamId::to_u64()`), and fans out `HealthEvent`s to subscribed
+callbacks — this is the "driver/wiring layer" the roadmap called for, not
+a reimplementation of watchdog detection itself.
+
+`rcp/deadline.hpp` is likewise rebuilt in full per the disposition table's
+"ADAPT" call for this file: the concept of "declare a target dead once its
+liveness signal goes silent past a deadline, alive again once it resumes"
+survives from the pre-replacement `Monitor`, but every concrete signal
+source is rebound away from `Status`-subscription polling, which does not
+exist in the target model. Two independent liveness signals feed the new
+`deadline::Monitor`, matching the roadmap's own "and/or": `note_heartbeat`
+for `regmap::ResponseQueueConfig::flush_time`'s periodic flush cadence, and
+`note_lifecycle_change` for `lifecycle::ServerLifecycle`'s new
+`subscribe_state_changed` trigger — either alone is sufficient evidence of
+liveness. Both `ResponseQueueConfig::flush_time` and
+`ServerLifecycle::subscribe_state_changed` are small, explicitly-scoped
+additions landed at this milestone (see those headers' own v2.10.0 comments)
+since neither existed in the tree before this rebuild needed them; both are
+purely additive; every pre-existing field and transition rule in
+`regmap.hpp`/`lifecycle.hpp` is unchanged. `deadline::Monitor::check`
+evaluates every registered target independently, emitting a
+`LivenessEvent` on each alive/dead transition (including the initial dead
+report for a target that has never reported) and suppressing repeats,
+carrying forward the pre-replacement `Monitor`'s alive/dead semantics
+without its background-thread-per-zone machinery — this header, like every
+other one touched since v2.6.0, provides primitives driven by the
+embedding application's own clock/scheduler, not a running thread of its
+own.
+
+Nothing else in this tree depended on the old `watchdog::Keeper` or
+`deadline::Monitor` APIs (only their own tests did; `rcp/redundancy.hpp`
+mentions `watchdog::Keeper` only in a doc comment, with no code dependency
+on it), so no legacy shim was needed, same as every other Phase 14 rebuild.
+New/rewritten coverage lives in `tests/test_watchdog.cpp`
+(`REQ-WDG-001..008`, entirely rewritten), `tests/test_deadline.cpp`
+(`REQ-DL-001..008`, entirely rewritten), and `tests/test_lifecycle.cpp`
+(`REQ-LIFECYCLE-007`, new), traced in `.fusa-reqs.json`. Full bit-for-bit
+conformance against other TC18 implementations is not claimed — see this
+file's own disclaimer pattern in `rcp/e2e.hpp`/`rcp/regmap.hpp`/
+`rcp/lifecycle.hpp`/`rcp/powerstate.hpp`.
+
 ### 55. Authorization & Admission-Control Rebind (v2.11.0)
 
 - Rebind `authz.hpp`'s access-policy check from
