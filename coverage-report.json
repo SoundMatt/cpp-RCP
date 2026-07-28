@@ -87,6 +87,15 @@
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/discovery.hpp",
+      "linePct": 94.91525423728814,
+      "linesHit": 56,
+      "linesTotal": 59
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/doipbr.hpp",
       "linePct": 100.0,
       "linesHit": 10,
@@ -475,8 +484,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/char_traits.h",
-      "linePct": 15.909090909090908,
-      "linesHit": 7,
+      "linePct": 18.181818181818183,
+      "linesHit": 8,
       "linesTotal": 44
     },
     {
@@ -493,9 +502,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/chrono.h",
-      "linePct": 82.43243243243244,
-      "linesHit": 61,
-      "linesTotal": 74
+      "linePct": 82.89473684210526,
+      "linesHit": 63,
+      "linesTotal": 76
     },
     {
       "branchPct": 0.0,
@@ -565,8 +574,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/hashtable.h",
-      "linePct": 86.7579908675799,
-      "linesHit": 190,
+      "linePct": 87.67123287671232,
+      "linesHit": 192,
       "linesTotal": 219
     },
     {
@@ -808,8 +817,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/shared_ptr_base.h",
-      "linePct": 93.87755102040816,
-      "linesHit": 184,
+      "linePct": 94.38775510204081,
+      "linesHit": 185,
       "linesTotal": 196
     },
     {
@@ -1195,9 +1204,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/optional",
-      "linePct": 98.73417721518987,
-      "linesHit": 78,
-      "linesTotal": 79
+      "linePct": 98.78048780487805,
+      "linesHit": 81,
+      "linesTotal": 82
     },
     {
       "branchPct": 0.0,
@@ -1290,15 +1299,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-07-28T15:57:11Z",
-  "linePct": 66.71986250920698,
+  "generatedAt": "2026-07-28T16:29:50Z",
+  "linePct": 66.99147381242388,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 5435,
+    "hitLines": 5500,
     "totalBranches": 0,
-    "totalLines": 8146
+    "totalLines": 8210
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0
