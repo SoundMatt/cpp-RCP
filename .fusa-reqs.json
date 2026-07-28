@@ -882,128 +882,128 @@
     },
     {
       "id": "REQ-WDG-001",
-      "title": "Keeper kicks all zones periodically",
-      "text": "watchdog::Keeper shall send a CmdWatchdog command to every registered zone controller at the configured interval.",
+      "title": "StreamWatchdog reports overflow per rx_wd_enable/rx_wd_timeout_interval",
+      "text": "rcp::watchdog::StreamWatchdog::check shall report HealthEvent::overflowed only once more than RequestStreamConfig::rx_wd_timeout_interval milliseconds have elapsed since the stream's last kick_from_request call, and only while RequestStreamConfig::rx_wd_enable is set.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-002",
-      "title": "Zone starts Healthy",
-      "text": "A zone controller shall be in the Healthy state immediately after Keeper construction.",
+      "title": "kick_from_request resets the watchdog for any inbound request",
+      "text": "rcp::watchdog::StreamWatchdog::kick_from_request shall reset that stream's watchdog on every call, regardless of the accepted request's kind or is_safety tag.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-003",
-      "title": "Degraded after degrade_after misses",
-      "text": "A zone controller shall transition to Degraded after degrade_after consecutive kick failures.",
+      "title": "Overflow purges normal requests and retains safety-tagged ones when safestate-enabled",
+      "text": "rcp::watchdog::StreamWatchdog::check shall, on overflow while RequestStreamConfig::rx_wd_safestate_enable is set, latch the stream into safe state and cancel every pending/started non-safety request on the supplied RequestLedger while leaving is_safety=true records untouched, reporting HealthEvent::entered_safe_state and the purge count; it shall latch nothing and purge nothing when rx_wd_safestate_enable is clear.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-004",
-      "title": "Faulted after fault_after misses",
-      "text": "A zone controller shall transition to Faulted after fault_after consecutive kick failures.",
+      "title": "Latched safe state does not re-fire until explicitly cleared",
+      "text": "Once rcp::watchdog::StreamWatchdog::check has latched a stream into safe state, subsequent check calls shall not re-detect overflow for that stream until clear_safe_state is called.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-005",
-      "title": "Recovery to Healthy on success",
-      "text": "A zone controller shall transition back to Healthy on the next successful kick after any degraded or faulted state.",
+      "title": "Repeating info notification while latched",
+      "text": "rcp::watchdog::StreamWatchdog::check shall report HealthEvent::info_notification_due on every call while the stream is latched into safe state and RequestStreamConfig::rx_wd_info_enable is set, and shall not report it otherwise.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-006",
-      "title": "Callback fires on transition",
-      "text": "The health callback shall be invoked with the new HealthState whenever a zone's health state changes.",
+      "title": "Manager multiplexes independent per-stream watchdog state",
+      "text": "rcp::watchdog::Manager shall track each registered stream_key's watchdog state independently, such that kicking, overflowing, or latching one registered stream shall not affect any other registered stream's state.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-007",
-      "title": "Kick timeout respected",
-      "text": "Each kick shall use a Context with the configured timeout; a timeout response shall count as a miss.",
+      "title": "Unregistered stream operations report stream_not_registered",
+      "text": "rcp::watchdog::Manager::on_request_received, poll, and clear_safe_state shall return WatchdogErrc::stream_not_registered, unchanged, for any stream_key not passed to register_stream, without altering any other registered stream's state.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-008",
-      "title": "Close stops background thread",
-      "text": "Keeper::close() shall cause the background kick thread to terminate without hanging.",
+      "title": "Subscribed callbacks fire in registration order",
+      "text": "rcp::watchdog::Manager::poll shall invoke every callback registered via subscribe, in registration order, exactly once for each HealthEvent it produces.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-001",
-      "title": "Monitor subscribes to all zones",
-      "text": "deadline::Monitor shall subscribe to each registered zone controller's Status stream on construction.",
+      "title": "Never-reported target is dead",
+      "text": "rcp::deadline::LivenessTracker::dead shall return true for a target on which note_activity has never been called, regardless of the elapsed time argument.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-002",
-      "title": "Dead event on initial deadline",
-      "text": "The monitor shall emit LivenessEvent{alive=false} for any zone that does not publish a Status within the configured deadline, including the very first deadline period.",
+      "title": "Heartbeat and lifecycle-change signals are independently sufficient",
+      "text": "rcp::deadline::Monitor::note_heartbeat and note_lifecycle_change shall each independently reset a registered target's last-seen-activity clock, such that either call alone is sufficient to keep that target's LivenessTracker::dead false within the configured deadline.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-003",
-      "title": "Repeated dead events suppressed",
-      "text": "The monitor shall not re-emit LivenessEvent{alive=false} for a zone that is already known to be dead.",
+      "title": "Dead event fires on the first check of a never-reported target",
+      "text": "rcp::deadline::Monitor::check shall emit LivenessEvent{alive=false} for a registered target that has never received a note_heartbeat/note_lifecycle_change call, on the first check call that evaluates it.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-004",
-      "title": "Alive event on first status",
-      "text": "The monitor shall emit LivenessEvent{alive=true} when the first Status arrives for a previously-dead zone.",
+      "title": "Repeated dead events suppressed",
+      "text": "rcp::deadline::Monitor::check shall not re-emit LivenessEvent{alive=false} for a target whose alive state was already reported false by a prior check call.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-005",
-      "title": "Deadline timer resets on status",
-      "text": "Receipt of a Status shall reset the per-zone deadline timer.",
+      "title": "Alive event fires on recovery",
+      "text": "rcp::deadline::Monitor::check shall emit LivenessEvent{alive=true} for a target whose prior reported state was dead once a note_heartbeat/note_lifecycle_change call has occurred within the configured deadline before that check call.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-006",
-      "title": "alive() returns false before first status",
-      "text": "Monitor::alive(z) shall return false for any zone that has not yet published a Status.",
+      "title": "alive() returns false before any check",
+      "text": "rcp::deadline::Monitor::alive shall return false for any target not yet evaluated by check, including a target that has already received a note_heartbeat/note_lifecycle_change call.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-007",
-      "title": "Close terminates watch threads",
-      "text": "Monitor::close() shall signal all watch threads to stop.",
+      "title": "Subscribed callbacks fire in registration order",
+      "text": "rcp::deadline::Monitor::check shall invoke every callback registered via subscribe, in registration order, exactly once for each LivenessEvent it produces.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-008",
-      "title": "Destructor joins threads",
-      "text": "The Monitor destructor shall join all watch threads before returning.",
+      "title": "Targets are evaluated independently",
+      "text": "rcp::deadline::Monitor::check shall evaluate each registered target's liveness independently, such that one target's deadline expiry or recovery shall not affect any other registered target's reported alive state.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2908,6 +2908,14 @@
       "id": "REQ-LIFECYCLE-006",
       "title": "Explicit deconfigure() backward path",
       "text": "ServerLifecycle::deconfigure shall reset state to HwUnconfigured and clear both generic_config_locked and functional_config_locked regardless of the state deconfigure was called from, after which advance shall again accept the normal forward sequence.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LIFECYCLE-007",
+      "title": "State-changed callback fires only on an actual state change",
+      "text": "ServerLifecycle::subscribe_state_changed callbacks shall be invoked with (previous, current) exactly once for every advance() or deconfigure() call that changes state(), in registration order, and shall not be invoked for a call that fails or that leaves state() unchanged.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"

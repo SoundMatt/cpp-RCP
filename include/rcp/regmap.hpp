@@ -48,6 +48,13 @@
 // placeholder fields v2.1.0 reserved layout for. The behavior that reads
 // and acts on these fields lives in rcp/e2e.hpp and rcp/request.hpp, not
 // here — same config-vs-behavior split as everything else in this header.
+//
+// ROADMAP.md milestone 54, "Watchdog & Liveness Rebuild (v2.10.0)":
+// ResponseQueueConfig gains flush_time — a small, explicitly-scoped
+// addition rcp/deadline.hpp's rebuilt liveness monitor needs as a
+// heartbeat-cadence signal, in place of the Status-subscription concept
+// that does not exist in this model. Behavior lives in rcp/deadline.hpp,
+// same split as the watchdog fields above.
 #pragma once
 
 #include <rcp/avtp.hpp>
@@ -223,6 +230,17 @@ struct EpIdMappingEntry {
 struct ResponseQueueConfig {
     uint16_t response_queue_size = 0;
     uint16_t ack_queue_size      = 0;
+
+    // Periodic response/ack queue flush cadence, in milliseconds (extraction
+    // §3.10). ROADMAP.md milestone 54 (v2.10.0) reuses this field as a
+    // liveness heartbeat signal: rcp/deadline.hpp treats each flush as
+    // evidence the owning RC Server is alive, since there is no Status-
+    // subscription concept to poll in this model. This field's unit is this
+    // implementation's own choice, same as every other concrete-width
+    // decision in this header; behavior that reads and acts on it lives in
+    // rcp/deadline.hpp, not here — same config-vs-behavior split as
+    // RequestStreamConfig's watchdog fields above.
+    uint32_t flush_time = 0;
 };
 
 // ── svr_implemented_options bitmask ──────────────────────────────────────────
