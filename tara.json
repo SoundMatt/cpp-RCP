@@ -1,104 +1,175 @@
 {
-  "format": "cpp-FuSa TARA v1",
-  "generatedAt": "2026-07-28T19:39:17Z",
+  "generatedAt": "2026-07-28T20:55:48Z",
+  "kind": "tara-report",
+  "language": "cpp",
   "project": "cpp-RCP",
-  "scenarios": [
+  "projectRoot": "/home/runner/work/cpp-RCP/cpp-RCP",
+  "schemaVersion": "1.14.0",
+  "standard": "iso21434",
+  "summary": {
+    "assetInventoryMethod": "assetsInProject counts the distinct `asset` values named in this TARA's own hand-curated scenario catalogue. cpp-FuSa does not yet perform automated asset discovery (e.g. from CMake targets, SBOM components, or data-flow analysis), so this metric shows internal consistency of the catalogue (every named asset has at least one scenario), not an independently measured attack surface — the honest gap this leaves open is any project asset the catalogue's author simply never listed.",
+    "assetsAnalyzed": 8,
+    "assetsInProject": 8,
+    "coveragePct": 100.0
+  },
+  "threats": [
     {
-      "asset": "cpp-RCP binary",
-      "cyberGoal": "Build integrity: sign all release artifacts",
-      "damageScenario": "Attacker replaces signed binary with malicious version",
-      "feasibility": 2,
-      "id": "TS-001",
-      "impact": 4,
-      "riskLevel": "medium",
-      "riskValue": 8,
-      "threat": "Tampering with build artifacts",
+      "asset": "cpp-RCP release binary",
+      "attackFeasibility": "low",
+      "attackVector": "Compromise of the GitHub release pipeline, a maintainer's signing key, or the container registry hosting the all-in-one image.",
+      "id": "TARA-001",
+      "impact": {
+        "financial": "medium",
+        "operational": "medium",
+        "privacy": "low",
+        "safety": "high"
+      },
+      "mitigations": [
+        "sign — HMAC-SHA256 artifact signing",
+        "SLSA provenance verification (slsa command)",
+        "Release workflow requires branch-protected, reviewed PRs before tagging"
+      ],
+      "risk": "high",
+      "threat": "Attacker replaces a signed release binary with a trojaned build that suppresses safety findings before it reaches a downstream project's CI.",
       "treatment": "mitigate"
     },
     {
-      "asset": "Configuration (.fusa.json)",
-      "cyberGoal": "Config integrity: store config in VCS and verify hash",
-      "damageScenario": "Attacker modifies ASIL level or safety standard to weaken enforcement",
-      "feasibility": 2,
-      "id": "TS-002",
-      "impact": 3,
-      "riskLevel": "medium",
-      "riskValue": 6,
-      "threat": "Spoofing of safety configuration",
+      "asset": ".fusa.json / .fusa-hara.json project config",
+      "attackFeasibility": "medium",
+      "attackVector": "Direct write access to the repository, or a merged PR that was not reviewed for safety-relevant configuration changes.",
+      "id": "TARA-002",
+      "impact": {
+        "financial": "medium",
+        "operational": "low",
+        "privacy": "low",
+        "safety": "high"
+      },
+      "mitigations": [
+        "FUSA-STUB001 deny-list scan flags untouched hazard/goal templates (§1.6.1)",
+        "Code review required on any change to .fusa.json / .fusa-hara.json",
+        "hara --format json's completeness block surfaces missing ASIL/fssrRefs"
+      ],
+      "risk": "critical",
+      "threat": "Attacker (or careless commit) weakens the configured ASIL or replaces genuine hazard analysis with a stale/placeholder template, silently lowering the safety bar a downstream project believes it is held to.",
       "treatment": "mitigate"
     },
     {
-      "asset": "cpp-RCP CLI interface",
-      "cyberGoal": "Confidentiality: restrict CLI output in CI logs",
-      "damageScenario": "Safety findings leaked to unprivileged process via stdout",
-      "feasibility": 1,
-      "id": "TS-003",
-      "impact": 2,
-      "riskLevel": "low",
-      "riskValue": 2,
-      "threat": "Information disclosure via verbose output",
-      "treatment": "accept"
-    },
-    {
-      "asset": "Third-party dependencies (FetchContent)",
-      "cyberGoal": "Integrity: pin dependency hashes in FetchDeps.cmake",
-      "damageScenario": "Malicious dependency injected via compromised upstream",
-      "feasibility": 2,
-      "id": "TS-004",
-      "impact": 4,
-      "riskLevel": "medium",
-      "riskValue": 8,
-      "threat": "Supply chain compromise",
+      "asset": "Generated evidence artifacts (fmea.json, tara.json, safety-case.json, check-report.json)",
+      "attackFeasibility": "low",
+      "attackVector": "Write access to the CI runner's workspace or the artifact upload step between generation and audit-pack bundling.",
+      "id": "TARA-003",
+      "impact": {
+        "financial": "medium",
+        "operational": "medium",
+        "privacy": "low",
+        "safety": "high"
+      },
+      "mitigations": [
+        "audit-pack — hashed manifest over every evidence artifact",
+        "sign --verify re-checks HMAC signatures before submission",
+        "sci — Software Configuration Index records a per-file sha256 at release time"
+      ],
+      "risk": "high",
+      "threat": "Insider or compromised CI step edits a generated evidence artifact after generation to hide a known defect from a certification reviewer.",
       "treatment": "mitigate"
     },
     {
-      "asset": "qualify-report.json",
-      "cyberGoal": "Integrity: SHA-256 hash field in qualify-report.json",
-      "damageScenario": "Attacker modifies qualify-report.json to hide failures",
-      "feasibility": 1,
-      "id": "TS-005",
-      "impact": 4,
-      "riskLevel": "low",
-      "riskValue": 4,
-      "threat": "Integrity violation of qualification evidence",
+      "asset": "Third-party CMake dependencies (FetchContent: CLI11, nlohmann/json, Catch2)",
+      "attackFeasibility": "very-low",
+      "attackVector": "Supply-chain compromise of an upstream GitHub repository or its release tags fetched by FetchDeps.cmake.",
+      "id": "TARA-004",
+      "impact": {
+        "financial": "medium",
+        "operational": "medium",
+        "privacy": "low",
+        "safety": "high"
+      },
+      "mitigations": [
+        "vuln — scans CMake dependency manifests for known vulnerabilities",
+        "Dependency versions pinned to tagged releases in cmake/FetchDeps.cmake"
+      ],
+      "risk": "medium",
+      "threat": "A compromised upstream dependency introduces malicious code that runs inside cpfusa's own analysis process, potentially tampering with the findings it produces.",
       "treatment": "mitigate"
     },
     {
-      "asset": ".fusa-evidence.json",
-      "cyberGoal": "Freshness: timestamp + VCS revision in evidence bundle",
-      "damageScenario": "Old passing evidence file reused after test suite degrades",
-      "feasibility": 2,
-      "id": "TS-006",
-      "impact": 3,
-      "riskLevel": "medium",
-      "riskValue": 6,
-      "threat": "Replay of stale test evidence",
+      "asset": "qualify-report.json tool-qualification evidence",
+      "attackFeasibility": "low",
+      "attackVector": "Direct file modification between qualify run and audit-pack bundling, or a forged report committed directly to the repository.",
+      "id": "TARA-005",
+      "impact": {
+        "financial": "medium",
+        "operational": "low",
+        "privacy": "low",
+        "safety": "high"
+      },
+      "mitigations": [
+        "qualify.hash — RFC 8785 canonical integrity hash over the report content",
+        "audit-pack bundles qualify-report.json under the same hashed manifest as every other artifact"
+      ],
+      "risk": "high",
+      "threat": "Attacker modifies qualify-report.json to hide a failing qualification case, making an unqualified tool appear qualified for its intended safety use (ISO 26262-8 Clause 11).",
       "treatment": "mitigate"
     },
     {
-      "asset": "CI pipeline",
-      "cyberGoal": "Availability: branch protection requires CI passing",
-      "damageScenario": "Attacker disables cpfusa check step to bypass safety enforcement",
-      "feasibility": 2,
-      "id": "TS-007",
-      "impact": 4,
-      "riskLevel": "medium",
-      "riskValue": 8,
-      "threat": "Denial of service to safety check gate",
+      "asset": "CI pipeline (ci.yml / release.yml)",
+      "attackFeasibility": "medium",
+      "attackVector": "Compromise of repository settings, a maintainer token, or a malicious workflow-file change in an unreviewed PR.",
+      "id": "TARA-006",
+      "impact": {
+        "financial": "low",
+        "operational": "high",
+        "privacy": "low",
+        "safety": "medium"
+      },
+      "mitigations": [
+        "Branch protection requires the check/lint/test CI jobs to pass before merge",
+        "dco.yml enforces signed-off commits, raising the bar for an anonymous malicious push"
+      ],
+      "risk": "critical",
+      "threat": "Attacker disables or bypasses the `check` gate step in CI, allowing a change with open ERROR findings to merge and release.",
       "treatment": "mitigate"
     },
     {
-      "asset": "Source code annotations (//fusa:req)",
-      "cyberGoal": "Traceability: trace coverage gate enforced in CI",
-      "damageScenario": "Developer removes annotations to hide coverage gaps",
-      "feasibility": 1,
-      "id": "TS-008",
-      "impact": 3,
-      "riskLevel": "low",
-      "riskValue": 3,
-      "threat": "Repudiation of requirement traceability",
+      "asset": "Source requirement annotations (//fusa:req, //fusa:test)",
+      "attackFeasibility": "medium",
+      "attackVector": "A code change that deletes or corrupts an annotation without the reviewer noticing, since the annotation itself is easy to overlook in a diff.",
+      "id": "TARA-007",
+      "impact": {
+        "financial": "low",
+        "operational": "medium",
+        "privacy": "low",
+        "safety": "medium"
+      },
+      "mitigations": [
+        "trace --req-coverage / --func-coverage gates CI on annotation density",
+        "trace flags a dangling //fusa:test reference to a nonexistent requirement id"
+      ],
+      "risk": "high",
+      "threat": "Developer removes or mistypes an annotation to hide a requirement-traceability gap from `trace`'s coverage gate.",
+      "treatment": "mitigate"
+    },
+    {
+      "asset": ".fusa-dispositions.json waiver log",
+      "attackFeasibility": "medium",
+      "attackVector": "A merged PR that adds a disposition entry without the scrutiny a normal finding-fix PR would receive, since a waiver reads as \"already handled\".",
+      "id": "TARA-008",
+      "impact": {
+        "financial": "low",
+        "operational": "medium",
+        "privacy": "low",
+        "safety": "high"
+      },
+      "mitigations": [
+        "disposition add requires --reviewer and --rationale (no anonymous waivers)",
+        "Code review required on any change to .fusa-dispositions.json",
+        "FUSA-STUB001 is disposition-suppressible only per-finding, never blanket (§1.6.1)"
+      ],
+      "risk": "critical",
+      "threat": "Attacker (or an over-broad legitimate waiver) adds a rule-level disposition that silently suppresses a real, currently-open safety finding project-wide.",
       "treatment": "mitigate"
     }
   ],
-  "standard": "ISO 21434:2021 Ch.9"
+  "tool": "cpp-FuSa",
+  "toolVersion": "0.15.0"
 }

@@ -1,33 +1,37 @@
 graph TD
 %% cpp-FuSa Safety Case GSN — cpp-RCP
-  G1["Goal: cpp-RCP is acceptably safe for iso26262 ASIL-AS..."]
-  G2["Goal: Software development process meets iso26262 req..."]
-  G3["Goal: No unacceptable residual risks remain"]
-  G4["Goal: All requirements are implemented and verified"]
-  G5["Goal: Static analysis reports no unmitigated errors"]
-  G6["Goal: Tool is qualified per ISO 26262 Part 8"]
-  S1{"Strategy: Argument over safety process evidence"}
-  S2{"Strategy: Argument over verification evidence"}
-  Sn1[("Solution: SAFETY_PLAN.md — documented safety plan")]
-  Sn2[("Solution: .fusa.json — project safety configuration")]
-  Sn3[("Solution: .fusa-reqs.json — requirements register")]
-  Sn4[("Solution: qualify-report.json — tool qualification evid...")]
-  Sn5[("Solution: .fusa-evidence.json — test execution evidence")]
-  Sn6[("Solution: check-report.json — safety check report")]
-  C1(("Context: Project: cpp-RCP standard: iso26262 ASIL-ASIL-B"))
-  A1[/"Assumption: Compiler toolchain is itself qualified"/]
-  G1 -->|"supported-by"| S1
-  S1 -->|"in-context-of"| G2
-  S1 -->|"in-context-of"| G3
-  S1 -->|"in-context-of"| G4
-  S1 -->|"in-context-of"| G5
-  S1 -->|"in-context-of"| G6
-  G2 -->|"supported-by"| Sn1
-  G2 -->|"supported-by"| Sn2
-  G4 -->|"supported-by"| S2
-  S2 -->|"in-context-of"| Sn3
-  S2 -->|"in-context-of"| Sn5
-  G5 -->|"supported-by"| Sn6
-  G6 -->|"supported-by"| Sn4
-  G1 -->|"in-context-of"| C1
-  G2 -->|"in-context-of"| A1
+  G1["goal: cpp-RCP produces conformant, non-fabricated saf..."]
+  G2["goal: cpp-RCP's own development process satisfies iso..."]
+  G3["goal: Every generated evidence artifact (fmea/tara/ha..."]
+  G4["goal: Every requirement in .fusa-reqs.json is impleme..."]
+  G5["goal: Static analysis (check/lint/analyze/cyber) repo..."]
+  G6["goal: cpp-RCP itself is qualified as a verification t..."]
+  St1{"strategy: Argument by direct inspection of generated evid..."}
+  St2{"strategy: Argument over independent verification and qual..."}
+  Sn1[("solution: SAFETY_PLAN.md — documented development and e...")]
+  Sn2[("solution: .fusa.json — declares the standard/ASIL this ...")]
+  Sn3[("solution: .fusa-reqs.json — requirement registry with r...")]
+  Sn4[("solution: qualify-report.json — tool qualification case...")]
+  Sn5[("solution: .fusa-evidence.json — collected test executio...")]
+  Sn6[("solution: check-report.json — the aggregated finding re...")]
+  Sn7[("solution: fmea.json / tara.json / .fusa-hara.json — pas...")]
+  C1(("context: Project: cpp-RCP, standard: iso26262 ASIL-B"))
+  A1[/"assumption: The compiler toolchain used to build cpp-RCP is..."/]
+  J1[/"justification: §1.6.1's FUSA-STUB001/002 heuristics are an au..."/]
+  G1 -->|"supportedBy"| St1
+  St1 -->|"inContextOf"| G3
+  St1 -->|"inContextOf"| G5
+  G1 -->|"supportedBy"| St2
+  St2 -->|"inContextOf"| G2
+  St2 -->|"inContextOf"| G4
+  St2 -->|"inContextOf"| G6
+  G2 -->|"supportedBy"| Sn1
+  G2 -->|"supportedBy"| Sn2
+  G4 -->|"supportedBy"| Sn3
+  G4 -->|"supportedBy"| Sn5
+  G5 -->|"supportedBy"| Sn6
+  G6 -->|"supportedBy"| Sn4
+  G3 -->|"supportedBy"| Sn7
+  G1 -->|"inContextOf"| C1
+  St2 -->|"inContextOf"| A1
+  G3 -->|"inContextOf"| J1

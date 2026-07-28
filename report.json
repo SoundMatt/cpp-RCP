@@ -3380,7 +3380,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/e2e.hpp",
-        "line": 148
+        "line": 150
       },
       "message": "Recursive call to 'crc32' — add depth-bound guard (JSF++ 119)",
       "remediation": "Add // fusa:recursive <max-depth> annotation or refactor iteratively",
@@ -5305,7 +5305,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/e2e.hpp",
-        "line": 261
+        "line": 263
       },
       "message": "switch statement without default case (MISRA C++:2023 M6-4-6)",
       "remediation": "Add a default: case (even if just a comment or assertion)",
@@ -19032,6 +19032,61 @@
     {
       "category": "lint",
       "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 223
+      },
+      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
+      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
+      "ruleId": "LINT024",
+      "severity": "WARNING"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 242
+      },
+      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
+      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
+      "ruleId": "LINT024",
+      "severity": "WARNING"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 614
+      },
+      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
+      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
+      "ruleId": "LINT024",
+      "severity": "WARNING"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 630
+      },
+      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
+      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
+      "ruleId": "LINT024",
+      "severity": "WARNING"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 670
+      },
+      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
+      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
+      "ruleId": "LINT024",
+      "severity": "WARNING"
+    },
+    {
+      "category": "lint",
+      "location": {
         "file": "include/rcp/zonegroup.hpp",
         "line": 72
       },
@@ -19099,7 +19154,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/e2e.hpp",
-        "line": 420
+        "line": 422
       },
       "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
       "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
@@ -19175,63 +19230,41 @@
     {
       "category": "lint",
       "location": {
+        "file": "include/rcp/acf.hpp",
+        "line": 215
+      },
+      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
+      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
+      "ruleId": "LINT024",
+      "severity": "WARNING"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/acf.hpp",
+        "line": 292
+      },
+      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
+      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
+      "ruleId": "LINT024",
+      "severity": "WARNING"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/acf.hpp",
+        "line": 294
+      },
+      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
+      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
+      "ruleId": "LINT024",
+      "severity": "WARNING"
+    },
+    {
+      "category": "lint",
+      "location": {
         "file": "include/rcp/proxy.hpp",
         "line": 59
-      },
-      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
-      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
-      "ruleId": "LINT024",
-      "severity": "WARNING"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 122
-      },
-      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
-      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
-      "ruleId": "LINT024",
-      "severity": "WARNING"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 134
-      },
-      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
-      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
-      "ruleId": "LINT024",
-      "severity": "WARNING"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 392
-      },
-      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
-      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
-      "ruleId": "LINT024",
-      "severity": "WARNING"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 469
-      },
-      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
-      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
-      "ruleId": "LINT024",
-      "severity": "WARNING"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 471
       },
       "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
       "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
@@ -19275,17 +19308,6 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/legacy_wire.hpp",
-        "line": 117
-      },
-      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
-      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
-      "ruleId": "LINT024",
-      "severity": "WARNING"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/legacy_wire.hpp",
         "line": 119
       },
       "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
@@ -19308,7 +19330,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/legacy_wire.hpp",
-        "line": 147
+        "line": 123
       },
       "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
       "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
@@ -19319,7 +19341,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/legacy_wire.hpp",
-        "line": 178
+        "line": 149
       },
       "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
       "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
@@ -19330,7 +19352,18 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/legacy_wire.hpp",
-        "line": 208
+        "line": 180
+      },
+      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
+      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
+      "ruleId": "LINT024",
+      "severity": "WARNING"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/legacy_wire.hpp",
+        "line": 210
       },
       "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
       "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
@@ -19373,8 +19406,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 214
+        "file": "include/rcp/avtp.hpp",
+        "line": 112
       },
       "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
       "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
@@ -19384,41 +19417,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 233
-      },
-      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
-      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
-      "ruleId": "LINT024",
-      "severity": "WARNING"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 605
-      },
-      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
-      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
-      "ruleId": "LINT024",
-      "severity": "WARNING"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 621
-      },
-      "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
-      "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
-      "ruleId": "LINT024",
-      "severity": "WARNING"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 661
+        "file": "include/rcp/avtp.hpp",
+        "line": 124
       },
       "message": "Control-flow statement without braces (MISRA C++:2023 M6-3-1)",
       "remediation": "Add braces {} to the body to prevent dangling-else and accidental scope issues",
@@ -23575,6 +23575,226 @@
     {
       "category": "lint",
       "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 89
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 90
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 91
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 92
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 93
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 94
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 95
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 96
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 122
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 222
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 223
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 224
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 237
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 242
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 243
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 274
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 275
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 276
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 277
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/request.hpp",
+        "line": 278
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
         "file": "include/rcp/canbr.hpp",
         "line": 24
       },
@@ -24390,7 +24610,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/e2e.hpp",
-        "line": 74
+        "line": 76
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -24401,7 +24621,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/e2e.hpp",
-        "line": 116
+        "line": 118
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -24412,29 +24632,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/e2e.hpp",
-        "line": 131
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/e2e.hpp",
-        "line": 184
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/e2e.hpp",
-        "line": 185
+        "line": 133
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -24456,7 +24654,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/e2e.hpp",
-        "line": 190
+        "line": 187
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -24467,7 +24665,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/e2e.hpp",
-        "line": 208
+        "line": 188
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -24478,7 +24676,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/e2e.hpp",
-        "line": 232
+        "line": 192
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -24489,7 +24687,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/e2e.hpp",
-        "line": 233
+        "line": 210
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -24501,6 +24699,28 @@
       "location": {
         "file": "include/rcp/e2e.hpp",
         "line": 234
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/e2e.hpp",
+        "line": 235
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/e2e.hpp",
+        "line": 236
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -24950,228 +25170,74 @@
     {
       "category": "lint",
       "location": {
+        "file": "include/rcp/acf.hpp",
+        "line": 97
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/acf.hpp",
+        "line": 101
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/acf.hpp",
+        "line": 103
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/acf.hpp",
+        "line": 108
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/acf.hpp",
+        "line": 252
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/acf.hpp",
+        "line": 253
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
         "file": "include/rcp/proxy.hpp",
         "line": 35
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 81
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 82
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 83
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 122
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 123
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 134
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 135
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 149
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 154
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 155
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 161
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 162
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 164
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 209
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 274
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 278
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 280
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 285
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 429
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/wire.hpp",
-        "line": 430
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -25215,7 +25281,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/legacy_wire.hpp",
-        "line": 66
+        "line": 68
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -25226,7 +25292,7 @@
       "category": "lint",
       "location": {
         "file": "include/rcp/legacy_wire.hpp",
-        "line": 67
+        "line": 69
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -25588,226 +25654,6 @@
     {
       "category": "lint",
       "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 80
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 81
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 82
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 83
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 84
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 85
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 86
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 87
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 113
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 213
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 214
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 215
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 228
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 233
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 234
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 265
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 266
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 267
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 268
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "include/rcp/sequencer.hpp",
-        "line": 269
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
         "file": "include/rcp/spi.hpp",
         "line": 56
       },
@@ -25821,6 +25667,149 @@
       "location": {
         "file": "include/rcp/spi.hpp",
         "line": 116
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 71
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 72
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 112
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 113
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 124
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 125
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 139
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 144
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 145
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 151
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 152
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 154
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "include/rcp/avtp.hpp",
+        "line": 199
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -46389,6 +46378,677 @@
     {
       "category": "lint",
       "location": {
+        "file": "tests/test_request.cpp",
+        "line": 28
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 32
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 41
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 48
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 56
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 59
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 60
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 66
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 67
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 79
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 117
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 121
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 126
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 127
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 128
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 132
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 168
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 212
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 213
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 214
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 222
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 225
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 244
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 254
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 261
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 263
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 270
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 271
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 294
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 314
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 316
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 318
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 320
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 321
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 329
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 330
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 335
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 340
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 341
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 349
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 356
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 411
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 437
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 453
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 463
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 465
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 475
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 483
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 485
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 495
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 503
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 505
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 515
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 567
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 572
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 584
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 586
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 617
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 620
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 629
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_request.cpp",
+        "line": 634
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
         "file": "tests/test_shmem.cpp",
         "line": 41
       },
@@ -46413,259 +47073,6 @@
       "location": {
         "file": "tests/test_shmem.cpp",
         "line": 103
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 54
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 55
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 56
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 73
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 74
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 75
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 125
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 126
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 128
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 135
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 136
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 165
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 167
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 168
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 220
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 229
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 233
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 246
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 272
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 278
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 280
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 288
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_wire.cpp",
-        "line": 290
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -48524,7 +48931,7 @@
       "category": "lint",
       "location": {
         "file": "tests/test_legacy_wire.cpp",
-        "line": 27
+        "line": 28
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -48535,7 +48942,7 @@
       "category": "lint",
       "location": {
         "file": "tests/test_legacy_wire.cpp",
-        "line": 64
+        "line": 65
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -48546,7 +48953,7 @@
       "category": "lint",
       "location": {
         "file": "tests/test_legacy_wire.cpp",
-        "line": 108
+        "line": 109
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49799,8 +50206,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 26
+        "file": "tests/test_acf.cpp",
+        "line": 27
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49810,7 +50217,18 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
+        "file": "tests/test_acf.cpp",
+        "line": 28
+      },
+      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
+      "remediation": "Replace with a constexpr named constant to document intent",
+      "ruleId": "LINT029",
+      "severity": "INFO"
+    },
+    {
+      "category": "lint",
+      "location": {
+        "file": "tests/test_acf.cpp",
         "line": 30
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
@@ -49821,8 +50239,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 39
+        "file": "tests/test_acf.cpp",
+        "line": 37
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49832,8 +50250,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 46
+        "file": "tests/test_acf.cpp",
+        "line": 38
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49843,8 +50261,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 54
+        "file": "tests/test_acf.cpp",
+        "line": 67
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49854,8 +50272,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 57
+        "file": "tests/test_acf.cpp",
+        "line": 69
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49865,8 +50283,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 58
+        "file": "tests/test_acf.cpp",
+        "line": 70
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49876,8 +50294,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 64
+        "file": "tests/test_acf.cpp",
+        "line": 118
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49887,8 +50305,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 65
+        "file": "tests/test_acf.cpp",
+        "line": 127
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49898,8 +50316,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 77
+        "file": "tests/test_acf.cpp",
+        "line": 131
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49909,8 +50327,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 115
+        "file": "tests/test_acf.cpp",
+        "line": 144
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49920,8 +50338,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 119
+        "file": "tests/test_acf.cpp",
+        "line": 170
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49931,8 +50349,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 124
+        "file": "tests/test_acf.cpp",
+        "line": 176
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49942,8 +50360,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 125
+        "file": "tests/test_acf.cpp",
+        "line": 178
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49953,8 +50371,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 126
+        "file": "tests/test_acf.cpp",
+        "line": 186
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49964,8 +50382,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 130
+        "file": "tests/test_acf.cpp",
+        "line": 188
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49975,8 +50393,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 166
+        "file": "tests/test_avtp.cpp",
+        "line": 49
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49986,8 +50404,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 210
+        "file": "tests/test_avtp.cpp",
+        "line": 50
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -49997,8 +50415,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 211
+        "file": "tests/test_avtp.cpp",
+        "line": 51
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -50008,8 +50426,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 212
+        "file": "tests/test_avtp.cpp",
+        "line": 68
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -50019,8 +50437,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 220
+        "file": "tests/test_avtp.cpp",
+        "line": 69
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -50030,437 +50448,8 @@
     {
       "category": "lint",
       "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 223
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 242
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 252
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 259
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 261
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 268
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 269
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 292
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 312
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 314
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 316
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 318
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 319
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 327
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 328
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 333
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 338
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 339
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 347
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 354
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 409
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 435
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 451
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 461
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 463
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 473
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 481
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 483
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 493
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 501
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 503
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 513
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 565
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 570
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 582
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 584
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 615
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 618
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 627
-      },
-      "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
-      "remediation": "Replace with a constexpr named constant to document intent",
-      "ruleId": "LINT029",
-      "severity": "INFO"
-    },
-    {
-      "category": "lint",
-      "location": {
-        "file": "tests/test_sequencer.cpp",
-        "line": 632
+        "file": "tests/test_avtp.cpp",
+        "line": 70
       },
       "message": "Magic number literal — prefer named constant (MISRA C++:2023 A2-13-4)",
       "remediation": "Replace with a constexpr named constant to document intent",
@@ -52646,19 +52635,19 @@
       "severity": "WARNING"
     }
   ],
-  "generatedAt": "2026-07-28T19:39:26Z",
+  "generatedAt": "2026-07-28T20:55:55Z",
   "kind": "check-report",
   "language": "cpp",
   "project": "cpp-RCP",
   "projectRoot": "/home/runner/work/cpp-RCP/cpp-RCP",
-  "schemaVersion": "1.10.12",
+  "schemaVersion": "1.14.0",
   "standard": "iso26262",
   "summary": {
     "errors": 5,
-    "infos": 2616,
-    "total": 4786,
+    "infos": 2615,
+    "total": 4785,
     "warnings": 2165
   },
   "tool": "cpp-FuSa",
-  "toolVersion": "0.14.6"
+  "toolVersion": "0.15.0"
 }

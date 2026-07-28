@@ -1,26 +1,47 @@
 # TARA — cpp-RCP
 
-Standard: ISO 21434:2021 Ch.9  
-Generated: 2026-07-28T19:39:17Z
+Standard: iso21434  
+Generated: 2026-07-28T20:55:48Z  
+Coverage: 8/8 assets (100.0%)
 
-| ID | Asset | Threat | Feasibility | Impact | Risk | Level | Treatment |
-|---|---|---|---|---|---|---|---|
-| TS-001 | cpp-RCP binary | Tampering with build artifacts | 2 | 4 | 8 | medium | mitigate |
-| TS-002 | Configuration (.fusa.json) | Spoofing of safety configuration | 2 | 3 | 6 | medium | mitigate |
-| TS-003 | cpp-RCP CLI interface | Information disclosure via verbose output | 1 | 2 | 2 | low | accept |
-| TS-004 | Third-party dependencies (FetchContent) | Supply chain compromise | 2 | 4 | 8 | medium | mitigate |
-| TS-005 | qualify-report.json | Integrity violation of qualification evidence | 1 | 4 | 4 | low | mitigate |
-| TS-006 | .fusa-evidence.json | Replay of stale test evidence | 2 | 3 | 6 | medium | mitigate |
-| TS-007 | CI pipeline | Denial of service to safety check gate | 2 | 4 | 8 | medium | mitigate |
-| TS-008 | Source code annotations (//fusa:req) | Repudiation of requirement traceability | 1 | 3 | 3 | low | mitigate |
+| ID | Asset | Threat | Feasibility | Risk | Treatment |
+|---|---|---|---|---|---|
+| TARA-001 | cpp-RCP release binary | Attacker replaces a signed release binary with a trojaned build that suppresses safety findings before it reaches a downstream project's CI. | low | high | mitigate |
+| TARA-002 | .fusa.json / .fusa-hara.json project config | Attacker (or careless commit) weakens the configured ASIL or replaces genuine hazard analysis with a stale/placeholder template, silently lowering the safety bar a downstream project believes it is held to. | medium | critical | mitigate |
+| TARA-003 | Generated evidence artifacts (fmea.json, tara.json, safety-case.json, check-report.json) | Insider or compromised CI step edits a generated evidence artifact after generation to hide a known defect from a certification reviewer. | low | high | mitigate |
+| TARA-004 | Third-party CMake dependencies (FetchContent: CLI11, nlohmann/json, Catch2) | A compromised upstream dependency introduces malicious code that runs inside cpfusa's own analysis process, potentially tampering with the findings it produces. | very-low | medium | mitigate |
+| TARA-005 | qualify-report.json tool-qualification evidence | Attacker modifies qualify-report.json to hide a failing qualification case, making an unqualified tool appear qualified for its intended safety use (ISO 26262-8 Clause 11). | low | high | mitigate |
+| TARA-006 | CI pipeline (ci.yml / release.yml) | Attacker disables or bypasses the `check` gate step in CI, allowing a change with open ERROR findings to merge and release. | medium | critical | mitigate |
+| TARA-007 | Source requirement annotations (//fusa:req, //fusa:test) | Developer removes or mistypes an annotation to hide a requirement-traceability gap from `trace`'s coverage gate. | medium | high | mitigate |
+| TARA-008 | .fusa-dispositions.json waiver log | Attacker (or an over-broad legitimate waiver) adds a rule-level disposition that silently suppresses a real, currently-open safety finding project-wide. | medium | critical | mitigate |
 
-## Cyber Goals
+## Impact (SFOP) & Mitigations
 
-- **TS-001**: Build integrity: sign all release artifacts
-- **TS-002**: Config integrity: store config in VCS and verify hash
-- **TS-003**: Confidentiality: restrict CLI output in CI logs
-- **TS-004**: Integrity: pin dependency hashes in FetchDeps.cmake
-- **TS-005**: Integrity: SHA-256 hash field in qualify-report.json
-- **TS-006**: Freshness: timestamp + VCS revision in evidence bundle
-- **TS-007**: Availability: branch protection requires CI passing
-- **TS-008**: Traceability: trace coverage gate enforced in CI
+- **TARA-001** — safety=high financial=medium operational=medium privacy=low
+  - sign — HMAC-SHA256 artifact signing
+  - SLSA provenance verification (slsa command)
+  - Release workflow requires branch-protected, reviewed PRs before tagging
+- **TARA-002** — safety=high financial=medium operational=low privacy=low
+  - FUSA-STUB001 deny-list scan flags untouched hazard/goal templates (§1.6.1)
+  - Code review required on any change to .fusa.json / .fusa-hara.json
+  - hara --format json's completeness block surfaces missing ASIL/fssrRefs
+- **TARA-003** — safety=high financial=medium operational=medium privacy=low
+  - audit-pack — hashed manifest over every evidence artifact
+  - sign --verify re-checks HMAC signatures before submission
+  - sci — Software Configuration Index records a per-file sha256 at release time
+- **TARA-004** — safety=high financial=medium operational=medium privacy=low
+  - vuln — scans CMake dependency manifests for known vulnerabilities
+  - Dependency versions pinned to tagged releases in cmake/FetchDeps.cmake
+- **TARA-005** — safety=high financial=medium operational=low privacy=low
+  - qualify.hash — RFC 8785 canonical integrity hash over the report content
+  - audit-pack bundles qualify-report.json under the same hashed manifest as every other artifact
+- **TARA-006** — safety=medium financial=low operational=high privacy=low
+  - Branch protection requires the check/lint/test CI jobs to pass before merge
+  - dco.yml enforces signed-off commits, raising the bar for an anonymous malicious push
+- **TARA-007** — safety=medium financial=low operational=medium privacy=low
+  - trace --req-coverage / --func-coverage gates CI on annotation density
+  - trace flags a dangling //fusa:test reference to a nonexistent requirement id
+- **TARA-008** — safety=high financial=low operational=medium privacy=low
+  - disposition add requires --reviewer and --rationale (no anonymous waivers)
+  - Code review required on any change to .fusa-dispositions.json
+  - FUSA-STUB001 is disposition-suppressible only per-finding, never blanket (§1.6.1)
