@@ -38,6 +38,22 @@ add_executable(test_spi test_spi.cpp)
 target_link_libraries(test_spi PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_spi COMMAND test_spi)
 
+add_executable(test_i2c test_i2c.cpp)
+target_link_libraries(test_i2c PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_i2c COMMAND test_i2c)
+
+add_executable(test_uart test_uart.cpp)
+target_link_libraries(test_uart PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_uart COMMAND test_uart)
+
+add_executable(test_adc test_adc.cpp)
+target_link_libraries(test_adc PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_adc COMMAND test_adc)
+
+add_executable(test_pwm test_pwm.cpp)
+target_link_libraries(test_pwm PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_pwm COMMAND test_pwm)
+
 add_executable(test_e2e test_e2e.cpp)
 target_link_libraries(test_e2e PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_e2e COMMAND test_e2e)

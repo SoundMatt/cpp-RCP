@@ -3151,6 +3151,206 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-I2C-001",
+      "title": "i2c_mode open item \u2014 coarse high-speed decode only",
+      "text": "rcp::i2c::i2c_mode_of shall map AcfMessageInfo::hs=false to I2cMode::Standard and hs=true to I2cMode::HighSpeed, and shall not attempt to distinguish any finer I2C speed grade, per this milestone's documented open item pending a future spec errata pass.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-I2C-002",
+      "title": "I2C compound-wait arbitrary-bit-sequence match",
+      "text": "rcp::i2c::compound_wait_matches_bits shall compare exactly the leading `bit_len` bits of `received` against `expected` (MSB-first within a byte, comparing only the top `bit_len % 8` bits of a partial final byte), shall return false when either buffer is shorter than `bit_len` requires, and shall return false for `bit_len == 0`.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-I2C-003",
+      "title": "I2C controller-only raw byte-stream transfer",
+      "text": "rcp::i2c::I2cEndpoint::transfer shall record the exact byte sequences passed as `out_bytes` and `in_bytes` \u2014 including any address byte(s) the caller embeds in `out_bytes` \u2014 retrievable via last_sent()/last_received().",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-I2C-004",
+      "title": "I2C TransferComplete and Nack trigger signals",
+      "text": "rcp::i2c::I2cEndpoint::transfer shall notify TransferComplete on every transfer, shall additionally notify Nack and return I2cErrc::nack when called with acked=false, and shall notify only TransferComplete for an acknowledged transfer.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-I2C-005",
+      "title": "I2cErrc is a distinct error category with a non-empty message",
+      "text": "rcp::i2c::make_error_code(I2cErrc::nack) shall report rcp::i2c::i2c_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-001",
+      "title": "UART TX queue is independent of the RX FIFO",
+      "text": "rcp::uart::UartEndpoint::enqueue_tx shall append to a TX queue independent of the RX FIFO's contents, drain_tx shall return and clear exactly what was queued, and enqueue_tx shall return UartErrc::tx_queue_overflow rather than partially enqueueing when the push would exceed kTxQueueCapacity.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-002",
+      "title": "UART RX FIFO fill/drain semantics",
+      "text": "rcp::uart::UartEndpoint::rx_fill shall append bytes to the RX FIFO, rx_available shall report its current occupancy, and rx_fill shall return UartErrc::rx_fifo_overflow rather than partially filling when the push would exceed kRxFifoCapacity.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-003",
+      "title": "UART read completion: read_size reached or uart_timeout elapsed",
+      "text": "rcp::uart::UartEndpoint::handle_read shall drain up to `read_size` bytes currently available in the RX FIFO, shall report out_timed_out=true only when read_size was not fully reached and elapsed_ms >= uart_timeout_ms, and shall return UartErrc::read_size_exceeds_bound for a read_size greater than kMaxReadSize without modifying the RX FIFO.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-004",
+      "title": "UART payload-less pure read requests",
+      "text": "rcp::uart::UartEndpoint::handle_pure_read shall drain and return every byte currently buffered in the RX FIFO without waiting on read_size or uart_timeout, and shall return an empty result when the RX FIFO is empty.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-005",
+      "title": "UART sub-octet bit-width padding rules",
+      "text": "rcp::uart::pack_frame_to_octet shall mask a frame's value to its low bits_per_frame bits (zero-padding the remaining high bits of the octet), rcp::uart::unpack_frame_bits shall invert that masking, and both shall return UartErrc::bits_per_frame_out_of_range for bits_per_frame outside [kMinBitsPerFrame, kMaxBitsPerFrame].",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-006",
+      "title": "UART RX FIFO / read_size single-AVTPDU accepted limitation",
+      "text": "rcp::uart::kRxFifoCapacity and rcp::uart::kTxQueueCapacity shall both equal kMaxReadSize, documenting the accepted limitation that both are bounded so a UART read response always fits one unfragmented AVTPDU, consistent with ROADMAP.md milestone 52's fragmentation no-go decision.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-007",
+      "title": "UartErrc is a distinct error category with a non-empty message",
+      "text": "rcp::uart::make_error_code(UartErrc::rx_fifo_overflow) shall report rcp::uart::uart_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-001",
+      "title": "ADC arithmetic-mean averaging combinator",
+      "text": "rcp::adc::compute_average shall compute the arithmetic mean of a non-empty sample set and shall return AdcErrc::no_signal for an empty sample set.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-002",
+      "title": "ADC three-level averaging model",
+      "text": "rcp::adc::AdcEndpoint::request_reading shall average adc_avg_intervals_per_request raw samples per averaged-interval value (level 1), shall combine adc_combine_avg_values such averaged-interval values into the reported result (level 2), and shall return AdcErrc::invalid_averaging_config when either configuration field is 0.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-003",
+      "title": "ADC request-driven sampling only",
+      "text": "rcp::adc::AdcEndpoint::request_reading shall invoke its sample source exactly adc_avg_intervals_per_request * adc_combine_avg_values times per call \u2014 no more, no fewer \u2014 and shall return AdcErrc::no_signal (this endpoint's analog of PWM_IN_NO_SIGNAL on the request path) the first time the sample source reports a missing capture, without free-running or pushing samples outside a call.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-004",
+      "title": "ADC ExternalTrigger cadence pattern",
+      "text": "rcp::adc::AdcEndpoint::request_reading_from_trigger_queue shall consume exactly adc_avg_intervals_per_request * adc_combine_avg_values entries from the front of the supplied trigger-sample queue, shall erase only the consumed entries on success, and shall return AdcErrc::no_signal on a queue holding fewer entries than required.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-005",
+      "title": "ADC no-signal handling for a missing triggered capture",
+      "text": "rcp::adc::AdcEndpoint::request_reading_from_trigger_queue shall return AdcErrc::no_signal when a consumed queue entry is std::nullopt, without producing a result derived from that entry.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-006",
+      "title": "AdcErrc is a distinct error category with a non-empty message",
+      "text": "rcp::adc::make_error_code(AdcErrc::no_signal) shall report rcp::adc::adc_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-001",
+      "title": "PWM_OUT/PWM_IN shared period/active-duration payload shape",
+      "text": "rcp::pwm::PwmValue shall default both period and active_duration to 0, and both rcp::pwm::PwmOutEndpoint and rcp::pwm::PwmInEndpoint shall operate on this same two-field type.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-002",
+      "title": "PWM_OUT write semantics: generic combinators applied independently",
+      "text": "rcp::pwm::PwmOutEndpoint::handle_write shall apply Replace/Or/And/Xor to `period` and `active_duration` independently via rcp::endpoint::apply_bitmask_write.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-003",
+      "title": "PWM_OUT write semantics: saturating Add/Subtract shared with GPIO",
+      "text": "rcp::pwm::PwmOutEndpoint::handle_write shall apply the saturating Add/Subtract rule to `period` and `active_duration` independently, clamping instead of wrapping, via the same rcp::endpoint saturation helpers rcp::gpio::apply_gpio_write uses.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-004",
+      "title": "PWM_OUT write semantics: Reserved and Reconfigure rejected",
+      "text": "rcp::pwm::PwmOutEndpoint::handle_write shall return an error without modifying its state for WriteSemantics::Reserved, and shall return rcp::endpoint::EndpointErrc::non_combinable_write_semantics for WriteSemantics::Reconfigure (PWM_OUT defines no Reconfigure target of its own).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-005",
+      "title": "PWM_IN response-only read model and PWM_IN_NO_SIGNAL",
+      "text": "rcp::pwm::PwmInEndpoint::handle_read shall return PwmErrc::no_signal before any record_measurement call and again after clear_signal(), and shall otherwise return the most recently recorded PwmValue.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-006",
+      "title": "PWM_IN mid-pulse trigger signal",
+      "text": "rcp::pwm::PwmInEndpoint::record_measurement shall notify the MidPulse trigger signal on every call, observable via drain() only when MidPulse was armed via triggers().enable().",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-007",
+      "title": "PwmErrc is a distinct error category with a non-empty message",
+      "text": "rcp::pwm::make_error_code(PwmErrc::no_signal) shall report rcp::pwm::pwm_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
     }
   ]
 }
