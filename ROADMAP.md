@@ -750,6 +750,39 @@ disposition table below for the full reasoning per package.
 - Depends on: Wakeup control endpoint (v2.7.0), RC Server lifecycle
   (v2.1.0)
 
+**Done (v2.9.0):** `rcp/powerstate.hpp` is replaced in full, per the
+Satellite Package Disposition table's entry for this file — the prior
+ad-hoc `Active`/`Sleeping`/`BusOff` model built on `rcp.hpp`'s
+`Zone`/`CommandType`/`Controller` is discarded, not adapted. `PowerMode`
+gains the specification's actual four modes (`Normal`/`StandBy`/`Sleep`/
+`Unpowered`); `start_kind_on_exit` fixes `StandBy` as always `Hot` and
+`Sleep` as always `Cold`, exposed on `PowerManager` as
+`pending_start_kind()`. `PowerManager::enter_standby`/`enter_sleep` apply
+the three entry-refusal conditions in a fixed order — an unacknowledged
+wake-up event (queried directly from `rcp::wakeup::WakeupEndpoint::
+wakeup_message_pending()`), a non-idle endpoint, and a non-empty
+response/ack queue — with the latter two exposed as caller-supplied
+`Hooks::endpoints_idle`/`Hooks::response_ack_queues_empty` predicates
+rather than a direct `rcp/regmap.hpp` dependency, mirroring
+`rcp/lifecycle.hpp`'s `PlausibilityCheck` pattern. `resume_from_standby`
+implements the hot-start rule directly (no handshake, straight back to
+`Normal`); `begin_wake_from_sleep`/`note_wakeup_attempt_sent`/
+`acknowledge_wakeup` implement the hot-start-from-Sleep handshake by
+directly driving `WakeupEndpoint::wakeup_message_pending()`/
+`acknowledge_wakeup()` in a repeat-until-echoed-or-limit loop
+(`Config::wakeup_repeat_limit`, default 8, this implementation's own
+choice), with `Hooks::reenable_network_interface`/
+`Hooks::reenable_response_ack_queues` covering the handshake's step 1 and
+step 3. `notify_power_removed`/`notify_power_restored` model `Unpowered`
+as a hardware-driven, unconditional transition with no refusal path.
+Nothing else in the tree depended on the old `powerstate::Manager` API
+(only this file's own test did), so no legacy shim was needed, same as
+`rcp/e2e.hpp`'s equivalent note at v2.6.0. New coverage lives in
+`tests/test_powerstate.cpp` (`REQ-PWR-001..014`, entirely rewritten),
+traced in `.fusa-reqs.json`. Full bit-for-bit conformance against other
+TC18 implementations is not claimed — see this file's own disclaimer
+pattern in `rcp/lifecycle.hpp`/`rcp/regmap.hpp`/`rcp/wakeup.hpp`.
+
 ### 54. Watchdog & Liveness Rebuild (v2.10.0)
 
 - Replace `watchdog.hpp`'s client-driven periodic `CommandType::Watchdog`
