@@ -115,9 +115,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/deadline.hpp",
-      "linePct": 96.82539682539682,
-      "linesHit": 61,
-      "linesTotal": 63
+      "linePct": 100.0,
+      "linesHit": 39,
+      "linesTotal": 39
     },
     {
       "branchPct": 0.0,
@@ -241,9 +241,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/lifecycle.hpp",
-      "linePct": 70.27027027027027,
-      "linesHit": 26,
-      "linesTotal": 37
+      "linePct": 78.43137254901961,
+      "linesHit": 40,
+      "linesTotal": 51
     },
     {
       "branchPct": 0.0,
@@ -502,9 +502,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/watchdog.hpp",
-      "linePct": 100.0,
-      "linesHit": 61,
-      "linesTotal": 61
+      "linePct": 83.63636363636364,
+      "linesHit": 46,
+      "linesTotal": 55
     },
     {
       "branchPct": 0.0,
@@ -1060,9 +1060,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_map.h",
-      "linePct": 69.56521739130434,
-      "linesHit": 48,
-      "linesTotal": 69
+      "linePct": 75.0,
+      "linesHit": 57,
+      "linesTotal": 76
     },
     {
       "branchPct": 0.0,
@@ -1078,8 +1078,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_pair.h",
-      "linePct": 48.78048780487805,
-      "linesHit": 20,
+      "linePct": 58.53658536585366,
+      "linesHit": 24,
       "linesTotal": 41
     },
     {
@@ -1114,8 +1114,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_tree.h",
-      "linePct": 82.55319148936171,
-      "linesHit": 388,
+      "linePct": 84.25531914893617,
+      "linesHit": 396,
       "linesTotal": 470
     },
     {
@@ -1425,15 +1425,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-07-28T22:18:55Z",
-  "linePct": 68.78007056559393,
+  "generatedAt": "2026-07-28T22:56:18Z",
+  "linePct": 68.82491438356165,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 6433,
+    "hitLines": 6431,
     "totalBranches": 0,
-    "totalLines": 9353
+    "totalLines": 9344
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0

@@ -3,7 +3,7 @@
     {
       "category": "Requirements",
       "file": ".fusa-reqs.json",
-      "hash": "sha256:6e335f31983a3341e77281256c41f32f65cd973c77de0d837f4c424b0962b7ad",
+      "hash": "sha256:ff05a3825161457056757311c6d7fa78af0b401db19f60d2cb5105d985caabe1",
       "present": true,
       "version": "0.1.0"
     },
@@ -42,89 +42,89 @@
     {
       "category": "Safety",
       "file": "fmea.json",
-      "hash": "sha256:e0d5b9f09bd286b8708077c52578e066c81f53b1ee3a9a140c3713a0d6dffe35",
+      "hash": "sha256:3ab9e4fa9e605e0d3e71d21d80f547f3ad8ad1409fba24b0f9ba04de0cf38173",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Safety",
       "file": "tara.json",
-      "hash": "sha256:610f3cdfb5825f16520852c00875bce20c560845b548e80ee1aaa49343712ad9",
+      "hash": "sha256:7ea640493723d1caaaa10c1c1b5e865d564a979be6db985da63aad7dc970004a",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Safety",
       "file": "safety-case.json",
-      "hash": "sha256:da6ce54056bac1cb62214ea589e4467608199e1e60fec373052adff4a216c14d",
+      "hash": "sha256:bcb0177b9e3667f5f795cff2aceecb954d5df945c79717a4cecf1848b3f55eff",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Qualification",
       "file": "qualify-report.json",
-      "hash": "sha256:d0b7e7d5c2d12b985d65347f3e01acab9187655c44c2324f834fa748e92e734e",
+      "hash": "sha256:ab2630795c5a2a8a6b551fd76d7d42a347fcb944d62a8308fff7d9f924ea83bf",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Release",
       "file": "sbom.json",
-      "hash": "sha256:50b02ea1a8c011820f516511546a4e21faf9ed12917d5a1f0058e5cd2e0292ed",
+      "hash": "sha256:ce454124cd3e91e63ef9aafa034afb82b65e3a17719344d2fef3c080d8be5be9",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Release",
       "file": "provenance.json",
-      "hash": "sha256:d53fd77207fe62741fd51cfd5a1af246087ad4f032fd6c1ac82918fba69bc365",
+      "hash": "sha256:7681a2e675e1a98ba8fed0665d6b51a22253726dcf9d4001ad2ab4f4c38f8a13",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Release",
       "file": "artifact-manifest.json",
-      "hash": "sha256:32240e10611040339238fdc3012b892c26a1ab84d4ee265aaf63cdd6f8d1aa3f",
+      "hash": "sha256:116cf14106a5b793960cb5a980a16c35d69bbec3b9f20ab551d1175bbc1e51eb",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Audit",
       "file": "audit-pack.zip",
-      "hash": "sha256:f0254efffdf5a63e807b4da68a1ac4f13fcc600ef802363588c7477de20d97da",
+      "hash": "sha256:f4f9538484148cd0ff61fccab8f2b52db97e1ea75368970921a8843547ff0b80",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Gap Analysis",
       "file": "iso26262-gap-report.json",
-      "hash": "sha256:c865b846ffff512b8dc1aaec18b78f248c69f3469c67b5bc0865b7a824680a43",
+      "hash": "sha256:16859683e0692d52f98e483a1beaca1f92cf5230447d91d4e97e4d631224c4fa",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Gap Analysis",
       "file": "iec61508-gap-report.json",
-      "hash": "sha256:44a657f064905e1f75faa496d63166422eb9f2afb55baa76a9efd1b278aa91e1",
+      "hash": "sha256:ab3e2a18ebb9b4f30dd3ebae10d306e62eea83e1d3501bf607e690cdb1eb2e88",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Gap Analysis",
       "file": "do178-gap-report.json",
-      "hash": "sha256:cc7ad0a25151457656fb929b98c85b06fb698fe4a00df4a10247232ca103720b",
+      "hash": "sha256:a5289a7ba8a13b788b28df53f759adcc3adf460d19532887debe77f125a7b615",
       "present": true,
       "version": "0.1.0"
     },
     {
       "category": "Summary",
       "file": "sas.json",
-      "hash": "sha256:3f3a676f855b4497fcbddf0a507d66c33aeeaf61930fe4fe0ca83764909eef54",
+      "hash": "sha256:b7ac4b8619e59f443fe782127aa2074ce044b90b632308bca012d3923e7e810e",
       "present": true,
       "version": "0.1.0"
     }
   ],
-  "generatedAt": "2026-07-28T22:18:55Z",
+  "generatedAt": "2026-07-28T22:56:18Z",
   "kind": "sci",
   "language": "cpp",
   "project": "cpp-RCP",
