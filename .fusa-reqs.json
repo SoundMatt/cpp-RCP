@@ -3351,6 +3351,78 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-001",
+      "title": "message_timestamp-repurposing request_type decode/encode (mtv=0)",
+      "text": "rcp::sequencer::decode_request_type shall return SequencerErrc::timestamp_not_repurposed when mtv is true, shall return SequencerErrc::unknown_request_type when the top byte of message_timestamp is not one of the 8 defined opcodes, and shall otherwise recover the opcode and the remaining 7 parameter bytes exactly as produced by encode_request_type for the same inputs; rcp::sequencer::make_conditional_request shall always build an ACF_GBB AcfMessageInfo with mtv clear.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-002",
+      "title": "Request categories and execution-priority ordering",
+      "text": "rcp::sequencer::category_of shall map the 3 cancellation opcodes to RequestCategory::Cancellation, each of the 5 conditional opcodes to its own category, and std::nullopt to RequestCategory::Standard; rcp::sequencer::select_next_due shall pick the candidate with the lowest priority_rank among due candidates and shall break ties within a category by lowest arrival_seq (FIFO), returning std::nullopt for an empty input.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-003",
+      "title": "Compound/compound-wait optional-feature bundling",
+      "text": "rcp::sequencer::validate_feature_bundles shall return SequencerErrc::compound_bundle_incomplete whenever FeatureSet::compound or FeatureSet::compound_wait is set unless compound, compound_wait, clear_non_safestate, and sequencer_count >= kMinCompoundSequencers (4) are all simultaneously true, and shall accept every other combination of triggered/chained/timed/clear_single independently of compound support.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-004",
+      "title": "Sequencer-state default value and finalization advance rule",
+      "text": "rcp::sequencer::SequencerTable::ensure_size shall fill newly added slots with kDefaultState (1), never the storage's own zero-initialization default, shall never shrink existing storage, and try_advance shall increment a sequencer only when its current value equals the supplied expected_start, leaving it unchanged (and reporting out_advanced=false, not an error) otherwise; both accessors shall return SequencerErrc::index_out_of_range for an out-of-bounds index.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-005",
+      "title": "Cancellation kinds and shared cancellation semantics",
+      "text": "rcp::sequencer::RequestLedger::cancel_single shall cancel a Pending/Started request and cascade cancellation to every transitive chained successor, and shall return SequencerErrc::request_not_found for an unknown transaction or one that is UnderExecution/Finalized/already Canceled; cancel_all shall cancel every Pending/Started record (optionally skipping is_safety records when non_safestate_only is set) without disturbing any UnderExecution or Finalized record; a canceled request's outcome_of shall report SequencerErrc::request_canceled.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-006",
+      "title": "Request lifecycle state machine: pending -> started -> under_execution -> finalized",
+      "text": "rcp::sequencer::RequestLedger shall only permit the single-step forward sequence Pending->Started->UnderExecution->Finalized, returning SequencerErrc::invalid_lifecycle_transition for any other requested transition and SequencerErrc::unknown_transaction for an untracked id; submit shall return SequencerErrc::transaction_num_collision for a transaction_num already tracked; finalize shall drive SequencerTable::try_advance for a Compound/CompoundWait record's sequencer_index/expected_start_state as its side effect.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-007",
+      "title": "Chained-successor propagation on predecessor finalization",
+      "text": "rcp::sequencer::RequestLedger::finalize shall, for every record whose chained_predecessor equals the finalized transaction_num, cascade-cancel that successor iff rcp::sequencer::should_execute_chained(successor.cs, errored) is false, and shall leave every such successor untouched when the predecessor finalized with errored=false.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-008",
+      "title": "The cs field's dual meaning (compound-wait vs. chained)",
+      "text": "rcp::sequencer::compound_wait_check_of shall map cs=true to CompoundWaitCheck::Immediate and cs=false to CompoundWaitCheck::AfterChangeOnly; rcp::sequencer::should_execute_chained shall return true whenever cs is true regardless of predecessor_errored, and shall return true iff predecessor_errored is false when cs is false.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-009",
+      "title": "SequencerErrc is a distinct error category with non-empty, distinct messages",
+      "text": "Every rcp::sequencer::SequencerErrc value shall report rcp::sequencer::sequencer_category() as its category and shall have a non-empty diagnostic message distinct from every other SequencerErrc value's message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
     }
   ]
 }

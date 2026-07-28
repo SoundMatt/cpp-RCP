@@ -54,6 +54,10 @@ add_executable(test_pwm test_pwm.cpp)
 target_link_libraries(test_pwm PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_pwm COMMAND test_pwm)
 
+add_executable(test_sequencer test_sequencer.cpp)
+target_link_libraries(test_sequencer PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_sequencer COMMAND test_sequencer)
+
 add_executable(test_e2e test_e2e.cpp)
 target_link_libraries(test_e2e PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_e2e COMMAND test_e2e)
