@@ -1,7 +1,7 @@
 {
   "failed": 0,
-  "generatedAt": "2026-07-27T17:34:27Z",
-  "hash": "accd067f7044dea5e0ff355143a155533d97992bfccdf14f5c1a45cc7d078825",
+  "generatedAt": "2026-07-28T14:56:47Z",
+  "hash": "d629f281fac3cb25079f42ed993749ee9870fb248522a8d4239bdb9ad140cff1",
   "kind": "qualification",
   "language": "cpp",
   "module": "github.com/SoundMatt/cpp-FuSa",
@@ -82,6 +82,6 @@
   ],
   "schemaVersion": "1.10.12",
   "tool": "cpp-FuSa",
-  "toolVersion": "0.14.3",
+  "toolVersion": "0.14.6",
   "total": 8
 }

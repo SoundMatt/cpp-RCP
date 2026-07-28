@@ -150,6 +150,15 @@
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/legacy_wire.hpp",
+      "linePct": 89.07563025210084,
+      "linesHit": 106,
+      "linesTotal": 119
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/linbr.hpp",
       "linePct": 100.0,
       "linesHit": 10,
@@ -340,9 +349,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/wire.hpp",
-      "linePct": 89.07563025210084,
-      "linesHit": 106,
-      "linesTotal": 119
+      "linePct": 94.14893617021276,
+      "linesHit": 177,
+      "linesTotal": 188
     },
     {
       "branchPct": 0.0,
@@ -368,8 +377,8 @@
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/array",
       "linePct": 100.0,
-      "linesHit": 4,
-      "linesTotal": 4
+      "linesHit": 20,
+      "linesTotal": 20
     },
     {
       "branchPct": 0.0,
@@ -1168,8 +1177,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/optional",
-      "linePct": 90.78947368421052,
-      "linesHit": 69,
+      "linePct": 98.6842105263158,
+      "linesHit": 75,
       "linesTotal": 76
     },
     {
@@ -1263,15 +1272,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-07-27T17:34:14Z",
-  "linePct": 65.64582265504869,
+  "generatedAt": "2026-07-28T14:56:30Z",
+  "linePct": 66.45854145854146,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 5123,
+    "hitLines": 5322,
     "totalBranches": 0,
-    "totalLines": 7804
+    "totalLines": 8008
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0
