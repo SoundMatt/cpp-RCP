@@ -430,6 +430,48 @@ key off of. New coverage lives in `tests/test_i2c.cpp` (REQ-I2C-001..005),
 
 ### 49. Conditional-Request Taxonomy & Sequencers (v2.5.0)
 
+**Done (v2.5.0):** `rcp/sequencer.hpp` implements the taxonomy and state
+machine below entirely as a new decode/behavior layer over already-existing
+substrate — no change to `rcp/wire.hpp`'s ACF_GBB codec or
+`rcp/regmap.hpp`'s `sequencer_states` storage was needed. `decode_request_type`
+/`encode_request_type` implement the `mtv=0` message_timestamp-repurposing
+trick (`RequestTypeOpcode`'s 8 values: the 5 conditional kinds plus the 3
+cancellation kinds), gated so a genuinely timestamped ACF_GBB message
+(`mtv=1`) is rejected rather than misread; `make_conditional_request` builds
+the matching `AcfMessageInfo` for `rcp::wire::encode_acf_gbb` to carry
+unchanged. `RequestCategory`/`category_of`/`priority_rank`/`select_next_due`
+implement the seven-way execution-priority ordering (cancellation →
+triggered → timed → compound → compound-wait → chained → standard) with FIFO
+tie-break. `FeatureSet`/`validate_feature_bundles` enforce the compound
+bundle rule exactly as the roadmap states it: compound and compound-wait can
+only be claimed together, alongside clear-non-safestate cancellation and
+`sequencer_count >= kMinCompoundSequencers` (4) — triggered, chained, and
+timed remain independently flaggable. `SequencerTable` is the behavior layer
+over `regmap::RegisterMap::sequencer_states`: `kDefaultState` (1) fills newly
+grown slots (not the vector's own zero default), and `try_advance` advances a
+sequencer only while it still holds its expected start value, otherwise
+leaving it untouched without erroring. `RequestState`/`RequestRecord`/
+`RequestLedger` implement the forward-only pending → started →
+under_execution → finalized lifecycle (mirroring `rcp/lifecycle.hpp`'s own
+forward-only style), the three cancellation kinds' shared semantics
+(`cancel_single`/`cancel_all`, `REQUEST_CANCELED`/`REQUEST_NOT_FOUND` via
+`SequencerErrc`, already-executing requests left to finish, cascade-cancel
+into chained successors), and `finalize`'s two integration points: driving
+`SequencerTable::try_advance` for a Compound/CompoundWait record, and
+`propagate_chain_completion` evaluating each chained successor's `cs`-gated
+abort-on-predecessor-error rule via `should_execute_chained`.
+`compound_wait_check_of` and `should_execute_chained` implement the `cs`
+field's two independent meanings (compound-wait's immediate-vs-after-change
+check; chained's execute-regardless-vs-abort-on-error). This header
+deliberately does not run a scheduler thread — `select_next_due`'s output and
+`RequestLedger`'s transition methods are primitives for the embedding
+application to drive, same as every other endpoint header in this codebase.
+New coverage lives in `tests/test_sequencer.cpp` (REQ-SEQ-001..009), traced
+in `.fusa-reqs.json`. Full wire-level conformance (the safety-tagged `0x8x`
+variants and E2E CRC safe points this milestone's cancellation model already
+carries an `is_safety` field in anticipation of) remains a v2.6.0 concern per
+the Phase 13 introduction above.
+
 - Implement the `message_timestamp`-field-repurposing trick: when
   `mtv=0` on an ACF_GBB message, the first byte of the otherwise-unused
   64-bit timestamp slot becomes a `request_type` opcode, with the
