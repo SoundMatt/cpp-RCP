@@ -12,6 +12,7 @@
 // fusa:test REQ-REGMAP-012
 // fusa:test REQ-REGMAP-013
 // fusa:test REQ-REGMAP-014
+// fusa:test REQ-REGMAP-015
 
 // Tests for rcp/regmap.hpp — the RC Server register-map data model and EP0
 // pseudo-endpoint (ROADMAP.md milestone 45, "RC Server Lifecycle &
@@ -229,19 +230,63 @@ TEST_CASE("HW pin-map table entries are stored and retrievable", "[regmap][REQ-R
     REQUIRE(m.hw_pin_map[1].function == 2);
 }
 
-// ── Request-stream config, including inert rx_* fields ──────────────────────────
+// ── Request-stream config: the full v2.6.0 watchdog/safe-state field set ────────
 
-TEST_CASE("RequestStreamConfig carries the rx_* fields needed later for watchdog/safe-state",
+TEST_CASE("RequestStreamConfig carries the full watchdog/safe-state register set (v2.6.0)",
           "[regmap][REQ-REGMAP-009]") {
     RequestStreamConfig rsc;
-    rsc.queue_size        = 4;
-    rsc.rx_wd_timeout_s     = 5;
-    rsc.rx_wd_action        = 1;
-    rsc.rx_safety_measure   = 2;
+    rsc.queue_size                 = 4;
+    rsc.rx_wd_timeout_interval     = 500;
+    rsc.rx_wd_enable               = true;
+    rsc.rx_wd_safestate_enable     = true;
+    rsc.rx_wd_info_enable          = true;
+    rsc.rx_enforce_e2e             = true;
+    rsc.rx_enforce_seq             = true;
+    rsc.rx_seq_safestate_enable    = true;
+    rsc.rx_ovrflw_safestate_enable = true;
+    rsc.rx_safety_measure          = RxSafetyMeasure::RunSafeSequencer;
+    rsc.rx_safestate_sequencer     = 2;
+    rsc.rx_safe_sequencer_state    = 7;
 
-    REQUIRE(rsc.rx_wd_timeout_s == 5);
-    REQUIRE(rsc.rx_wd_action == 1);
-    REQUIRE(rsc.rx_safety_measure == 2);
+    REQUIRE(rsc.rx_wd_timeout_interval == 500);
+    REQUIRE(rsc.rx_wd_enable);
+    REQUIRE(rsc.rx_wd_safestate_enable);
+    REQUIRE(rsc.rx_wd_info_enable);
+    REQUIRE(rsc.rx_enforce_e2e);
+    REQUIRE(rsc.rx_enforce_seq);
+    REQUIRE(rsc.rx_seq_safestate_enable);
+    REQUIRE(rsc.rx_ovrflw_safestate_enable);
+    REQUIRE(rsc.rx_safety_measure == RxSafetyMeasure::RunSafeSequencer);
+    REQUIRE(rsc.rx_safestate_sequencer == 2);
+    REQUIRE(rsc.rx_safe_sequencer_state == 7);
+}
+
+TEST_CASE("RequestStreamConfig watchdog/safe-state fields default to disabled/ForceHighImpedance",
+          "[regmap][REQ-REGMAP-009]") {
+    RequestStreamConfig rsc;
+    REQUIRE_FALSE(rsc.rx_wd_enable);
+    REQUIRE_FALSE(rsc.rx_wd_safestate_enable);
+    REQUIRE_FALSE(rsc.rx_wd_info_enable);
+    REQUIRE_FALSE(rsc.rx_enforce_e2e);
+    REQUIRE_FALSE(rsc.rx_enforce_seq);
+    REQUIRE_FALSE(rsc.rx_seq_safestate_enable);
+    REQUIRE_FALSE(rsc.rx_ovrflw_safestate_enable);
+    REQUIRE(rsc.rx_safety_measure == RxSafetyMeasure::ForceHighImpedance);
+}
+
+// ── EndpointGenericConfig: per-endpoint E2E CRC safe-mode toggles (v2.6.0) ───────
+
+TEST_CASE("EndpointGenericConfig's ep_*_crc_enable toggles default false and are independently settable",
+          "[regmap][REQ-REGMAP-015]") {
+    EndpointGenericConfig cfg;
+    REQUIRE_FALSE(cfg.ep_req_crc_enable);
+    REQUIRE_FALSE(cfg.ep_ack_crc_enable);
+    REQUIRE_FALSE(cfg.ep_response_crc_enable);
+
+    cfg.ep_ack_crc_enable = true;
+    REQUIRE_FALSE(cfg.ep_req_crc_enable);
+    REQUIRE(cfg.ep_ack_crc_enable);
+    REQUIRE_FALSE(cfg.ep_response_crc_enable);
 }
 
 // ── EP-ID / byte_bus_id mapping table ────────────────────────────────────────────

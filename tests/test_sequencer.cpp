@@ -7,6 +7,9 @@
 // fusa:test REQ-SEQ-007
 // fusa:test REQ-SEQ-008
 // fusa:test REQ-SEQ-009
+// fusa:test REQ-SEQ-010
+// fusa:test REQ-SEQ-011
+// fusa:test REQ-SEQ-012
 
 // Tests for rcp/sequencer.hpp — conditional-request taxonomy and
 // sequencer-state primitives (ROADMAP.md milestone 49,
@@ -89,6 +92,10 @@ TEST_CASE("category_of maps every opcode to its documented category", "[sequence
     REQUIRE(category_of(RequestTypeOpcode::Compound) == RequestCategory::Compound);
     REQUIRE(category_of(RequestTypeOpcode::CompoundWait) == RequestCategory::CompoundWait);
     REQUIRE(category_of(RequestTypeOpcode::Chained) == RequestCategory::Chained);
+    // Safety-tagged (0x8x) variants share their base opcode's category.
+    REQUIRE(category_of(RequestTypeOpcode::CompoundSafety) == RequestCategory::Compound);
+    REQUIRE(category_of(RequestTypeOpcode::CompoundWaitSafety) == RequestCategory::CompoundWait);
+    REQUIRE(category_of(RequestTypeOpcode::TriggeredSafety) == RequestCategory::Triggered);
 }
 
 TEST_CASE("priority_rank orders categories cancellation..standard", "[sequencer][REQ-SEQ-002]") {
@@ -550,4 +557,77 @@ TEST_CASE("every SequencerErrc value has a distinct, non-empty message", "[seque
     for (size_t i = 0; i < messages.size(); ++i)
         for (size_t j = i + 1; j < messages.size(); ++j)
             REQUIRE(messages[i] != messages[j]);
+}
+
+// ── Safety-tagged (0x8x) request variants (ROADMAP.md milestone 50, v2.6.0) ──
+
+TEST_CASE("decode_request_type accepts the three 0x8x safety-tagged opcodes", "[sequencer][REQ-SEQ-010]") {
+    std::array<uint8_t, 7> params{1, 2, 3, 4, 5, 6, 7};
+    for (auto opcode : {RequestTypeOpcode::CompoundSafety, RequestTypeOpcode::CompoundWaitSafety,
+                         RequestTypeOpcode::TriggeredSafety}) {
+        const uint64_t ts = encode_request_type(opcode, params);
+        RequestTypeOpcode type{};
+        std::array<uint8_t, 7> out_params{};
+        auto ec = decode_request_type(/*mtv=*/false, ts, type, out_params);
+        REQUIRE_FALSE(ec);
+        REQUIRE(type == opcode);
+        REQUIRE(out_params == params);
+    }
+}
+
+TEST_CASE("decode_request_type rejects an MSB-set byte that is not one of the three defined "
+          "safety opcodes",
+          "[sequencer][REQ-SEQ-010]") {
+    RequestTypeOpcode type{};
+    std::array<uint8_t, 7> out_params{};
+    // 0x80 has the MSB set but is not CompoundWaitSafety/TriggeredSafety/CompoundSafety.
+    auto ec = decode_request_type(/*mtv=*/false, uint64_t{0x80} << 56, type, out_params);
+    REQUIRE(ec == make_error_code(SequencerErrc::unknown_request_type));
+}
+
+TEST_CASE("is_safety_variant identifies exactly the three 0x8x opcodes", "[sequencer][REQ-SEQ-011]") {
+    REQUIRE(is_safety_variant(RequestTypeOpcode::CompoundSafety));
+    REQUIRE(is_safety_variant(RequestTypeOpcode::CompoundWaitSafety));
+    REQUIRE(is_safety_variant(RequestTypeOpcode::TriggeredSafety));
+
+    REQUIRE_FALSE(is_safety_variant(RequestTypeOpcode::Compound));
+    REQUIRE_FALSE(is_safety_variant(RequestTypeOpcode::CompoundWait));
+    REQUIRE_FALSE(is_safety_variant(RequestTypeOpcode::Triggered));
+    REQUIRE_FALSE(is_safety_variant(RequestTypeOpcode::Chained));
+    REQUIRE_FALSE(is_safety_variant(RequestTypeOpcode::ClearAll));
+}
+
+TEST_CASE("category_of maps each safety-tagged opcode to its base opcode's priority category",
+          "[sequencer][REQ-SEQ-011]") {
+    REQUIRE(category_of(RequestTypeOpcode::CompoundSafety) == category_of(RequestTypeOpcode::Compound));
+    REQUIRE(category_of(RequestTypeOpcode::CompoundWaitSafety) ==
+            category_of(RequestTypeOpcode::CompoundWait));
+    REQUIRE(category_of(RequestTypeOpcode::TriggeredSafety) == category_of(RequestTypeOpcode::Triggered));
+}
+
+TEST_CASE("request_record_for derives is_safety from the opcode automatically", "[sequencer][REQ-SEQ-012]") {
+    auto normal = request_record_for(/*transaction_num=*/1, RequestTypeOpcode::Compound, /*cs=*/true);
+    REQUIRE_FALSE(normal.is_safety);
+    REQUIRE(normal.transaction_num == 1);
+    REQUIRE(normal.request_type == RequestTypeOpcode::Compound);
+    REQUIRE(normal.cs);
+
+    auto safety = request_record_for(/*transaction_num=*/2, RequestTypeOpcode::CompoundSafety, /*cs=*/false);
+    REQUIRE(safety.is_safety);
+
+    auto standard = request_record_for(/*transaction_num=*/3, std::nullopt, /*cs=*/false);
+    REQUIRE_FALSE(standard.is_safety);
+    REQUIRE_FALSE(standard.request_type.has_value());
+}
+
+TEST_CASE("request_record_for-built safety records survive cancel_all(non_safestate_only=true)",
+          "[sequencer][REQ-SEQ-012]") {
+    RequestLedger ledger;
+    REQUIRE_FALSE(ledger.submit(request_record_for(1, RequestTypeOpcode::Triggered, false)));
+    REQUIRE_FALSE(ledger.submit(request_record_for(2, RequestTypeOpcode::TriggeredSafety, false)));
+
+    size_t canceled = ledger.cancel_all(/*non_safestate_only=*/true);
+    REQUIRE(canceled == 1);
+    REQUIRE(ledger.find(1)->state == RequestState::Canceled);
+    REQUIRE(ledger.find(2)->state == RequestState::Pending);
 }

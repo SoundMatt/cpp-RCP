@@ -770,64 +770,112 @@
     },
     {
       "id": "REQ-E2E-001",
-      "title": "E2E header prepended to payload",
-      "text": "The e2e::wrap() function shall prepend a 6-byte header (4-byte seq + 2-byte CRC-16) to the payload.",
+      "title": "TC18 end-to-end CRC32 algorithm parameters",
+      "text": "rcp::e2e::crc32 shall compute a 32-bit CRC using polynomial 0xF4ACFB13, initial value 0xFFFFFFFF, both input and output reflection enabled, and a final XOR of 0xFFFFFFFF.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-E2E-002",
-      "title": "Sequence counter increments per send",
-      "text": "Each call to e2e::Controller::send() shall increment the sequence counter atomically.",
+      "title": "CRC coverage buffer layout",
+      "text": "rcp::e2e::coverage_buffer shall assemble, in order, the 8-byte big-endian stream_id, the 4-byte big-endian avtp_timestamp (zero-filled when std::nullopt is passed, the NTSCF stand-in), the 10-byte ACF shared header, and the payload; rcp::e2e::compute_crc shall compute the CRC over exactly that buffer.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-E2E-003",
-      "title": "CRC-16/CCITT-FALSE algorithm",
-      "text": "The CRC shall be computed using the CRC-16/CCITT-FALSE polynomial (0x1021, init 0xFFFF).",
+      "title": "Trailing-CRC length pre-adjustment",
+      "text": "rcp::e2e::apply_acf_length_adjustment shall add exactly kCrcLengthAdjustQuadlets (1) to AcfMessageInfo::acf_msg_length; rcp::e2e::apply_frame_length_adjustment shall add exactly kCrcLengthAdjustOctets (4) to an NtscfHeader's or TscfHeader's control_data_length.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-E2E-004",
-      "title": "CRC covers seq and payload",
-      "text": "The CRC-16 shall cover both the 4-byte sequence number and the entire payload.",
+      "title": "verify_crc detects a mismatched or corrupted CRC",
+      "text": "rcp::e2e::verify_crc shall return {} when the received CRC matches compute_crc's result and shall return E2eErrc::crc_error (CRC_ERROR) otherwise.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-E2E-005",
-      "title": "Unwrap validates CRC",
-      "text": "e2e::unwrap() shall return E2EErrc::crc_mismatch if the CRC in the frame does not match the computed CRC.",
+      "title": "Per-endpoint CRC safe-mode toggles gate per message role",
+      "text": "rcp::e2e::crc_required shall report regmap::EndpointGenericConfig::ep_req_crc_enable, ep_ack_crc_enable, and ep_response_crc_enable independently for MessageRole::Request, Acknowledge, and Response respectively; rcp::e2e::implemented_options_bit shall report regmap::kOptSafetyRequests only when its safety_requests_implemented argument is true.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-E2E-006",
-      "title": "Unwrap rejects short frames",
-      "text": "e2e::unwrap() shall return E2EErrc::short_frame if the frame is shorter than HeaderLen bytes.",
+      "title": "RxStreamGuard implements rx_enforce_e2e's drop-vs-latch rule",
+      "text": "rcp::e2e::RxStreamGuard::record_crc_result shall return CRC_ERROR for a failing request without affecting later requests when RequestStreamConfig::rx_enforce_e2e is clear, and shall additionally latch the whole stream (every subsequent call reports CRC_ERROR until reset_latch()) when rx_enforce_e2e is set.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-E2E-007",
-      "title": "ReplayGuard rejects duplicate seq",
-      "text": "ReplayGuard::check() shall return E2EErrc::replay for any sequence number that was already accepted within the window.",
+      "title": "RxSequenceGuard enforces rx_enforce_seq independently of the watchdog",
+      "text": "rcp::e2e::RxSequenceGuard::check shall accept every sequence number when RequestStreamConfig::rx_enforce_seq is clear, and shall return E2eErrc::sequence_violation for any sequence number that is not strictly greater than the last accepted one when rx_enforce_seq is set.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-E2E-008",
-      "title": "ReplayGuard rejects old seq outside window",
-      "text": "ReplayGuard::check() shall return E2EErrc::replay for sequence numbers more than ReplayWindowSize behind the current high-water mark.",
+      "title": "RxWatchdog overflow detection respects rx_wd_enable and rx_wd_timeout_interval",
+      "text": "rcp::e2e::RxWatchdog::overflowed shall return false when RequestStreamConfig::rx_wd_enable is clear or kick() has never been called, and shall return true once more than rx_wd_timeout_interval milliseconds have elapsed since the last kick().",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-009",
+      "title": "Watchdog overflow purges normal requests and retains safety-tagged ones",
+      "text": "rcp::e2e::apply_watchdog_overflow shall, when RequestStreamConfig::rx_wd_safestate_enable is set, latch the RxWatchdog into safe state and cancel every pending/started request on the ledger whose sequencer::RequestRecord::is_safety is false while leaving is_safety=true records untouched (via RequestLedger::cancel_all(true)); it shall purge nothing and not enter safe state when rx_wd_safestate_enable is clear.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-010",
+      "title": "Queue overflow drives the same purge-normal/retain-safety rule via a distinct trigger",
+      "text": "rcp::e2e::apply_queue_overflow shall implement the same purge-normal/retain-safety behavior as apply_watchdog_overflow, gated on RequestStreamConfig::rx_ovrflw_safestate_enable instead of rx_wd_safestate_enable.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-011",
+      "title": "endpoint_in_configured_safe_state implements both rx_safety_measure strategies",
+      "text": "rcp::e2e::endpoint_in_configured_safe_state shall return the caller-supplied force_high_impedance_asserted flag unchanged when RequestStreamConfig::rx_safety_measure is RxSafetyMeasure::ForceHighImpedance, and shall return whether rx_safestate_sequencer's current SequencerTable value equals rx_safe_sequencer_state (false if the index is out of range) when rx_safety_measure is RxSafetyMeasure::RunSafeSequencer.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-012",
+      "title": "may_execute_now gates safety-tagged requests on safe-state entry",
+      "text": "rcp::e2e::may_execute_now shall return true unconditionally for a sequencer::RequestRecord whose is_safety is false, and shall return its endpoint_in_safe_state argument unchanged for a record whose is_safety is true.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-013",
+      "title": "RxWatchdog repeating info notification tracks rx_wd_info_enable while latched",
+      "text": "rcp::e2e::RxWatchdog::should_emit_info_notification shall return true if and only if the watchdog is currently latched into safe state (enter_safe_state() called, clear_safe_state() not since called) and RequestStreamConfig::rx_wd_info_enable is set.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-E2E-014",
+      "title": "E2eErrc is a distinct error category with non-empty, distinct messages",
+      "text": "Every rcp::e2e::E2eErrc value shall report rcp::e2e::e2e_category() as its category and shall have a non-empty diagnostic message distinct from every other E2eErrc value's message.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2882,8 +2930,8 @@
     },
     {
       "id": "REQ-REGMAP-009",
-      "title": "Request-stream config carries inert rx_* fields",
-      "text": "RequestStreamConfig shall provide rx_wd_timeout_s, rx_wd_action, and rx_safety_measure fields that store and return an assigned value; no watchdog/safe-state behavior is wired to these fields until v2.6.0.",
+      "title": "RequestStreamConfig carries the full v2.6.0 watchdog/safe-state register set",
+      "text": "regmap::RequestStreamConfig shall carry rx_wd_timeout_interval, rx_wd_enable, rx_wd_safestate_enable, rx_wd_info_enable, rx_enforce_e2e, rx_enforce_seq, rx_seq_safestate_enable, rx_ovrflw_safestate_enable, rx_safety_measure, rx_safestate_sequencer, and rx_safe_sequencer_state as independently settable fields, each defaulting to disabled/false/RxSafetyMeasure::ForceHighImpedance.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2924,6 +2972,14 @@
       "id": "REQ-REGMAP-014",
       "title": "The four mandatory register-map error codes are distinct",
       "text": "rcp::regmap::RegMapErrc shall define UNAUTHORIZED_ACCESS, LOCKED_MEM_ACCESS, REQUEST_REJECTED, and INVALID_PARAMETER as pairwise-distinct error codes in their own error_category, each with a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-015",
+      "title": "EndpointGenericConfig's per-endpoint E2E CRC safe-mode toggles",
+      "text": "regmap::EndpointGenericConfig::ep_req_crc_enable, ep_ack_crc_enable, and ep_response_crc_enable shall each default to false and shall be independently settable without affecting one another.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3420,6 +3476,30 @@
       "id": "REQ-SEQ-009",
       "title": "SequencerErrc is a distinct error category with non-empty, distinct messages",
       "text": "Every rcp::sequencer::SequencerErrc value shall report rcp::sequencer::sequencer_category() as its category and shall have a non-empty diagnostic message distinct from every other SequencerErrc value's message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-010",
+      "title": "decode_request_type accepts exactly the three 0x8x safety-tagged opcodes",
+      "text": "rcp::sequencer::is_valid_request_type and decode_request_type shall accept RequestTypeOpcode::CompoundSafety (0x8F), CompoundWaitSafety (0x8B), and TriggeredSafety (0x8E) as valid opcodes, round-tripping their parameter bytes exactly as the eight pre-existing opcodes do, and shall reject every other MSB-set byte value as SequencerErrc::unknown_request_type.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-011",
+      "title": "Safety-tagged opcodes share their base opcode's priority category",
+      "text": "rcp::sequencer::is_safety_variant shall return true for exactly CompoundSafety/CompoundWaitSafety/TriggeredSafety and false for every other RequestTypeOpcode; rcp::sequencer::category_of shall map each safety-tagged opcode to the same RequestCategory as its corresponding base opcode (Compound, CompoundWait, Triggered).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SEQ-012",
+      "title": "request_record_for derives RequestRecord::is_safety from the opcode",
+      "text": "rcp::sequencer::request_record_for shall set the returned RequestRecord's is_safety field to is_safety_variant(*type) when type has a value, to false when type is std::nullopt (the standard request kind), and the resulting record shall be excluded from cancellation by RequestLedger::cancel_all(non_safestate_only=true) if and only if is_safety is true.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"

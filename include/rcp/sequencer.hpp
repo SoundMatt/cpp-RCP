@@ -7,6 +7,9 @@
 // fusa:req REQ-SEQ-007
 // fusa:req REQ-SEQ-008
 // fusa:req REQ-SEQ-009
+// fusa:req REQ-SEQ-010
+// fusa:req REQ-SEQ-011
+// fusa:req REQ-SEQ-012
 
 // Conditional-request taxonomy and sequencer-state primitives — the
 // message_timestamp-repurposing decode, the five conditional request kinds
@@ -27,6 +30,19 @@
 // compound_wait_matches_bits as the per-endpoint-type condition-comparison
 // rules a real compound-wait dispatch loop would call once it decides a
 // compound-wait request is due; this header does not re-implement either.
+//
+// ROADMAP.md milestone 50, "E2E CRC Safe Points & Safety-Request Variants
+// (v2.6.0)", extends this taxonomy in place rather than superseding it: the
+// three MSB-set (0x8x) safety-tagged opcodes (CompoundSafety,
+// CompoundWaitSafety, TriggeredSafety), is_safety_variant(), and
+// request_record_for() are new; everything else in this file — the
+// lifecycle state machine, cancellation semantics (including
+// cancel_all(non_safestate_only), which already implements v2.6.0's
+// watchdog-overflow purge-normal/retain-safety rule), and the priority
+// ordering — is unchanged. Safe-state execution eligibility itself
+// (whether a safety-tagged request's endpoint is actually in its
+// configured safe state right now) is evaluated by rcp/e2e.hpp, not here —
+// this header only decodes and categorizes the opcode.
 //
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
@@ -119,15 +135,38 @@ inline std::error_code make_error_code(SequencerErrc e) noexcept {
 // no opcode here at all — it is always carried as ACF_ABB, which has no
 // message_timestamp slot to repurpose in the first place.
 
+// ROADMAP.md milestone 50 (v2.6.0) adds three more: the MSB-set (`0x8x`)
+// safety-tagged variants of compound, compound-wait, and triggered. Each
+// shares its base opcode's low 7 bits with its normal counterpart
+// (Compound 0x0F -> CompoundSafety 0x8F, CompoundWait 0x0B ->
+// CompoundWaitSafety 0x8B, Triggered 0x0E -> TriggeredSafety 0x8E) — the
+// MSB alone is what marks a request as safety-tagged (extraction §2.7, §6
+// item 4); is_safety_variant() below is the single place that bit gets
+// interpreted, rather than every call site re-deriving it from the raw
+// byte value. A safety-tagged request only actually executes once its
+// endpoint is in its configured safe state — see rcp/e2e.hpp's
+// endpoint_in_configured_safe_state()/may_execute_now(), which this header
+// does not itself evaluate (no dependency on rcp/regmap.hpp's
+// RequestStreamConfig watchdog/safe-state fields here, consistent with
+// this file's existing "primitives, not policy" scope). Cancellation's
+// existing non_safestate_only bundle (0x06 / cancel_all(true)) already
+// implements the watchdog-overflow purge-normal/retain-safety queue
+// behavior the roadmap calls for — see rcp/e2e.hpp's
+// apply_watchdog_overflow(), which is a thin wrapper around that call, not
+// a reimplementation of it.
+
 enum class RequestTypeOpcode : uint8_t {
-    Chained           = 0x01,
-    ClearAll          = 0x05,
-    ClearNonSafestate = 0x06,
-    ClearSingle       = 0x07,
-    Timed             = 0x0A,
-    CompoundWait      = 0x0B,
-    Triggered         = 0x0E,
-    Compound          = 0x0F,
+    Chained            = 0x01,
+    ClearAll           = 0x05,
+    ClearNonSafestate  = 0x06,
+    ClearSingle        = 0x07,
+    Timed              = 0x0A,
+    CompoundWait       = 0x0B,
+    Triggered          = 0x0E,
+    Compound           = 0x0F,
+    CompoundWaitSafety = 0x8B,
+    TriggeredSafety    = 0x8E,
+    CompoundSafety     = 0x8F,
 };
 
 constexpr bool is_valid_request_type(uint8_t byte) noexcept {
@@ -140,6 +179,25 @@ constexpr bool is_valid_request_type(uint8_t byte) noexcept {
     case RequestTypeOpcode::CompoundWait:
     case RequestTypeOpcode::Triggered:
     case RequestTypeOpcode::Compound:
+    case RequestTypeOpcode::CompoundWaitSafety:
+    case RequestTypeOpcode::TriggeredSafety:
+    case RequestTypeOpcode::CompoundSafety:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// is_safety_variant reports whether `type` is one of the three MSB-set
+// (`0x8x`) safety-tagged opcodes above. This is the single source of truth
+// RequestRecord::is_safety (below) is derived from — see
+// request_record_for() — rather than something a caller sets by hand and
+// might forget for a safety-tagged decode path.
+constexpr bool is_safety_variant(RequestTypeOpcode type) noexcept {
+    switch (type) {
+    case RequestTypeOpcode::CompoundWaitSafety:
+    case RequestTypeOpcode::TriggeredSafety:
+    case RequestTypeOpcode::CompoundSafety:
         return true;
     default:
         return false;
@@ -213,7 +271,11 @@ enum class RequestCategory : uint8_t {
 
 // category_of maps a decoded request_type opcode onto its priority category;
 // `std::nullopt` denotes the mandatory standard request kind (no opcode, per
-// the header comment above).
+// the header comment above). A safety-tagged (0x8x) opcode shares its base
+// opcode's category — the MSB affects safe-state execution eligibility and
+// watchdog-purge treatment (rcp/e2e.hpp), not where it sits in the
+// cancellation > triggered > timed > compound > compound-wait > chained >
+// standard priority ordering (extraction §3.14).
 constexpr RequestCategory category_of(std::optional<RequestTypeOpcode> kind) noexcept {
     if (!kind.has_value()) return RequestCategory::Standard;
     switch (*kind) {
@@ -221,12 +283,21 @@ constexpr RequestCategory category_of(std::optional<RequestTypeOpcode> kind) noe
     case RequestTypeOpcode::ClearNonSafestate:
     case RequestTypeOpcode::ClearSingle:
         return RequestCategory::Cancellation;
-    case RequestTypeOpcode::Triggered:    return RequestCategory::Triggered;
-    case RequestTypeOpcode::Timed:        return RequestCategory::Timed;
-    case RequestTypeOpcode::Compound:     return RequestCategory::Compound;
-    case RequestTypeOpcode::CompoundWait: return RequestCategory::CompoundWait;
-    case RequestTypeOpcode::Chained:      return RequestCategory::Chained;
-    default:                              return RequestCategory::Standard; // unreachable given a validated opcode
+    case RequestTypeOpcode::Triggered:
+    case RequestTypeOpcode::TriggeredSafety:
+        return RequestCategory::Triggered;
+    case RequestTypeOpcode::Timed:
+        return RequestCategory::Timed;
+    case RequestTypeOpcode::Compound:
+    case RequestTypeOpcode::CompoundSafety:
+        return RequestCategory::Compound;
+    case RequestTypeOpcode::CompoundWait:
+    case RequestTypeOpcode::CompoundWaitSafety:
+        return RequestCategory::CompoundWait;
+    case RequestTypeOpcode::Chained:
+        return RequestCategory::Chained;
+    default:
+        return RequestCategory::Standard; // unreachable given a validated opcode
     }
 }
 
@@ -413,7 +484,7 @@ struct RequestRecord {
     std::optional<RequestTypeOpcode> request_type;
     RequestState                     state = RequestState::Pending;
     bool                              cs    = false;
-    bool                              is_safety = false; // always false until v2.6.0's 0x8x safety variants exist
+    bool                              is_safety = false; // true for a decoded 0x8x opcode — see request_record_for()
     size_t                            arrival_seq = 0;    // assigned by RequestLedger::submit, FIFO tie-break key
 
     // Compound / compound-wait finalization target (unused by other kinds).
@@ -426,6 +497,24 @@ struct RequestRecord {
 
     std::optional<std::error_code> outcome; // set to request_canceled once state == Canceled
 };
+
+// request_record_for builds a RequestRecord with `is_safety` derived
+// automatically from `type` via is_safety_variant() rather than left for
+// the caller to set by hand — ROADMAP.md milestone 50 (v2.6.0)'s hook for
+// the 0x8x decode path referenced in this header's own comments above.
+// Compound/compound-wait/chained-specific fields (sequencer_index,
+// expected_start_state, chained_predecessor, chained_successors) are left
+// at their defaults; callers that need them still set them directly, same
+// as before this helper existed.
+inline RequestRecord request_record_for(uint8_t transaction_num, std::optional<RequestTypeOpcode> type,
+                                          bool cs) noexcept {
+    RequestRecord rec;
+    rec.transaction_num = transaction_num;
+    rec.request_type    = type;
+    rec.cs               = cs;
+    rec.is_safety        = type.has_value() && is_safety_variant(*type);
+    return rec;
+}
 
 // RequestLedger tracks every in-flight request's lifecycle state and
 // implements the cancellation and chained-abort semantics that act across
