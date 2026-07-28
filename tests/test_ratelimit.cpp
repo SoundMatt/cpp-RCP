@@ -7,123 +7,145 @@
 // fusa:test REQ-RL-007
 // fusa:test REQ-RL-008
 
+// Tests for rcp/ratelimit.hpp — per-endpoint token-bucket admission control
+// (ROADMAP.md milestone 55, "Authorization & Admission-Control Rebind",
+// v2.11.0).
+
 #include <catch2/catch_test_macros.hpp>
-#include <rcp/mock.hpp>
 #include <rcp/ratelimit.hpp>
 
 using namespace rcp;
 
-static std::shared_ptr<mock::Controller> make_mock(Zone z = Zone::FrontLeft) {
-    return std::make_shared<mock::Controller>(z);
+namespace {
+
+ratelimit::EndpointKey make_key(uint64_t stream_key, avtp::ByteBusId bus) {
+    ratelimit::EndpointKey k;
+    k.stream_key  = stream_key;
+    k.byte_bus_id = bus;
+    return k;
 }
 
-// ── Basic send ────────────────────────────────────────────────────────────────
+} // namespace
 
-TEST_CASE("RateLimit::send forwards command when bucket has tokens", "[ratelimit][REQ-RL-001]") {
-    auto inner = make_mock();
+// ── Basic admission ───────────────────────────────────────────────────────────
+
+TEST_CASE("ratelimit: admit succeeds while the domain's bucket has tokens",
+          "[ratelimit][REQ-RL-001]") {
     ratelimit::Config cfg;
     cfg.rate  = 1000;
     cfg.burst = 10;
-    ratelimit::Controller rl(inner, cfg);
+    ratelimit::Manager mgr(cfg);
 
-    Command cmd;
-    cmd.zone = Zone::FrontLeft;
-    Response resp;
-    REQUIRE_FALSE(rl.send(Context::background(), cmd, resp));
-    REQUIRE(resp.status == ResponseStatus::OK);
+    auto key = make_key(1, 5);
+    REQUIRE_FALSE(mgr.admit(key, /*is_safety_tagged=*/false, /*now_ms=*/0));
 }
 
-TEST_CASE("RateLimit::zone returns inner zone", "[ratelimit][REQ-RL-002]") {
-    auto inner = make_mock(Zone::Central);
-    ratelimit::Controller rl(inner);
-    REQUIRE(rl.zone() == Zone::Central);
-}
+// ── Refill proportional to elapsed time ───────────────────────────────────────
 
-// ── Token exhaustion ──────────────────────────────────────────────────────────
-
-TEST_CASE("RateLimit::send returns ErrBusy when bucket exhausted", "[ratelimit][REQ-RL-003]") {
-    auto inner = make_mock();
+TEST_CASE("ratelimit: tokens refill proportionally to elapsed now_ms",
+          "[ratelimit][REQ-RL-002]") {
     ratelimit::Config cfg;
-    cfg.rate  = 0.001; // nearly zero refill
+    cfg.rate  = 1.0; // 1 token/second
+    cfg.burst = 1;
+    ratelimit::Manager mgr(cfg);
+    auto key = make_key(1, 5);
+
+    // Drain the single burst token at t=0.
+    REQUIRE_FALSE(mgr.admit(key, false, 0));
+    // Immediately retrying at the same instant finds nothing refilled yet.
+    REQUIRE(mgr.admit(key, false, 0) == ratelimit::ErrAdmissionDenied);
+    // 1000ms later, exactly one token has refilled at 1 token/second.
+    REQUIRE_FALSE(mgr.admit(key, false, 1000));
+}
+
+// ── Exhaustion ────────────────────────────────────────────────────────────────
+
+TEST_CASE("ratelimit: admit returns ErrAdmissionDenied once the bucket is exhausted",
+          "[ratelimit][REQ-RL-003]") {
+    ratelimit::Config cfg;
+    cfg.rate  = 0.0; // no refill at all
     cfg.burst = 2;
-    cfg.exempt_critical = false;
-    ratelimit::Controller rl(inner, cfg);
+    ratelimit::Manager mgr(cfg);
+    auto key = make_key(1, 5);
 
-    Command cmd;
-    cmd.zone     = Zone::FrontLeft;
-    cmd.priority = Priority::Normal;
-    Response resp;
-
-    // Drain the 2 burst tokens.
-    { auto ec = rl.send(Context::background(), cmd, resp); (void)ec; }
-    { auto ec = rl.send(Context::background(), cmd, resp); (void)ec; }
-
-    // Next send should hit ErrBusy.
-    auto ec = rl.send(Context::background(), cmd, resp);
-    REQUIRE(ec == ErrBusy);
+    REQUIRE_FALSE(mgr.admit(key, false, 0));
+    REQUIRE_FALSE(mgr.admit(key, false, 0));
+    REQUIRE(mgr.admit(key, false, 0) == ratelimit::ErrAdmissionDenied);
 }
 
-// ── Critical exemption ────────────────────────────────────────────────────────
+// ── Safety-tagged exemption ───────────────────────────────────────────────────
 
-TEST_CASE("Critical commands bypass the bucket when exempt_critical=true", "[ratelimit][REQ-RL-004]") {
-    auto inner = make_mock();
+TEST_CASE("ratelimit: safety-tagged requests bypass the bucket when exempted",
+          "[ratelimit][REQ-RL-004]") {
     ratelimit::Config cfg;
-    cfg.rate            = 0.001;
-    cfg.burst           = 1;
-    cfg.exempt_critical = true;
-    ratelimit::Controller rl(inner, cfg);
+    cfg.rate                 = 0.0;
+    cfg.burst                = 1;
+    cfg.exempt_safety_tagged = true;
+    ratelimit::Manager mgr(cfg);
+    auto key = make_key(1, 5);
 
-    Command cmd;
-    cmd.zone     = Zone::FrontLeft;
-    cmd.priority = Priority::Normal;
-    Response resp;
-
-    // Exhaust the 1 token.
-    { auto ec = rl.send(Context::background(), cmd, resp); (void)ec; }
-
-    // Critical should still pass.
-    cmd.priority = Priority::Critical;
-    auto ec = rl.send(Context::background(), cmd, resp);
-    REQUIRE_FALSE(ec);
+    REQUIRE_FALSE(mgr.admit(key, false, 0)); // drains the one token
+    REQUIRE(mgr.admit(key, false, 0) == ratelimit::ErrAdmissionDenied);
+    // A safety-tagged request still gets through despite the exhausted bucket.
+    REQUIRE_FALSE(mgr.admit(key, /*is_safety_tagged=*/true, 0));
 }
 
-TEST_CASE("Critical commands do NOT bypass bucket when exempt_critical=false", "[ratelimit][REQ-RL-005]") {
-    auto inner = make_mock();
+TEST_CASE("ratelimit: safety-tagged requests are throttled when not exempted",
+          "[ratelimit][REQ-RL-005]") {
     ratelimit::Config cfg;
-    cfg.rate            = 0.001;
-    cfg.burst           = 1;
-    cfg.exempt_critical = false;
-    ratelimit::Controller rl(inner, cfg);
+    cfg.rate                 = 0.0;
+    cfg.burst                = 1;
+    cfg.exempt_safety_tagged = false;
+    ratelimit::Manager mgr(cfg);
+    auto key = make_key(1, 5);
 
-    Command cmd;
-    cmd.zone     = Zone::FrontLeft;
-    cmd.priority = Priority::Normal;
-    Response resp;
-    { auto ec = rl.send(Context::background(), cmd, resp); (void)ec; }
-
-    cmd.priority = Priority::Critical;
-    auto ec = rl.send(Context::background(), cmd, resp);
-    REQUIRE(ec == ErrBusy);
+    REQUIRE_FALSE(mgr.admit(key, false, 0));
+    REQUIRE(mgr.admit(key, /*is_safety_tagged=*/true, 0) == ratelimit::ErrAdmissionDenied);
 }
 
-// ── Zone mismatch / closed ────────────────────────────────────────────────────
+// ── Independent per-domain buckets ────────────────────────────────────────────
 
-TEST_CASE("RateLimit::send returns ErrZoneMismatch on wrong zone", "[ratelimit][REQ-RL-006]") {
-    auto inner = make_mock(Zone::FrontLeft);
-    ratelimit::Controller rl(inner);
-    Command cmd;
-    cmd.zone = Zone::RearLeft;
-    Response resp;
-    REQUIRE(rl.send(Context::background(), cmd, resp) == ErrZoneMismatch);
+TEST_CASE("ratelimit: distinct (stream, endpoint) domains have independent buckets",
+          "[ratelimit][REQ-RL-006]") {
+    ratelimit::Config cfg;
+    cfg.rate  = 0.0;
+    cfg.burst = 1;
+    ratelimit::Manager mgr(cfg);
+
+    auto key_a = make_key(1, 5);
+    auto key_b = make_key(1, 6);   // same stream, different endpoint
+    auto key_c = make_key(2, 5);   // different stream, same endpoint
+
+    REQUIRE_FALSE(mgr.admit(key_a, false, 0));
+    REQUIRE(mgr.admit(key_a, false, 0) == ratelimit::ErrAdmissionDenied);
+
+    // Neither sibling domain was affected by draining key_a's bucket.
+    REQUIRE_FALSE(mgr.admit(key_b, false, 0));
+    REQUIRE_FALSE(mgr.admit(key_c, false, 0));
+    REQUIRE(mgr.domain_count() == 3);
 }
 
-TEST_CASE("RateLimit::close stops sends", "[ratelimit][REQ-RL-007][REQ-RL-008]") {
-    auto inner = make_mock();
-    ratelimit::Controller rl(inner);
-    REQUIRE_FALSE(rl.close());
+// ── reset() ───────────────────────────────────────────────────────────────────
 
-    Command cmd;
-    cmd.zone = Zone::FrontLeft;
-    Response resp;
-    REQUIRE(rl.send(Context::background(), cmd, resp) == ErrClosed);
+TEST_CASE("ratelimit: reset() rebuilds a domain's bucket at full burst",
+          "[ratelimit][REQ-RL-007]") {
+    ratelimit::Config cfg;
+    cfg.rate  = 0.0;
+    cfg.burst = 1;
+    ratelimit::Manager mgr(cfg);
+    auto key = make_key(1, 5);
+
+    REQUIRE_FALSE(mgr.admit(key, false, 0));
+    REQUIRE(mgr.admit(key, false, 0) == ratelimit::ErrAdmissionDenied);
+
+    mgr.reset(key);
+    REQUIRE_FALSE(mgr.admit(key, false, 0));
+}
+
+// ── Error identity ─────────────────────────────────────────────────────────────
+
+TEST_CASE("ratelimit: ErrAdmissionDenied is a distinct, non-zero error code",
+          "[ratelimit][REQ-RL-008]") {
+    REQUIRE(ratelimit::ErrAdmissionDenied);
+    REQUIRE(std::string(ratelimit::ErrAdmissionDenied.category().name()) == "rcp.ratelimit");
 }
