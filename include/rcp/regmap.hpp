@@ -25,7 +25,7 @@
 // to bootstrap discovery (v2.2.0) and every endpoint milestone from v2.3.0
 // onward, plus EP0 itself — the RC Server acting as a pseudo-endpoint with
 // whole-map read/write and root-client arbitration. It rides on top of
-// rcp/wire.hpp's StreamId/ByteBusId addressing (v2.0.0) and rcp/lifecycle.hpp's
+// rcp/avtp.hpp's StreamId/ByteBusId addressing (v2.0.0) and rcp/lifecycle.hpp's
 // state machine (also v2.1.0); it does not depend on rcp/rcp.hpp's
 // pre-replacement Zone/Command/Controller/Registry model at all.
 //
@@ -35,7 +35,7 @@
 // magic-number value, and table layout are this implementation's own
 // encoding of that behavior for milestone 45 — full bit-for-bit register-map
 // conformance against other TC18 implementations is not claimed, same as
-// rcp/wire.hpp's equivalent disclaimer for the wire codec. Endpoint *types*
+// rcp/avtp.hpp's equivalent disclaimer for the wire codec. Endpoint *types*
 // (GPIO, SPI, I2C, ...) and their functional config contents are out of
 // scope here — this milestone only defines the generic/functional config
 // split and an opaque byte-blob functional config slot; interpreting that
@@ -46,12 +46,12 @@
 // and EndpointGenericConfig's per-endpoint CRC-enable toggles are expanded
 // to their full field set at this milestone, superseding the three
 // placeholder fields v2.1.0 reserved layout for. The behavior that reads
-// and acts on these fields lives in rcp/e2e.hpp and rcp/sequencer.hpp, not
+// and acts on these fields lives in rcp/e2e.hpp and rcp/request.hpp, not
 // here — same config-vs-behavior split as everything else in this header.
 #pragma once
 
+#include <rcp/avtp.hpp>
 #include <rcp/lifecycle.hpp>
-#include <rcp/wire.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -139,7 +139,7 @@ struct HwPinMapEntry {
 };
 
 // ── Sequencer-state registers (extraction §3.11, §3.16) ──────────────────────
-// Persistent 8-bit values; behavior lives in rcp/sequencer.hpp (v2.5.0).
+// Persistent 8-bit values; behavior lives in rcp/request.hpp (v2.5.0).
 // Declared here, ahead of RequestStreamConfig below, since that struct's
 // rx_safe_sequencer_state field (v2.6.0) needs the type name already
 // in scope.
@@ -162,7 +162,7 @@ enum class RxSafetyMeasure : uint8_t {
 // ROADMAP.md milestone 50 (v2.6.0) calls for. Behavior that reads and acts
 // on these fields lives in rcp/e2e.hpp (watchdog overflow, CRC
 // enforcement, sequence checking, safe-state gating) and
-// rcp/sequencer.hpp (the 0x8x safety-tagged request variants these fields
+// rcp/request.hpp (the 0x8x safety-tagged request variants these fields
 // exist to support) — this struct is durable storage only, same
 // config-vs-behavior split used throughout this header.
 //
@@ -171,7 +171,7 @@ enum class RxSafetyMeasure : uint8_t {
 // reserve register-map layout ahead of this milestone's real field list.
 
 struct RequestStreamConfig {
-    wire::StreamId stream_id{};
+    avtp::StreamId stream_id{};
     uint16_t       queue_size = 0;
 
     // Watchdog (extraction §3.8). rx_wd_timeout_interval's unit
@@ -215,7 +215,7 @@ struct RequestStreamConfig {
 
 struct EpIdMappingEntry {
     EndpointId      ep_id       = 0;
-    wire::ByteBusId byte_bus_id = 0;
+    avtp::ByteBusId byte_bus_id = 0;
 };
 
 // ── Response / ack queue config (extraction §3.10) ───────────────────────────
@@ -253,8 +253,8 @@ struct TablePointer {
 // pointer/capacity pairs describe. A real server would serialize this to
 // and from the wire on demand; this milestone models the data, not the wire
 // encoding of the whole map (individual field reads/writes ride on the
-// wire::ByteBusId-addressed standard request already implemented in
-// rcp/wire.hpp).
+// avtp::ByteBusId-addressed standard request already implemented in
+// rcp/acf.hpp).
 
 constexpr uint32_t kRegisterMapMagic = 0x52435030; // "RCP0" — this implementation's own placeholder value
 
@@ -302,7 +302,7 @@ struct RegisterMap {
 //
 // "Client" here is identified by an opaque index the embedding transport
 // assigns per connected stream; this header does not know or care how that
-// index maps to a wire::StreamId, only that it is stable for the lifetime of
+// index maps to a avtp::StreamId, only that it is stable for the lifetime of
 // the connection.
 class Ep0 {
 public:

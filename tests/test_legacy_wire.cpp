@@ -13,7 +13,8 @@
 
 // Tests for rcp/legacy_wire.hpp — the pre-replacement 16-byte frame codec
 // still used internally by rcp/udp.hpp. See that header's comment for why
-// this still exists alongside the new rcp/wire.hpp AVTPDU/ACF codec.
+// this still exists alongside the new rcp/avtp.hpp + rcp/acf.hpp AVTPDU/ACF
+// codec.
 
 #include <catch2/catch_test_macros.hpp>
 #include <rcp/legacy_wire.hpp>

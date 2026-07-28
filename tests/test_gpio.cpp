@@ -37,7 +37,7 @@ TEST_CASE("decode_gpio_payload rejects a short buffer", "[gpio][REQ-GPIO-001]") 
     std::vector<uint8_t> short_buf{0x01, 0x02};
     PinMask out = 0;
     auto ec = decode_gpio_payload(short_buf.data(), short_buf.size(), out);
-    REQUIRE(ec == rcp::wire::make_error_code(rcp::wire::WireErrc::short_buffer));
+    REQUIRE(ec == rcp::avtp::make_error_code(rcp::avtp::AvtpErrc::short_buffer));
 }
 
 // ── Write semantics: the 6 generic combinators ───────────────────────────────
@@ -164,7 +164,7 @@ TEST_CASE("decode_gpio_functional_config rejects an undersized blob", "[gpio][RE
     PinMask out_directions = 0;
     std::array<uint8_t, kMaxPins> out_edges{};
     auto ec = decode_gpio_functional_config(cfg, out_directions, out_edges);
-    REQUIRE(ec == rcp::wire::make_error_code(rcp::wire::WireErrc::short_buffer));
+    REQUIRE(ec == rcp::avtp::make_error_code(rcp::avtp::AvtpErrc::short_buffer));
 }
 
 // ── GpioEndpoint request-dispatch pattern ────────────────────────────────────

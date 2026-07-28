@@ -14,7 +14,9 @@
 // for configuration (extraction §3.1, §3.5).
 //
 // ROADMAP.md milestone 46, "Discovery (v2.2.0)": this header rides directly
-// on rcp/wire.hpp's NTSCF/ACF_ABB framing and byte_bus_id addressing (v2.0.0)
+// on rcp/avtp.hpp's NTSCF framing and rcp/acf.hpp's ACF_ABB message format
+// and byte_bus_id addressing (v2.0.0, split from the original rcp/wire.hpp
+// per RELAY spec §13.7.2)
 // — it needs no changes to that codec — queries rcp/lifecycle.hpp's
 // ServerState to decide whether an incoming discovery request is eligible to
 // claim the discovery stream (v2.1.0), and targets rcp/regmap.hpp's EP0
@@ -31,12 +33,13 @@
 // text from that document is reproduced here. The concrete claim-state
 // machine and default timeout chosen in this file are this implementation's
 // own encoding of that behavior, same as the equivalent disclaimers in
-// rcp/wire.hpp, rcp/lifecycle.hpp, and rcp/regmap.hpp.
+// rcp/avtp.hpp, rcp/acf.hpp, rcp/lifecycle.hpp, and rcp/regmap.hpp.
 #pragma once
 
+#include <rcp/acf.hpp>
+#include <rcp/avtp.hpp>
 #include <rcp/lifecycle.hpp>
 #include <rcp/regmap.hpp>
-#include <rcp/wire.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -53,7 +56,7 @@ namespace discovery {
 // — and, within whatever EP0 exposes, register-map address 0: the general
 // bootstrap fields, magic number first among them (extraction §3.5).
 
-constexpr wire::ByteBusId kDiscoveryByteBusId = static_cast<wire::ByteBusId>(regmap::kEp0);
+constexpr avtp::ByteBusId kDiscoveryByteBusId = static_cast<avtp::ByteBusId>(regmap::kEp0);
 constexpr uint32_t        kDiscoveryRegisterAddress = 0;
 
 // A discovery read's default response size: just enough to carry the 32-bit
@@ -93,13 +96,13 @@ inline std::error_code make_error_code(DiscoveryErrc e) noexcept {
 // ── Discovery request framing ────────────────────────────────────────────────
 // make_discovery_request builds the ACF_ABB-level header for a discovery
 // read: unconditional read (op=false), targeting byte_bus_id 0
-// (extraction §3.5). It rides on wire::make_standard_request unchanged —
+// (extraction §3.5). It rides on acf::make_standard_request unchanged —
 // discovery is the mandatory standard request kind addressed at a fixed
 // endpoint, not a distinct wire-level message shape of its own.
-inline wire::AcfMessageInfo make_discovery_request(uint8_t transaction_num,
-                                                     uint16_t read_size = kDiscoveryDefaultReadSize) noexcept {
-    return wire::make_standard_request(kDiscoveryByteBusId, transaction_num,
-                                        /*write=*/false, read_size);
+inline acf::AcfMessageInfo make_discovery_request(uint8_t transaction_num,
+                                                    uint16_t read_size = kDiscoveryDefaultReadSize) noexcept {
+    return acf::make_standard_request(kDiscoveryByteBusId, transaction_num,
+                                       /*write=*/false, read_size);
 }
 
 // encode_discovery_request wraps make_discovery_request's ACF_ABB message in
@@ -107,20 +110,20 @@ inline wire::AcfMessageInfo make_discovery_request(uint8_t transaction_num,
 // NTSCF-only and broadcastable (extraction §3.5) — this function never
 // produces a TSCF-headed frame, so there is no way to misuse it into
 // building the kind of request decode_discovery_request below must drop.
-inline std::vector<uint8_t> encode_discovery_request(const wire::StreamId& stream_id,
+inline std::vector<uint8_t> encode_discovery_request(const avtp::StreamId& stream_id,
                                                        uint16_t sequence_num,
                                                        uint8_t transaction_num,
                                                        uint16_t read_size = kDiscoveryDefaultReadSize) {
     const auto info = make_discovery_request(transaction_num, read_size);
-    const auto acf  = wire::encode_acf_abb(info, {});
+    const auto acf_msg = acf::encode_acf_abb(info, {});
 
-    wire::NtscfHeader hdr;
+    avtp::NtscfHeader hdr;
     hdr.stream_id           = stream_id;
     hdr.sequence_num        = sequence_num;
-    hdr.control_data_length = static_cast<uint16_t>(acf.size());
+    hdr.control_data_length = static_cast<uint16_t>(acf_msg.size());
 
-    auto out = wire::encode_ntscf_header(hdr);
-    out.insert(out.end(), acf.begin(), acf.end());
+    auto out = avtp::encode_ntscf_header(hdr);
+    out.insert(out.end(), acf_msg.begin(), acf_msg.end());
     return out;
 }
 
@@ -131,20 +134,20 @@ inline std::vector<uint8_t> encode_discovery_request(const wire::StreamId& strea
 // modeling "drop" as a decode failure the caller cannot accidentally ignore
 // the way it could ignore a boolean flag on an otherwise-successful decode.
 inline std::error_code decode_discovery_request(const uint8_t* buf, size_t len,
-                                                  wire::NtscfHeader& out_hdr,
-                                                  wire::AcfMessageInfo& out_info,
+                                                  avtp::NtscfHeader& out_hdr,
+                                                  acf::AcfMessageInfo& out_info,
                                                   std::vector<uint8_t>& out_payload) {
-    if (len < 1) return wire::make_error_code(wire::WireErrc::short_buffer);
-    if (buf[0] == wire::kSubtypeTscf) {
+    if (len < 1) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    if (buf[0] == avtp::kSubtypeTscf) {
         return make_error_code(DiscoveryErrc::tscf_headed_request_dropped);
     }
 
-    auto ec = wire::decode_ntscf_header(buf, len, out_hdr);
+    auto ec = avtp::decode_ntscf_header(buf, len, out_hdr);
     if (ec) return ec;
 
-    const size_t acf_off = wire::kNtscfHeaderLen;
-    if (len < acf_off) return wire::make_error_code(wire::WireErrc::short_buffer);
-    return wire::decode_acf_abb(buf + acf_off, len - acf_off, out_info, out_payload);
+    const size_t acf_off = avtp::kNtscfHeaderLen;
+    if (len < acf_off) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    return acf::decode_acf_abb(buf + acf_off, len - acf_off, out_info, out_payload);
 }
 
 // should_answer_discovery documents, as a single always-true call site

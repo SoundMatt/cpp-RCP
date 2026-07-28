@@ -49,24 +49,24 @@ TEST_CASE("kDiscoveryRegisterAddress fixes the discovery read at register-map ad
 // ── NTSCF-only framing; TSCF-headed discovery is dropped ────────────────────────
 
 TEST_CASE("encode_discovery_request always produces an NTSCF-headed frame", "[discovery][REQ-DISC-002]") {
-    rcp::wire::StreamId sid;
+    rcp::avtp::StreamId sid;
     sid.mac    = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
     sid.suffix = 1;
 
     auto frame = encode_discovery_request(sid, /*sequence_num=*/0, /*transaction_num=*/1);
     REQUIRE_FALSE(frame.empty());
-    REQUIRE(frame[0] == rcp::wire::kSubtypeNtscf);
+    REQUIRE(frame[0] == rcp::avtp::kSubtypeNtscf);
 }
 
 TEST_CASE("decode_discovery_request round-trips an encoded discovery request", "[discovery][REQ-DISC-002]") {
-    rcp::wire::StreamId sid;
+    rcp::avtp::StreamId sid;
     sid.mac    = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
     sid.suffix = 42;
 
     auto frame = encode_discovery_request(sid, /*sequence_num=*/3, /*transaction_num=*/9, /*read_size=*/4);
 
-    rcp::wire::NtscfHeader     hdr;
-    rcp::wire::AcfMessageInfo  info;
+    rcp::avtp::NtscfHeader     hdr;
+    rcp::acf::AcfMessageInfo  info;
     std::vector<uint8_t>       payload;
     auto ec = decode_discovery_request(frame.data(), frame.size(), hdr, info, payload);
 
@@ -81,19 +81,19 @@ TEST_CASE("decode_discovery_request round-trips an encoded discovery request", "
 TEST_CASE("A TSCF-headed discovery request is dropped, not decoded", "[discovery][REQ-DISC-002]") {
     // Build a TSCF frame around the same discovery-shaped ACF_ABB payload —
     // this must never be treated as a valid discovery request.
-    rcp::wire::TscfHeader hdr;
+    rcp::avtp::TscfHeader hdr;
     hdr.stream_id.mac    = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
     hdr.stream_id.suffix = 1;
 
     auto info = make_discovery_request(/*transaction_num=*/1);
-    auto acf  = rcp::wire::encode_acf_abb(info, {});
+    auto acf  = rcp::acf::encode_acf_abb(info, {});
     hdr.control_data_length = static_cast<uint16_t>(acf.size());
 
-    auto frame = rcp::wire::encode_tscf_header(hdr);
+    auto frame = rcp::avtp::encode_tscf_header(hdr);
     frame.insert(frame.end(), acf.begin(), acf.end());
 
-    rcp::wire::NtscfHeader    out_hdr;
-    rcp::wire::AcfMessageInfo out_info;
+    rcp::avtp::NtscfHeader    out_hdr;
+    rcp::acf::AcfMessageInfo out_info;
     std::vector<uint8_t>      out_payload;
     auto ec = decode_discovery_request(frame.data(), frame.size(), out_hdr, out_info, out_payload);
 

@@ -27,7 +27,7 @@
 // response can always be carried in a single, unfragmented AVTPDU. This is
 // a conservative implementation-chosen ceiling, not a value derived from
 // the wire format's own read_size field width (which is a full uint16_t,
-// see rcp/wire.hpp's AcfMessageInfo::read_size_or_segment_num) — a real
+// see rcp/acf.hpp's AcfMessageInfo::read_size_or_segment_num) — a real
 // single-AVTPDU budget depends on MTU and other-header overhead this header
 // does not model, so kMaxReadSize is deliberately conservative rather than
 // computed exactly.
@@ -36,7 +36,7 @@
 // an internal structured extraction of the specification named above; no
 // text from that document is reproduced here. The concrete queue-capacity
 // values and sub-octet padding convention chosen in this file are this
-// implementation's own, same as the equivalent disclaimers in rcp/wire.hpp,
+// implementation's own, same as the equivalent disclaimers in rcp/avtp.hpp,
 // rcp/regmap.hpp, rcp/endpoint.hpp, rcp/gpio.hpp, and rcp/spi.hpp.
 #pragma once
 

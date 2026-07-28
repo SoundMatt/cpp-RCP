@@ -76,7 +76,8 @@ reference.
 | `<rcp/tls.hpp>` | Mutual TLS transport for zone controller communication |
 | `<rcp/shmem.hpp>` | Zero-copy intra-host command delivery via shared in-process memory |
 | `<rcp/tsn.hpp>` | IEEE 802.1Qbv-aware UDP transport adapter for hard real-time Ethernet |
-| `<rcp/wire.hpp>` | TC18 wire codec — IEEE 1722 AVTPDU (NTSCF/TSCF) framing and ACF_ABB/ACF_GBB messages (ROADMAP.md v2.0.0) |
+| `<rcp/avtp.hpp>` | TC18 wire codec, framing half — IEEE 1722 AVTPDU (NTSCF/TSCF) header framing (ROADMAP.md v2.0.0) |
+| `<rcp/acf.hpp>` | TC18 wire codec, message half — ACF_ABB/ACF_GBB message format (ROADMAP.md v2.0.0) |
 | `<rcp/legacy_wire.hpp>` | Pre-replacement 16-byte frame codec, kept only for `<rcp/udp.hpp>`'s internal use until it is rebuilt at v2.13.0 |
 | `<rcp/sim.hpp>` | Timing-realistic zone controller simulator for SiL/HIL testing |
 

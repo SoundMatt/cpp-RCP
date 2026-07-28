@@ -2707,7 +2707,7 @@
     {
       "id": "REQ-WIRE-001",
       "title": "NTSCF header addressing and length fields",
-      "text": "rcp::wire::encode_ntscf_header/decode_ntscf_header shall round-trip stream_id, sequence_num, and control_data_length unchanged for a Non-Time-Synchronous Control Format AVTPDU header.",
+      "text": "rcp::avtp::encode_ntscf_header/decode_ntscf_header shall round-trip stream_id, sequence_num, and control_data_length unchanged for a Non-Time-Synchronous Control Format AVTPDU header.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2715,7 +2715,7 @@
     {
       "id": "REQ-WIRE-002",
       "title": "TSCF header carries avtp_timestamp",
-      "text": "rcp::wire::encode_tscf_header/decode_tscf_header shall round-trip stream_id, sequence_num, control_data_length, and the 32-bit avtp_timestamp field unchanged for a Time-Synchronous Control Format AVTPDU header.",
+      "text": "rcp::avtp::encode_tscf_header/decode_tscf_header shall round-trip stream_id, sequence_num, control_data_length, and the 32-bit avtp_timestamp field unchanged for a Time-Synchronous Control Format AVTPDU header.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2723,7 +2723,7 @@
     {
       "id": "REQ-WIRE-003",
       "title": "AVTPDU subtype validation",
-      "text": "decode_ntscf_header shall reject a buffer whose subtype byte is not the NTSCF subtype, and decode_tscf_header shall reject a buffer whose subtype byte is not the TSCF subtype, both returning WireErrc::bad_subtype.",
+      "text": "decode_ntscf_header shall reject a buffer whose subtype byte is not the NTSCF subtype, and decode_tscf_header shall reject a buffer whose subtype byte is not the TSCF subtype, both returning AvtpErrc::bad_subtype.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2755,7 +2755,7 @@
     {
       "id": "REQ-WIRE-007",
       "title": "StreamId addressing round-trips",
-      "text": "rcp::wire::StreamId shall round-trip its 48-bit MAC half and 16-bit locally-assigned suffix through to_u64()/from_u64() unchanged, and two StreamId values with different MAC halves shall compare unequal.",
+      "text": "rcp::avtp::StreamId shall round-trip its 48-bit MAC half and 16-bit locally-assigned suffix through to_u64()/from_u64() unchanged, and two StreamId values with different MAC halves shall compare unequal.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2763,7 +2763,7 @@
     {
       "id": "REQ-WIRE-008",
       "title": "byte_bus_id is echoed unchanged on responses",
-      "text": "rcp::wire::make_response shall always copy byte_bus_id and transaction_num from the request it is built from, unchanged, since byte_bus_id is unique only within the owning stream_id and a response/ack must echo it back exactly.",
+      "text": "rcp::acf::make_response shall always copy byte_bus_id and transaction_num from the request it is built from, unchanged, since byte_bus_id is unique only within the owning stream_id and a response/ack must echo it back exactly.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2771,7 +2771,7 @@
     {
       "id": "REQ-WIRE-009",
       "title": "Standard request kind is unconditional ACF_ABB",
-      "text": "rcp::wire::make_standard_request shall build a request using acf_msg_type ACF_ABB with rsp clear, representing the mandatory best-effort, unconditional standard request kind.",
+      "text": "rcp::acf::make_standard_request shall build a request using acf_msg_type ACF_ABB with rsp clear, representing the mandatory best-effort, unconditional standard request kind.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2779,7 +2779,7 @@
     {
       "id": "REQ-WIRE-010",
       "title": "Four response semantic types are distinguishable",
-      "text": "rcp::wire::response_kind_of shall recover Acknowledge, WriteResponse, ReadResponse, or ErrorResponse from a header built by make_response with the corresponding ResponseKind, and the four kinds shall be pairwise distinguishable from the shared header fields alone.",
+      "text": "rcp::acf::response_kind_of shall recover Acknowledge, WriteResponse, ReadResponse, or ErrorResponse from a header built by make_response with the corresponding ResponseKind, and the four kinds shall be pairwise distinguishable from the shared header fields alone.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2795,7 +2795,7 @@
     {
       "id": "REQ-WIRE-012",
       "title": "Timestamp fallback rule: TSCF preferred, then ACF_GBB, then none",
-      "text": "rcp::wire::effective_timestamp shall return the TSCF avtp_timestamp when timestamp_valid is set, shall fall back to a valid ACF_GBB message_timestamp when no TSCF timestamp is available, and shall return std::nullopt rather than zero when neither source is valid.",
+      "text": "rcp::acf::effective_timestamp shall return the TSCF avtp_timestamp when timestamp_valid is set, shall fall back to a valid ACF_GBB message_timestamp when no TSCF timestamp is available, and shall return std::nullopt rather than zero when neither source is valid.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2803,7 +2803,7 @@
     {
       "id": "REQ-WIRE-013",
       "title": "Decoders reject short buffers",
-      "text": "decode_ntscf_header, decode_tscf_header, decode_acf_abb, and decode_acf_gbb shall return WireErrc::short_buffer when given fewer bytes than their fixed-size header requires, without reading past the buffer.",
+      "text": "rcp::avtp::decode_ntscf_header, rcp::avtp::decode_tscf_header, rcp::acf::decode_acf_abb, and rcp::acf::decode_acf_gbb shall return AvtpErrc::short_buffer when given fewer bytes than their fixed-size header requires, without reading past the buffer.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2811,7 +2811,7 @@
     {
       "id": "REQ-WIRE-014",
       "title": "ACF message type mismatch is rejected",
-      "text": "decode_acf_abb shall return WireErrc::bad_acf_msg_type when given a buffer whose acf_msg_type byte is ACF_GBB, and decode_acf_gbb shall return the same error when given a buffer whose acf_msg_type byte is ACF_ABB.",
+      "text": "decode_acf_abb shall return AcfErrc::bad_acf_msg_type when given a buffer whose acf_msg_type byte is ACF_GBB, and decode_acf_gbb shall return the same error when given a buffer whose acf_msg_type byte is ACF_ABB.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3107,7 +3107,7 @@
     {
       "id": "REQ-GPIO-001",
       "title": "GPIO payload is a 4-byte big-endian bitmask",
-      "text": "rcp::gpio::kGpioPayloadLen shall be 4 and kMaxPins shall be 32; encode_gpio_payload/decode_gpio_payload shall round-trip a PinMask value in big-endian byte order, and decode_gpio_payload shall return wire::WireErrc::short_buffer when given fewer than kGpioPayloadLen bytes.",
+      "text": "rcp::gpio::kGpioPayloadLen shall be 4 and kMaxPins shall be 32; encode_gpio_payload/decode_gpio_payload shall round-trip a PinMask value in big-endian byte order, and decode_gpio_payload shall return avtp::AvtpErrc::short_buffer when given fewer than kGpioPayloadLen bytes.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3147,7 +3147,7 @@
     {
       "id": "REQ-GPIO-006",
       "title": "GPIO functional config block wiring",
-      "text": "rcp::gpio::encode_gpio_functional_config/decode_gpio_functional_config shall round-trip a pin-direction mask and per-pin enabled-edge bitmasks through rcp::regmap::EndpointFunctionalConfig::data, and decode_gpio_functional_config shall return wire::WireErrc::short_buffer for an undersized blob.",
+      "text": "rcp::gpio::encode_gpio_functional_config/decode_gpio_functional_config shall round-trip a pin-direction mask and per-pin enabled-edge bitmasks through rcp::regmap::EndpointFunctionalConfig::data, and decode_gpio_functional_config shall return avtp::AvtpErrc::short_buffer for an undersized blob.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3411,7 +3411,7 @@
     {
       "id": "REQ-SEQ-001",
       "title": "message_timestamp-repurposing request_type decode/encode (mtv=0)",
-      "text": "rcp::sequencer::decode_request_type shall return SequencerErrc::timestamp_not_repurposed when mtv is true, shall return SequencerErrc::unknown_request_type when the top byte of message_timestamp is not one of the 8 defined opcodes, and shall otherwise recover the opcode and the remaining 7 parameter bytes exactly as produced by encode_request_type for the same inputs; rcp::sequencer::make_conditional_request shall always build an ACF_GBB AcfMessageInfo with mtv clear.",
+      "text": "rcp::request::decode_request_type shall return RequestErrc::timestamp_not_repurposed when mtv is true, shall return RequestErrc::unknown_request_type when the top byte of message_timestamp is not one of the 8 defined opcodes, and shall otherwise recover the opcode and the remaining 7 parameter bytes exactly as produced by encode_request_type for the same inputs; rcp::request::make_conditional_request shall always build an ACF_GBB AcfMessageInfo with mtv clear.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3419,7 +3419,7 @@
     {
       "id": "REQ-SEQ-002",
       "title": "Request categories and execution-priority ordering",
-      "text": "rcp::sequencer::category_of shall map the 3 cancellation opcodes to RequestCategory::Cancellation, each of the 5 conditional opcodes to its own category, and std::nullopt to RequestCategory::Standard; rcp::sequencer::select_next_due shall pick the candidate with the lowest priority_rank among due candidates and shall break ties within a category by lowest arrival_seq (FIFO), returning std::nullopt for an empty input.",
+      "text": "rcp::request::category_of shall map the 3 cancellation opcodes to RequestCategory::Cancellation, each of the 5 conditional opcodes to its own category, and std::nullopt to RequestCategory::Standard; rcp::request::select_next_due shall pick the candidate with the lowest priority_rank among due candidates and shall break ties within a category by lowest arrival_seq (FIFO), returning std::nullopt for an empty input.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3427,7 +3427,7 @@
     {
       "id": "REQ-SEQ-003",
       "title": "Compound/compound-wait optional-feature bundling",
-      "text": "rcp::sequencer::validate_feature_bundles shall return SequencerErrc::compound_bundle_incomplete whenever FeatureSet::compound or FeatureSet::compound_wait is set unless compound, compound_wait, clear_non_safestate, and sequencer_count >= kMinCompoundSequencers (4) are all simultaneously true, and shall accept every other combination of triggered/chained/timed/clear_single independently of compound support.",
+      "text": "rcp::request::validate_feature_bundles shall return RequestErrc::compound_bundle_incomplete whenever FeatureSet::compound or FeatureSet::compound_wait is set unless compound, compound_wait, clear_non_safestate, and sequencer_count >= kMinCompoundSequencers (4) are all simultaneously true, and shall accept every other combination of triggered/chained/timed/clear_single independently of compound support.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3435,7 +3435,7 @@
     {
       "id": "REQ-SEQ-004",
       "title": "Sequencer-state default value and finalization advance rule",
-      "text": "rcp::sequencer::SequencerTable::ensure_size shall fill newly added slots with kDefaultState (1), never the storage's own zero-initialization default, shall never shrink existing storage, and try_advance shall increment a sequencer only when its current value equals the supplied expected_start, leaving it unchanged (and reporting out_advanced=false, not an error) otherwise; both accessors shall return SequencerErrc::index_out_of_range for an out-of-bounds index.",
+      "text": "rcp::request::SequencerTable::ensure_size shall fill newly added slots with kDefaultState (1), never the storage's own zero-initialization default, shall never shrink existing storage, and try_advance shall increment a sequencer only when its current value equals the supplied expected_start, leaving it unchanged (and reporting out_advanced=false, not an error) otherwise; both accessors shall return RequestErrc::index_out_of_range for an out-of-bounds index.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3443,7 +3443,7 @@
     {
       "id": "REQ-SEQ-005",
       "title": "Cancellation kinds and shared cancellation semantics",
-      "text": "rcp::sequencer::RequestLedger::cancel_single shall cancel a Pending/Started request and cascade cancellation to every transitive chained successor, and shall return SequencerErrc::request_not_found for an unknown transaction or one that is UnderExecution/Finalized/already Canceled; cancel_all shall cancel every Pending/Started record (optionally skipping is_safety records when non_safestate_only is set) without disturbing any UnderExecution or Finalized record; a canceled request's outcome_of shall report SequencerErrc::request_canceled.",
+      "text": "rcp::request::RequestLedger::cancel_single shall cancel a Pending/Started request and cascade cancellation to every transitive chained successor, and shall return RequestErrc::request_not_found for an unknown transaction or one that is UnderExecution/Finalized/already Canceled; cancel_all shall cancel every Pending/Started record (optionally skipping is_safety records when non_safestate_only is set) without disturbing any UnderExecution or Finalized record; a canceled request's outcome_of shall report RequestErrc::request_canceled.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3451,7 +3451,7 @@
     {
       "id": "REQ-SEQ-006",
       "title": "Request lifecycle state machine: pending -> started -> under_execution -> finalized",
-      "text": "rcp::sequencer::RequestLedger shall only permit the single-step forward sequence Pending->Started->UnderExecution->Finalized, returning SequencerErrc::invalid_lifecycle_transition for any other requested transition and SequencerErrc::unknown_transaction for an untracked id; submit shall return SequencerErrc::transaction_num_collision for a transaction_num already tracked; finalize shall drive SequencerTable::try_advance for a Compound/CompoundWait record's sequencer_index/expected_start_state as its side effect.",
+      "text": "rcp::request::RequestLedger shall only permit the single-step forward sequence Pending->Started->UnderExecution->Finalized, returning RequestErrc::invalid_lifecycle_transition for any other requested transition and RequestErrc::unknown_transaction for an untracked id; submit shall return RequestErrc::transaction_num_collision for a transaction_num already tracked; finalize shall drive SequencerTable::try_advance for a Compound/CompoundWait record's sequencer_index/expected_start_state as its side effect.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3459,7 +3459,7 @@
     {
       "id": "REQ-SEQ-007",
       "title": "Chained-successor propagation on predecessor finalization",
-      "text": "rcp::sequencer::RequestLedger::finalize shall, for every record whose chained_predecessor equals the finalized transaction_num, cascade-cancel that successor iff rcp::sequencer::should_execute_chained(successor.cs, errored) is false, and shall leave every such successor untouched when the predecessor finalized with errored=false.",
+      "text": "rcp::request::RequestLedger::finalize shall, for every record whose chained_predecessor equals the finalized transaction_num, cascade-cancel that successor iff rcp::request::should_execute_chained(successor.cs, errored) is false, and shall leave every such successor untouched when the predecessor finalized with errored=false.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3467,15 +3467,15 @@
     {
       "id": "REQ-SEQ-008",
       "title": "The cs field's dual meaning (compound-wait vs. chained)",
-      "text": "rcp::sequencer::compound_wait_check_of shall map cs=true to CompoundWaitCheck::Immediate and cs=false to CompoundWaitCheck::AfterChangeOnly; rcp::sequencer::should_execute_chained shall return true whenever cs is true regardless of predecessor_errored, and shall return true iff predecessor_errored is false when cs is false.",
+      "text": "rcp::request::compound_wait_check_of shall map cs=true to CompoundWaitCheck::Immediate and cs=false to CompoundWaitCheck::AfterChangeOnly; rcp::request::should_execute_chained shall return true whenever cs is true regardless of predecessor_errored, and shall return true iff predecessor_errored is false when cs is false.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SEQ-009",
-      "title": "SequencerErrc is a distinct error category with non-empty, distinct messages",
-      "text": "Every rcp::sequencer::SequencerErrc value shall report rcp::sequencer::sequencer_category() as its category and shall have a non-empty diagnostic message distinct from every other SequencerErrc value's message.",
+      "title": "RequestErrc is a distinct error category with non-empty, distinct messages",
+      "text": "Every rcp::request::RequestErrc value shall report rcp::request::request_category() as its category and shall have a non-empty diagnostic message distinct from every other RequestErrc value's message.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3483,7 +3483,7 @@
     {
       "id": "REQ-SEQ-010",
       "title": "decode_request_type accepts exactly the three 0x8x safety-tagged opcodes",
-      "text": "rcp::sequencer::is_valid_request_type and decode_request_type shall accept RequestTypeOpcode::CompoundSafety (0x8F), CompoundWaitSafety (0x8B), and TriggeredSafety (0x8E) as valid opcodes, round-tripping their parameter bytes exactly as the eight pre-existing opcodes do, and shall reject every other MSB-set byte value as SequencerErrc::unknown_request_type.",
+      "text": "rcp::request::is_valid_request_type and decode_request_type shall accept RequestTypeOpcode::CompoundSafety (0x8F), CompoundWaitSafety (0x8B), and TriggeredSafety (0x8E) as valid opcodes, round-tripping their parameter bytes exactly as the eight pre-existing opcodes do, and shall reject every other MSB-set byte value as RequestErrc::unknown_request_type.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3491,7 +3491,7 @@
     {
       "id": "REQ-SEQ-011",
       "title": "Safety-tagged opcodes share their base opcode's priority category",
-      "text": "rcp::sequencer::is_safety_variant shall return true for exactly CompoundSafety/CompoundWaitSafety/TriggeredSafety and false for every other RequestTypeOpcode; rcp::sequencer::category_of shall map each safety-tagged opcode to the same RequestCategory as its corresponding base opcode (Compound, CompoundWait, Triggered).",
+      "text": "rcp::request::is_safety_variant shall return true for exactly CompoundSafety/CompoundWaitSafety/TriggeredSafety and false for every other RequestTypeOpcode; rcp::request::category_of shall map each safety-tagged opcode to the same RequestCategory as its corresponding base opcode (Compound, CompoundWait, Triggered).",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3499,7 +3499,7 @@
     {
       "id": "REQ-SEQ-012",
       "title": "request_record_for derives RequestRecord::is_safety from the opcode",
-      "text": "rcp::sequencer::request_record_for shall set the returned RequestRecord's is_safety field to is_safety_variant(*type) when type has a value, to false when type is std::nullopt (the standard request kind), and the resulting record shall be excluded from cancellation by RequestLedger::cancel_all(non_safestate_only=true) if and only if is_safety is true.",
+      "text": "rcp::request::request_record_for shall set the returned RequestRecord's is_safety field to is_safety_variant(*type) when type has a value, to false when type is std::nullopt (the standard request kind), and the resulting record shall be excluded from cancellation by RequestLedger::cancel_all(non_safestate_only=true) if and only if is_safety is true.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
