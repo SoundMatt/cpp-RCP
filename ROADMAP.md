@@ -598,6 +598,66 @@ exist."
 
 ### 51. Remaining Endpoint Types — LIN, CAN (incl. CAN XL), ISELED, MDIO, Wakeup Control (v2.7.0)
 
+**Done (v2.7.0):** `rcp/endpoint.hpp` gains the five remaining `ep_type` id
+constants this milestone assigns (`kEndpointTypeWakeup`=`0x01`,
+`kEndpointTypeLin`=`0x06`, `kEndpointTypeCan`=`0x0B`,
+`kEndpointTypeIseled`=`0x0C`, `kEndpointTypeMdio`=`0x0D`), replacing the
+comment placeholder milestone 48 left for them; `0x0A` (DAC) remains
+deliberately unallocated per this milestone's explicit DAC-out-of-scope
+call. `rcp/lin.hpp` implements the LIN commander (`ep_type 0x06`):
+`LinEndpoint::transfer` is a pure raw-byte-pusher — it records exactly the
+bytes passed to it in both directions and performs no checksum selection,
+PID generation, or schedule-table lookup, deliberately breaking with any
+frame-aware assumption the deprecated `linbr.hpp` bridge's era might imply
+(that file remains untouched — DEPRECATE, not ADAPT, per the Satellite
+Package Disposition table). `rcp/can.hpp` implements the CAN controller
+(`ep_type 0x0B`): an explicit `FrameFormat` (Classical/Fd/Xl) selects each
+format's own payload ceiling via `max_payload_for`/`validate_frame`, with no
+remote-frame shape defined anywhere in the header; CAN XL's payload is
+bounded by `kMaxXlPayloadSingleAvtpdu`, a conservative implementation-chosen
+ceiling strictly below the specification's own 2054-byte
+`kMaxXlPayloadSpec`, consistent with milestone 52's already-decided
+fragmentation no-go — a payload between the two is reported via
+`CanErrc::xl_payload_exceeds_single_avtpdu_bound` rather than silently
+accepted or truncated; `CanBitTimingConfig` carries the three independent
+per-phase register sets (arbitration/fd_data/xl_data); `CanEndpoint::receive`
+matches CAN-XL frames against a separate `xl_receive_filters` bank distinct
+from the general `acceptance_filters` bank; and `CanEndpoint` deliberately
+exposes no `TriggerRegistry` at all — the one endpoint type in this codebase
+without one, since the specification defines no trigger-signal table for
+it. `rcp/iseled.hpp` implements ISELED (`ep_type 0x0C`):
+`IseledEndpoint::transact` carries the Instruction/Address/Data request and
+Address/Data/optional-native-CRC response shape, with `compute_native_crc8`/
+`verify_native_crc` implementing that optional native CRC as a check fully
+independent of — and with no dependency on — `rcp/e2e.hpp`'s general
+RCP-level E2E CRC from v2.6.0, layered on top of it rather than replacing
+any part of it. `rcp/mdio.hpp` implements MDIO (`ep_type 0x0D`):
+`MdioRequest`/`MdioResponse` are Clause-22/Clause-45-mode-selected, with
+`MdioEndpoint`'s internal `register_key` composition keeping Clause 22's
+flat register address space and Clause 45's device+register address space
+from ever colliding; this header defines no MDIO-specific functional-config
+block, since the extraction calls for none beyond the common
+generic/functional split. `rcp/wakeup.hpp` implements Wakeup control
+(`ep_type 0x01`): `decode_sleep_cmd`/`WakeupEndpoint::handle_sleep_cmd`
+decode the fixed `kSleepCmd` (`0xA5`) opcode via a single byte comparison
+with no dependency on `rcp/sequencer.hpp`'s `RequestTypeOpcode` taxonomy;
+`record_wake_source_event`/`wake_source_pins` track wake-source pin state;
+and `wakeup_message_pending`/`acknowledge_wakeup` model the repeating
+`WakeUp` message handshake milestone 53 (v2.9.0, Phase 14) depends on
+directly. New coverage lives in `tests/test_lin.cpp` (REQ-LINEP-001..004),
+`tests/test_can.cpp` (REQ-CANEP-001..007), `tests/test_iseled.cpp`
+(REQ-ISELED-001..005), `tests/test_mdio.cpp` (REQ-MDIO-001..005), and
+`tests/test_wakeup.cpp` (REQ-WAKEUP-001..005), traced in `.fusa-reqs.json`.
+The `REQ-LINEP-*`/`REQ-CANEP-*` prefixes (rather than `REQ-LIN-*`/
+`REQ-CAN-*`) are deliberate: those shorter ids are already in use by the
+untouched, deprecated `linbr.hpp`/`canbr.hpp` bridge stubs' own requirements,
+and this milestone's native endpoint types needed ids of their own rather
+than colliding with them. DAC (`ep_type 0x0A`) has no header, no stub, and
+no requirements — left entirely unbuilt per this milestone's explicit scope
+call. Full wire-level conformance against other TC18 implementations is
+still not claimed — see this file's own disclaimer pattern in
+`rcp/wire.hpp`/`rcp/regmap.hpp`/`rcp/sequencer.hpp`/`rcp/e2e.hpp`.
+
 - LIN commander (`ep_type 0x06`): raw-byte-pusher model with no
   frame-level concepts (no checksum selection, no PID generation, no
   schedule tables) — validate explicitly against any assumption in the

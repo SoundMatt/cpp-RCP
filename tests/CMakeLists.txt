@@ -62,6 +62,26 @@ add_executable(test_e2e test_e2e.cpp)
 target_link_libraries(test_e2e PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_e2e COMMAND test_e2e)
 
+add_executable(test_lin test_lin.cpp)
+target_link_libraries(test_lin PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_lin COMMAND test_lin)
+
+add_executable(test_can test_can.cpp)
+target_link_libraries(test_can PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_can COMMAND test_can)
+
+add_executable(test_iseled test_iseled.cpp)
+target_link_libraries(test_iseled PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_iseled COMMAND test_iseled)
+
+add_executable(test_mdio test_mdio.cpp)
+target_link_libraries(test_mdio PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_mdio COMMAND test_mdio)
+
+add_executable(test_wakeup test_wakeup.cpp)
+target_link_libraries(test_wakeup PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_wakeup COMMAND test_wakeup)
+
 add_executable(test_prioqueue test_prioqueue.cpp)
 target_link_libraries(test_prioqueue PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_prioqueue COMMAND test_prioqueue)

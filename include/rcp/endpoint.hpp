@@ -61,9 +61,12 @@ namespace endpoint {
 // this numbering for endpoint milestones. Ids are added here as each
 // milestone's endpoint types are implemented, so the numbering stays
 // visibly centralized in one place rather than getting re-derived ad hoc by
-// each new header. 0x06 has no assignment in either v2.3.0 or v2.4.0's
-// scope (the extraction does not name an endpoint type for it) and is left
-// unallocated rather than guessed at.
+// each new header. 0x06 (LIN) was deliberately left unassigned through
+// v2.3.0/v2.4.0, pending the endpoint types v2.7.0 covers (ROADMAP.md
+// milestone 51) — it and the other four ids that milestone assigns
+// (Wakeup/CAN/ISELED/MDIO) are filled in below rather than guessed at
+// early. 0x0A (DAC) remains deliberately unallocated — see the comment
+// beside the v2.7.0 ids below.
 
 using EndpointTypeId = uint8_t;
 
@@ -74,7 +77,15 @@ constexpr EndpointTypeId kEndpointTypeUart   = 0x05; // this milestone (v2.4.0)
 constexpr EndpointTypeId kEndpointTypePwmOut = 0x07; // this milestone (v2.4.0)
 constexpr EndpointTypeId kEndpointTypePwmIn  = 0x08; // this milestone (v2.4.0)
 constexpr EndpointTypeId kEndpointTypeAdc    = 0x09; // this milestone (v2.4.0)
-// LIN, CAN (incl. CAN XL), ISELED, MDIO, Wakeup control — v2.7.0 (ids TBD there)
+constexpr EndpointTypeId kEndpointTypeWakeup = 0x01; // v2.7.0
+constexpr EndpointTypeId kEndpointTypeLin    = 0x06; // v2.7.0
+constexpr EndpointTypeId kEndpointTypeCan    = 0x0B; // v2.7.0
+constexpr EndpointTypeId kEndpointTypeIseled = 0x0C; // v2.7.0
+constexpr EndpointTypeId kEndpointTypeMdio   = 0x0D; // v2.7.0
+// 0x0A (DAC) is explicitly out of scope for v2.7.0 — the specification
+// reserves the id and a DAC_OUT pin signal but defines no functional-config
+// chapter for it in v0.5.1_RC; left unallocated here rather than guessed at
+// until a future spec revision actually defines it (ROADMAP.md milestone 51).
 
 // ── evt[2:0] write semantics ──────────────────────────────────────────────────
 // The 8-way write-semantics selector every combinable-payload endpoint type
