@@ -200,6 +200,35 @@ incrementally through v2.6.0 per the Phase 13 introduction above.
 
 ### 45. RC Server Lifecycle & Register-Map Model (v2.1.0)
 
+**Done (v2.1.0):** `rcp/lifecycle.hpp` implements the 3-state
+`ServerState` machine (`HW_UNCONFIGURED`/`HW_CONFIGURED`/`RCP_CONFIGURED`)
+via `ServerLifecycle`, with forward-only single-step `advance()`
+transitions, the `HW_CFG_INCONSISTENT`/`RCP_CFG_INCONSISTENT` plausibility
+checks gating each transition, an explicit `deconfigure()` backward path,
+and independent generic/functional config-block locking queries.
+`rcp/regmap.hpp` implements the register-map data model — the
+generic/functional endpoint config split (`EndpointGenericConfig` /
+`EndpointFunctionalConfig`), the general bootstrap fields (magic,
+protocol version, vendor/device ID, endpoint count, stream/queue capacity,
+`svr_implemented_options`, and the five table pointer/capacity fields), HW
+pin-map config, request-stream config (including the inert `rx_wd_*`/
+`rx_safety_measure` fields deferred to v2.6.0), the EP-ID/`byte_bus_id`
+mapping table (with its client-ordering risk flagged in comments,
+deliberately not server-enforced), response/ack queue config, and
+persistent 8-bit sequencer-state storage — plus `Ep0`, the RC Server
+pseudo-endpoint implementing whole-register-map read (unrestricted) and
+write (root-client-only via `claim_root_client`/`svr_root_client_index`),
+and per-endpoint write restriction for every other client. The four
+mandatory error codes (`UNAUTHORIZED_ACCESS`, `LOCKED_MEM_ACCESS`,
+`REQUEST_REJECTED`, `INVALID_PARAMETER`) are `rcp::regmap::RegMapErrc`. New
+coverage lives in `tests/test_lifecycle.cpp` (REQ-LIFECYCLE-001..006) and
+`tests/test_regmap.cpp` (REQ-REGMAP-001..014). `rcp/rcp.hpp`'s
+pre-replacement Zone/Command/Controller/Registry model is left in place,
+unmodified in behavior — its header comment now points at this milestone's
+replacement headers — since roughly three dozen other headers still build
+against it and are not rebound until their own later milestones (v2.9.0
+onward); see the header comment in `rcp.hpp` and the disposition table.
+
 - Implement the 3-state lifecycle machine: `HW_UNCONFIGURED` (`0x00`),
   `HW_CONFIGURED` (`0x55`), `RCP_CONFIGURED` (`0xAA`), with their documented
   transition guards, register-locking behavior, and the
