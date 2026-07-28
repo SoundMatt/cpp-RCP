@@ -2655,6 +2655,118 @@
       "standard": "relay",
       "level": "QM",
       "asil": "QM"
+    },
+    {
+      "id": "REQ-WIRE-001",
+      "title": "NTSCF header addressing and length fields",
+      "text": "rcp::wire::encode_ntscf_header/decode_ntscf_header shall round-trip stream_id, sequence_num, and control_data_length unchanged for a Non-Time-Synchronous Control Format AVTPDU header.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-002",
+      "title": "TSCF header carries avtp_timestamp",
+      "text": "rcp::wire::encode_tscf_header/decode_tscf_header shall round-trip stream_id, sequence_num, control_data_length, and the 32-bit avtp_timestamp field unchanged for a Time-Synchronous Control Format AVTPDU header.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-003",
+      "title": "AVTPDU subtype validation",
+      "text": "decode_ntscf_header shall reject a buffer whose subtype byte is not the NTSCF subtype, and decode_tscf_header shall reject a buffer whose subtype byte is not the TSCF subtype, both returning WireErrc::bad_subtype.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-004",
+      "title": "ACF_ABB carries no timestamp field",
+      "text": "encode_acf_abb/decode_acf_abb shall round-trip the shared ACF header and payload for an ACF_ABB (0x0E) message, and the decoded AcfMessageInfo::mtv shall always be false for ACF_ABB since it defines no timestamp slot.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-005",
+      "title": "ACF_GBB carries a 64-bit message_timestamp",
+      "text": "encode_acf_gbb/decode_acf_gbb shall round-trip the shared ACF header, a 64-bit message_timestamp value, and the payload unchanged for an ACF_GBB (0x0D) message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-006",
+      "title": "Shared byte_message_info fields round-trip",
+      "text": "AcfMessageInfo encode/decode shall preserve acf_msg_type, acf_msg_length, pad, mtv, byte_bus_id, the evt ack flag and 3-bit sub-opcode, hs, cs, transaction_num, op, rsp, err, ms, and the dual-purpose read_size/segment_num field unchanged through an encode/decode round trip.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-007",
+      "title": "StreamId addressing round-trips",
+      "text": "rcp::wire::StreamId shall round-trip its 48-bit MAC half and 16-bit locally-assigned suffix through to_u64()/from_u64() unchanged, and two StreamId values with different MAC halves shall compare unequal.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-008",
+      "title": "byte_bus_id is echoed unchanged on responses",
+      "text": "rcp::wire::make_response shall always copy byte_bus_id and transaction_num from the request it is built from, unchanged, since byte_bus_id is unique only within the owning stream_id and a response/ack must echo it back exactly.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-009",
+      "title": "Standard request kind is unconditional ACF_ABB",
+      "text": "rcp::wire::make_standard_request shall build a request using acf_msg_type ACF_ABB with rsp clear, representing the mandatory best-effort, unconditional standard request kind.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-010",
+      "title": "Four response semantic types are distinguishable",
+      "text": "rcp::wire::response_kind_of shall recover Acknowledge, WriteResponse, ReadResponse, or ErrorResponse from a header built by make_response with the corresponding ResponseKind, and the four kinds shall be pairwise distinguishable from the shared header fields alone.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-011",
+      "title": "avtp_timestamp validity is explicit, not implied by zero",
+      "text": "A TSCF header with timestamp_valid false shall be distinguishable from one with a valid, zero-valued avtp_timestamp; decode_tscf_header shall preserve the timestamp_valid flag independently of the avtp_timestamp value.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-012",
+      "title": "Timestamp fallback rule: TSCF preferred, then ACF_GBB, then none",
+      "text": "rcp::wire::effective_timestamp shall return the TSCF avtp_timestamp when timestamp_valid is set, shall fall back to a valid ACF_GBB message_timestamp when no TSCF timestamp is available, and shall return std::nullopt rather than zero when neither source is valid.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-013",
+      "title": "Decoders reject short buffers",
+      "text": "decode_ntscf_header, decode_tscf_header, decode_acf_abb, and decode_acf_gbb shall return WireErrc::short_buffer when given fewer bytes than their fixed-size header requires, without reading past the buffer.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-014",
+      "title": "ACF message type mismatch is rejected",
+      "text": "decode_acf_abb shall return WireErrc::bad_acf_msg_type when given a buffer whose acf_msg_type byte is ACF_GBB, and decode_acf_gbb shall return the same error when given a buffer whose acf_msg_type byte is ACF_ABB.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
     }
   ]
 }

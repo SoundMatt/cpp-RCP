@@ -150,6 +150,24 @@ and full endpoint coverage is not reached until v2.7.0.
 
 ### 44. Wire Format Core (v2.0.0)
 
+**Done (v2.0.0):** `rcp/wire.hpp` is now the IEEE 1722 AVTPDU/ACF codec
+described below — NTSCF/TSCF headers, ACF_ABB/ACF_GBB messages, the shared
+`AcfMessageInfo` ("byte_message_info") fields, `StreamId`/`byte_bus_id`
+addressing with an enforced echo-back rule, the mandatory standard request
+kind, the four response semantic types, and `avtp_timestamp`/
+`message_timestamp` fallback handling via `effective_timestamp`. It has no
+dependency on `rcp.hpp`'s Zone/Command/Controller/Registry model or on any
+later-phase lifecycle/discovery/endpoint behavior, and makes no assumption
+about the underlying transport. The old 16-byte frame codec this file used
+to define is preserved unchanged, under `rcp/legacy_wire.hpp`, purely so
+`rcp/udp.hpp` keeps building and working until it is rebuilt against real
+AVTPDU framing at v2.13.0 — see the disposition table entry for `wire.hpp`
+and the header comment in `legacy_wire.hpp`. New coverage lives in
+`tests/test_wire.cpp` (REQ-WIRE-001..014); the prior 16-byte-frame tests
+moved to `tests/test_legacy_wire.cpp` unchanged (REQ-UDP-001..012). Full
+bit-for-bit wire conformance is not claimed at this milestone — that lands
+incrementally through v2.6.0 per the Phase 13 introduction above.
+
 - Replace the bespoke 16-byte `wire.hpp` header entirely with real IEEE 1722
   framing: NTSCF (non-time-synchronous, server-only-outbound) and TSCF
   (time-synchronous, client-only) AVTPDU headers (extraction §2.2)

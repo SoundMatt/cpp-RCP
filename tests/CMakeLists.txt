@@ -10,6 +10,10 @@ add_executable(test_wire test_wire.cpp)
 target_link_libraries(test_wire PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_wire COMMAND test_wire)
 
+add_executable(test_legacy_wire test_legacy_wire.cpp)
+target_link_libraries(test_legacy_wire PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_legacy_wire COMMAND test_legacy_wire)
+
 add_executable(test_e2e test_e2e.cpp)
 target_link_libraries(test_e2e PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_e2e COMMAND test_e2e)
