@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-28T20:55:48Z",
+  "generatedAt": "2026-07-28T22:18:55Z",
   "kind": "tara-report",
   "language": "cpp",
   "project": "cpp-RCP",
   "projectRoot": "/home/runner/work/cpp-RCP/cpp-RCP",
-  "schemaVersion": "1.14.0",
+  "schemaVersion": "1.15.0",
   "standard": "iso21434",
   "summary": {
     "assetInventoryMethod": "assetsInProject counts the distinct `asset` values named in this TARA's own hand-curated scenario catalogue. cpp-FuSa does not yet perform automated asset discovery (e.g. from CMake targets, SBOM components, or data-flow analysis), so this metric shows internal consistency of the catalogue (every named asset has at least one scenario), not an independently measured attack surface — the honest gap this leaves open is any project asset the catalogue's author simply never listed.",
@@ -19,17 +19,17 @@
       "attackVector": "Compromise of the GitHub release pipeline, a maintainer's signing key, or the container registry hosting the all-in-one image.",
       "id": "TARA-001",
       "impact": {
-        "financial": "medium",
-        "operational": "medium",
-        "privacy": "low",
-        "safety": "high"
+        "financial": "moderate",
+        "operational": "moderate",
+        "privacy": "negligible",
+        "safety": "major"
       },
       "mitigations": [
         "sign — HMAC-SHA256 artifact signing",
         "SLSA provenance verification (slsa command)",
         "Release workflow requires branch-protected, reviewed PRs before tagging"
       ],
-      "risk": "high",
+      "risk": "medium",
       "threat": "Attacker replaces a signed release binary with a trojaned build that suppresses safety findings before it reaches a downstream project's CI.",
       "treatment": "mitigate"
     },
@@ -39,17 +39,17 @@
       "attackVector": "Direct write access to the repository, or a merged PR that was not reviewed for safety-relevant configuration changes.",
       "id": "TARA-002",
       "impact": {
-        "financial": "medium",
-        "operational": "low",
-        "privacy": "low",
-        "safety": "high"
+        "financial": "moderate",
+        "operational": "negligible",
+        "privacy": "negligible",
+        "safety": "major"
       },
       "mitigations": [
         "FUSA-STUB001 deny-list scan flags untouched hazard/goal templates (§1.6.1)",
         "Code review required on any change to .fusa.json / .fusa-hara.json",
         "hara --format json's completeness block surfaces missing ASIL/fssrRefs"
       ],
-      "risk": "critical",
+      "risk": "high",
       "threat": "Attacker (or careless commit) weakens the configured ASIL or replaces genuine hazard analysis with a stale/placeholder template, silently lowering the safety bar a downstream project believes it is held to.",
       "treatment": "mitigate"
     },
@@ -59,17 +59,17 @@
       "attackVector": "Write access to the CI runner's workspace or the artifact upload step between generation and audit-pack bundling.",
       "id": "TARA-003",
       "impact": {
-        "financial": "medium",
-        "operational": "medium",
-        "privacy": "low",
-        "safety": "high"
+        "financial": "moderate",
+        "operational": "moderate",
+        "privacy": "negligible",
+        "safety": "major"
       },
       "mitigations": [
         "audit-pack — hashed manifest over every evidence artifact",
         "sign --verify re-checks HMAC signatures before submission",
         "sci — Software Configuration Index records a per-file sha256 at release time"
       ],
-      "risk": "high",
+      "risk": "medium",
       "threat": "Insider or compromised CI step edits a generated evidence artifact after generation to hide a known defect from a certification reviewer.",
       "treatment": "mitigate"
     },
@@ -79,10 +79,10 @@
       "attackVector": "Supply-chain compromise of an upstream GitHub repository or its release tags fetched by FetchDeps.cmake.",
       "id": "TARA-004",
       "impact": {
-        "financial": "medium",
-        "operational": "medium",
-        "privacy": "low",
-        "safety": "high"
+        "financial": "moderate",
+        "operational": "moderate",
+        "privacy": "negligible",
+        "safety": "major"
       },
       "mitigations": [
         "vuln — scans CMake dependency manifests for known vulnerabilities",
@@ -98,16 +98,16 @@
       "attackVector": "Direct file modification between qualify run and audit-pack bundling, or a forged report committed directly to the repository.",
       "id": "TARA-005",
       "impact": {
-        "financial": "medium",
-        "operational": "low",
-        "privacy": "low",
-        "safety": "high"
+        "financial": "moderate",
+        "operational": "negligible",
+        "privacy": "negligible",
+        "safety": "major"
       },
       "mitigations": [
         "qualify.hash — RFC 8785 canonical integrity hash over the report content",
         "audit-pack bundles qualify-report.json under the same hashed manifest as every other artifact"
       ],
-      "risk": "high",
+      "risk": "medium",
       "threat": "Attacker modifies qualify-report.json to hide a failing qualification case, making an unqualified tool appear qualified for its intended safety use (ISO 26262-8 Clause 11).",
       "treatment": "mitigate"
     },
@@ -117,16 +117,16 @@
       "attackVector": "Compromise of repository settings, a maintainer token, or a malicious workflow-file change in an unreviewed PR.",
       "id": "TARA-006",
       "impact": {
-        "financial": "low",
-        "operational": "high",
-        "privacy": "low",
-        "safety": "medium"
+        "financial": "negligible",
+        "operational": "major",
+        "privacy": "negligible",
+        "safety": "moderate"
       },
       "mitigations": [
         "Branch protection requires the check/lint/test CI jobs to pass before merge",
         "dco.yml enforces signed-off commits, raising the bar for an anonymous malicious push"
       ],
-      "risk": "critical",
+      "risk": "high",
       "threat": "Attacker disables or bypasses the `check` gate step in CI, allowing a change with open ERROR findings to merge and release.",
       "treatment": "mitigate"
     },
@@ -136,16 +136,16 @@
       "attackVector": "A code change that deletes or corrupts an annotation without the reviewer noticing, since the annotation itself is easy to overlook in a diff.",
       "id": "TARA-007",
       "impact": {
-        "financial": "low",
-        "operational": "medium",
-        "privacy": "low",
-        "safety": "medium"
+        "financial": "negligible",
+        "operational": "moderate",
+        "privacy": "negligible",
+        "safety": "moderate"
       },
       "mitigations": [
         "trace --req-coverage / --func-coverage gates CI on annotation density",
         "trace flags a dangling //fusa:test reference to a nonexistent requirement id"
       ],
-      "risk": "high",
+      "risk": "medium",
       "threat": "Developer removes or mistypes an annotation to hide a requirement-traceability gap from `trace`'s coverage gate.",
       "treatment": "mitigate"
     },
@@ -155,21 +155,21 @@
       "attackVector": "A merged PR that adds a disposition entry without the scrutiny a normal finding-fix PR would receive, since a waiver reads as \"already handled\".",
       "id": "TARA-008",
       "impact": {
-        "financial": "low",
-        "operational": "medium",
-        "privacy": "low",
-        "safety": "high"
+        "financial": "negligible",
+        "operational": "moderate",
+        "privacy": "negligible",
+        "safety": "major"
       },
       "mitigations": [
         "disposition add requires --reviewer and --rationale (no anonymous waivers)",
         "Code review required on any change to .fusa-dispositions.json",
         "FUSA-STUB001 is disposition-suppressible only per-finding, never blanket (§1.6.1)"
       ],
-      "risk": "critical",
+      "risk": "high",
       "threat": "Attacker (or an over-broad legitimate waiver) adds a rule-level disposition that silently suppresses a real, currently-open safety finding project-wide.",
       "treatment": "mitigate"
     }
   ],
   "tool": "cpp-FuSa",
-  "toolVersion": "0.15.0"
+  "toolVersion": "0.16.0"
 }
