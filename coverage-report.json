@@ -123,6 +123,15 @@
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/endpoint.hpp",
+      "linePct": 85.1063829787234,
+      "linesHit": 40,
+      "linesTotal": 47
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/faultinject.hpp",
       "linePct": 80.43478260869566,
       "linesHit": 37,
@@ -145,6 +154,15 @@
       "linePct": 84.16666666666667,
       "linesHit": 101,
       "linesTotal": 120
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/gpio.hpp",
+      "linePct": 93.93939393939394,
+      "linesHit": 62,
+      "linesTotal": 66
     },
     {
       "branchPct": 0.0,
@@ -339,6 +357,15 @@
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/spi.hpp",
+      "linePct": 93.93939393939394,
+      "linesHit": 31,
+      "linesTotal": 33
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/tls.hpp",
       "linePct": 90.0,
       "linesHit": 18,
@@ -403,9 +430,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/array",
-      "linePct": 100.0,
-      "linesHit": 20,
-      "linesTotal": 20
+      "linePct": 95.83333333333333,
+      "linesHit": 23,
+      "linesTotal": 24
     },
     {
       "branchPct": 0.0,
@@ -484,8 +511,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/char_traits.h",
-      "linePct": 18.181818181818183,
-      "linesHit": 8,
+      "linePct": 15.909090909090908,
+      "linesHit": 7,
       "linesTotal": 44
     },
     {
@@ -853,9 +880,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_algo.h",
-      "linePct": 50.0,
-      "linesHit": 93,
-      "linesTotal": 186
+      "linePct": 54.4973544973545,
+      "linesHit": 103,
+      "linesTotal": 189
     },
     {
       "branchPct": 0.0,
@@ -970,9 +997,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_set.h",
-      "linePct": 68.0,
-      "linesHit": 17,
-      "linesTotal": 25
+      "linePct": 72.41379310344827,
+      "linesHit": 21,
+      "linesTotal": 29
     },
     {
       "branchPct": 0.0,
@@ -1177,9 +1204,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/limits",
-      "linePct": 0.0,
-      "linesHit": 0,
-      "linesTotal": 1
+      "linePct": 100.0,
+      "linesHit": 2,
+      "linesTotal": 2
     },
     {
       "branchPct": 0.0,
@@ -1299,15 +1326,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-07-28T16:29:50Z",
-  "linePct": 66.99147381242388,
+  "generatedAt": "2026-07-28T17:02:24Z",
+  "linePct": 67.5310707456979,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 5500,
+    "hitLines": 5651,
     "totalBranches": 0,
-    "totalLines": 8210
+    "totalLines": 8368
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0
