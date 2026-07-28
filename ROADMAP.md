@@ -266,6 +266,34 @@ onward); see the header comment in `rcp.hpp` and the disposition table.
 
 ### 46. Discovery (v2.2.0)
 
+**Done (v2.2.0):** `rcp/discovery.hpp` implements the discovery mechanism
+described below on top of the three prior milestones without changing any
+of them. `make_discovery_request`/`encode_discovery_request` build an
+unconditional ACF_ABB read targeting `byte_bus_id 0` (`kDiscoveryByteBusId`,
+matching `regmap::kEp0`) at register-map address 0 (`kDiscoveryRegisterAddress`
+— the general bootstrap/magic-number field region `rcp/regmap.hpp` already
+models), always wrapped in an NTSCF header, riding directly on `rcp/wire.hpp`'s
+existing framing with no changes to that codec. `decode_discovery_request`
+enforces the NTSCF-only rule by returning
+`DiscoveryErrc::tscf_headed_request_dropped` — modeled as a decode failure,
+not a flag a caller could forget to check — for any TSCF-headed frame.
+`DiscoveryClaim` implements discovery-stream claiming: the first discovery
+request accepted while `rcp::lifecycle::ServerLifecycle` reports
+`HwUnconfigured`/`HwConfigured` reserves the stream for that client's
+configuration writes (`ClaimOutcome::Claimed`); the reservation lapses after
+a configurable `Discovery_TimeOut` (`kDefaultTimeout`, ~20 ms default) if no
+configuration request follows (`on_configuration_request` returning `false`
+once lapsed, freeing the stream for the next claimant); other clients'
+concurrent discovery requests are reported as `HeldByOther`/`AlreadyHeld`
+without ever touching whether their own reads get answered, since claiming
+and read-answering are deliberately independent concerns in this
+implementation; and a request in `RcpConfigured` is always `NotEligible`,
+since the claiming mechanism itself is scoped to the two pre-RCP-configured
+states. `should_answer_discovery` is a trivial always-true function over
+`ServerState` — a deliberate, testable single call site documenting the
+any-state answering invariant rather than an implicit assumption. New
+coverage lives in `tests/test_discovery.cpp` (REQ-DISC-001..009).
+
 - Implement the discovery request: a broadcastable ACF_ABB read addressed
   to `byte_bus_id 0`, NTSCF-only (a TSCF-headed discovery request is
   dropped), reading from register-map address 0 (extraction §3.5)

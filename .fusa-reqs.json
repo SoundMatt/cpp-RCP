@@ -2927,6 +2927,78 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DISC-001",
+      "title": "Discovery request framing \u2014 byte_bus_id 0, register-map address 0",
+      "text": "rcp::discovery::make_discovery_request shall build an unconditional ACF_ABB read (op=false) targeting byte_bus_id 0 (kDiscoveryByteBusId), and kDiscoveryRegisterAddress shall be 0, fixing discovery reads at the general bootstrap/magic-number register-map region.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DISC-002",
+      "title": "Discovery is NTSCF-only; a TSCF-headed discovery request is dropped",
+      "text": "rcp::discovery::encode_discovery_request shall always produce an NTSCF-headed frame, and rcp::discovery::decode_discovery_request shall return DiscoveryErrc::tscf_headed_request_dropped without decoding further when given a frame whose AVTPDU subtype byte is TSCF.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DISC-003",
+      "title": "The first discovery request claims the discovery stream",
+      "text": "DiscoveryClaim::on_discovery_request shall return ClaimOutcome::Claimed and record `client` as the claim holder when no active claim currently exists and server_state is HwUnconfigured or HwConfigured.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DISC-004",
+      "title": "The discovery claim lapses after Discovery_TimeOut",
+      "text": "DiscoveryClaim shall treat a claim as lapsed once (now - claimed_at) is at least Discovery_TimeOut (kDefaultTimeout, ~20ms by default), after which may_configure shall return false for the prior holder and a subsequent discovery request from any client shall be able to claim the stream anew.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DISC-005",
+      "title": "A claim does not block concurrent discovery reads from other clients",
+      "text": "DiscoveryClaim::on_discovery_request from a client other than the active holder shall return ClaimOutcome::HeldByOther without altering the existing claim, and shall never affect whether that client's underlying discovery read is answered; the same holder re-requesting before the claim lapses shall return ClaimOutcome::AlreadyHeld.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DISC-006",
+      "title": "Only the active claim holder may issue a configuration request",
+      "text": "DiscoveryClaim::on_configuration_request shall return true and consume (release) the claim only when called by the client currently holding an active, unlapsed claim; a call from any other client shall return false and shall leave an existing other-held claim untouched.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DISC-007",
+      "title": "Discovery-stream claiming is scoped to HW_UNCONFIGURED/HW_CONFIGURED",
+      "text": "DiscoveryClaim::on_discovery_request shall return ClaimOutcome::NotEligible and leave any existing claim state unchanged whenever server_state is RcpConfigured.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DISC-008",
+      "title": "DiscoveryErrc is a distinct error category with non-empty messages",
+      "text": "rcp::discovery::make_error_code(DiscoveryErrc::tscf_headed_request_dropped) shall report rcp::discovery::discovery_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-DISC-009",
+      "title": "A server answers discovery in every lifecycle state",
+      "text": "rcp::discovery::should_answer_discovery shall return true for HwUnconfigured, HwConfigured, and RcpConfigured alike, reflecting the mandatory-baseline requirement that discovery is answered regardless of lifecycle state.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
     }
   ]
 }

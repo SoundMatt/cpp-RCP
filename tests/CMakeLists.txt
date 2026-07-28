@@ -22,6 +22,10 @@ add_executable(test_regmap test_regmap.cpp)
 target_link_libraries(test_regmap PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_regmap COMMAND test_regmap)
 
+add_executable(test_discovery test_discovery.cpp)
+target_link_libraries(test_discovery PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_discovery COMMAND test_discovery)
+
 add_executable(test_e2e test_e2e.cpp)
 target_link_libraries(test_e2e PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_e2e COMMAND test_e2e)
