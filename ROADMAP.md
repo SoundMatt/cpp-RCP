@@ -308,6 +308,40 @@ coverage lives in `tests/test_discovery.cpp` (REQ-DISC-001..009).
 
 ### 47. Basic Endpoint Types I — GPIO & SPI (v2.3.0)
 
+**Done (v2.3.0):** `rcp/endpoint.hpp` establishes the shared
+endpoint-registration/request-dispatch scaffolding this milestone's own
+description calls for: `ep_type` id constants (`kEndpointTypeGpio`,
+`kEndpointTypeSpi`, with the remaining v2.4.0/v2.7.0 ids named in comments
+rather than guessed at), `write_semantics_of` decoding
+`AcfMessageInfo::evt_op` into the 8-way `WriteSemantics` enum, the
+`saturating_add`/`saturating_subtract` templates implementing the
+arithmetic-add/subtract clamping rule generically over the caller's
+unsigned integer width, `apply_bitmask_write` covering the six
+value-combining semantics (Replace/Or/And/Xor/Add/Subtract) with
+Reserved rejected and Reconfigure deliberately left to each endpoint type,
+and `TriggerRegistry`, a generic enable/notify/drain trigger-signal table.
+`rcp/gpio.hpp` implements GPIO (`ep_type 0x02`): a 4-byte big-endian pin
+bitmask payload (`encode_gpio_payload`/`decode_gpio_payload`),
+`apply_gpio_write` completing the 8-way semantics by retargeting
+Reconfigure at a separate pin-direction mask instead of the pin-value
+bitmask, per-pin change/rising/falling trigger signals
+(`evaluate_gpio_triggers` over `TriggerRegistry`), a functional-config
+codec (`encode_gpio_functional_config`/`decode_gpio_functional_config`)
+interpreting `regmap::EndpointFunctionalConfig::data`'s previously-opaque
+blob, and `GpioEndpoint` tying all of the above into one
+request-dispatch entry point. `rcp/spi.hpp` implements SPI (`ep_type
+0x03`): `channel_of` decoding `evt[2:0]` as a 0-5 channel selector (SPI's
+own repurposing of that field, distinct from GPIO's write-semantics use of
+it), `SpiEndpoint::transfer` recording a raw full-duplex PICO-out/POCI-in
+byte exchange per channel and firing that channel's CsAssert /
+TransferComplete / CsDeassert trigger signals in observation order, and
+`compound_wait_matches` implementing the compound-wait status-byte
+truncation rule (comparing only the first 4 of up to 20 status bytes) as
+scaffolding for the v2.5.0 compound-wait request kind itself. New coverage
+lives in `tests/test_endpoint.cpp` (REQ-ENDPOINT-001..006),
+`tests/test_gpio.cpp` (REQ-GPIO-001..008), and `tests/test_spi.cpp`
+(REQ-SPI-001..005), traced in `.fusa-reqs.json`.
+
 - GPIO (`ep_type 0x02`): 4-byte bitmask request/response, the 8
   write-semantics selected by `evt[2:0]` (replace / OR / AND / XOR /
   reserved / add / subtract / reconfigure), per-pin change/rising/falling

@@ -26,6 +26,18 @@ add_executable(test_discovery test_discovery.cpp)
 target_link_libraries(test_discovery PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_discovery COMMAND test_discovery)
 
+add_executable(test_endpoint test_endpoint.cpp)
+target_link_libraries(test_endpoint PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_endpoint COMMAND test_endpoint)
+
+add_executable(test_gpio test_gpio.cpp)
+target_link_libraries(test_gpio PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_gpio COMMAND test_gpio)
+
+add_executable(test_spi test_spi.cpp)
+target_link_libraries(test_spi PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_spi COMMAND test_spi)
+
 add_executable(test_e2e test_e2e.cpp)
 target_link_libraries(test_e2e PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_e2e COMMAND test_e2e)
