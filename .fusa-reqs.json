@@ -1010,64 +1010,112 @@
     },
     {
       "id": "REQ-PWR-001",
-      "title": "sleep() sends CmdSleep",
-      "text": "powerstate::Manager::sleep() shall send CommandType::Sleep to the target zone.",
+      "title": "PowerManager starts in Normal with four defined modes",
+      "text": "rcp::powerstate::PowerMode shall define exactly four modes (Normal, StandBy, Sleep, Unpowered), and a freshly constructed PowerManager shall report Normal as its initial mode() value.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-002",
-      "title": "sleep() transitions Active\u2192Sleeping",
-      "text": "A successful sleep() call shall transition the zone from Active to Sleeping.",
+      "title": "enter_standby/enter_sleep are only defined from Normal",
+      "text": "PowerManager::enter_standby and PowerManager::enter_sleep shall succeed only when mode() is Normal, transitioning to the requested low-power mode, and shall return PowerErrc::invalid_transition without changing mode() when called from any other mode.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-003",
-      "title": "wake() sends CmdWake",
-      "text": "powerstate::Manager::wake() shall send CommandType::Wake to the target zone.",
+      "title": "Entry refusal: unacknowledged wake-up event",
+      "text": "PowerManager::enter_standby/enter_sleep shall return PowerErrc::unacknowledged_wakeup_event without changing mode() whenever the associated WakeupEndpoint::wakeup_message_pending() reports true.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-004",
-      "title": "wake() transitions Sleeping\u2192Active",
-      "text": "A successful wake() call shall transition the zone from Sleeping or BusOff to Active.",
+      "title": "Entry refusal: non-idle endpoint",
+      "text": "PowerManager::enter_standby/enter_sleep shall return PowerErrc::endpoint_not_idle without changing mode() whenever the configured Hooks::endpoints_idle predicate returns false.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-005",
-      "title": "Command failure yields BusOff",
-      "text": "A send error during sleep() or wake() shall transition the zone to BusOff.",
+      "title": "Entry refusal: non-empty response/ack queue",
+      "text": "PowerManager::enter_standby/enter_sleep shall return PowerErrc::response_ack_queue_not_empty without changing mode() whenever the configured Hooks::response_ack_queues_empty predicate returns false.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-006",
-      "title": "recover_loop retries BusOff zones",
-      "text": "The background recovery loop shall periodically attempt wake() for every zone in the BusOff state.",
+      "title": "StandBy always resumes as a hot start with no handshake",
+      "text": "PowerManager::resume_from_standby shall, when mode() is StandBy, transition directly to Normal without invoking any hot-start-from-Sleep handshake hook, and shall return PowerErrc::invalid_transition without changing mode() when called from any other mode.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-007",
-      "title": "state() is thread-safe",
-      "text": "powerstate::Manager::state(z) shall be safe to call concurrently with sleep(), wake(), or the recovery loop.",
+      "title": "begin_wake_from_sleep requires Sleep and re-enables the network interface",
+      "text": "PowerManager::begin_wake_from_sleep shall, when mode() is Sleep, invoke the configured Hooks::reenable_network_interface hook exactly once and set wake_stage() to HandshakeActive while leaving mode() at Sleep, and shall return PowerErrc::not_asleep without side effects when mode() is not Sleep.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-008",
-      "title": "Close stops recovery loop",
-      "text": "Manager::close() shall stop the background recovery thread without hanging.",
+      "title": "Handshake steps are refused outside of an active handshake",
+      "text": "PowerManager::note_wakeup_attempt_sent and PowerManager::acknowledge_wakeup shall both return PowerErrc::not_asleep without side effects whenever wake_stage() is not HandshakeActive.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-009",
+      "title": "note_wakeup_attempt_sent enforces the WakeUp repeat limit",
+      "text": "PowerManager::note_wakeup_attempt_sent shall return PowerErrc::handshake_repeat_limit_exceeded and set wake_stage() to Failed once it has been called more than Config::wakeup_repeat_limit times since begin_wake_from_sleep while the associated WakeupEndpoint::wakeup_message_pending() continues to report true, and mode() shall remain Sleep when this occurs.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-010",
+      "title": "acknowledge_wakeup completes the handshake and returns to Normal",
+      "text": "PowerManager::acknowledge_wakeup shall, while wake_stage() is HandshakeActive, call the associated WakeupEndpoint::acknowledge_wakeup, invoke the configured Hooks::reenable_response_ack_queues hook exactly once, set wake_stage() to Complete, and transition mode() to Normal.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-011",
+      "title": "notify_power_removed forces Unpowered unconditionally",
+      "text": "PowerManager::notify_power_removed shall set mode() to Unpowered regardless of the current mode() or any entry-refusal condition that would otherwise apply to enter_standby/enter_sleep.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-012",
+      "title": "notify_power_restored returns to Normal from Unpowered",
+      "text": "PowerManager::notify_power_restored shall set mode() to Normal and wake_stage() to Idle.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-013",
+      "title": "start_kind_on_exit fixes StandBy as hot and Sleep as cold",
+      "text": "rcp::powerstate::start_kind_on_exit shall return StartKind::Hot for PowerMode::StandBy and StartKind::Cold for PowerMode::Sleep, and PowerManager::pending_start_kind shall report start_kind_on_exit(mode()).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-014",
+      "title": "PowerErrc is a distinct error category with a non-empty message",
+      "text": "rcp::powerstate::make_error_code(PowerErrc::invalid_transition) shall report rcp::powerstate::power_category() as its category and shall have a non-empty diagnostic message.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
