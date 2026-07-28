@@ -2767,6 +2767,166 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LIFECYCLE-001",
+      "title": "ServerState byte encoding",
+      "text": "rcp::lifecycle::ServerState shall encode HwUnconfigured as 0x00, HwConfigured as 0x55, and RcpConfigured as 0xAA, and a freshly constructed ServerLifecycle shall report HwUnconfigured as its initial state.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LIFECYCLE-002",
+      "title": "Forward-only, single-step state transitions",
+      "text": "ServerLifecycle::advance shall accept only a request for the single next state in the HwUnconfigured -> HwConfigured -> RcpConfigured sequence, and shall return LifecycleErrc::invalid_transition without changing state for any request to skip a state, move backward, or repeat the current state.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LIFECYCLE-003",
+      "title": "HW_CFG_INCONSISTENT plausibility check",
+      "text": "ServerLifecycle::advance to HwConfigured shall invoke the configured HW plausibility check and return LifecycleErrc::hw_cfg_inconsistent without advancing state when that check returns false.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LIFECYCLE-004",
+      "title": "RCP_CFG_INCONSISTENT plausibility check",
+      "text": "ServerLifecycle::advance to RcpConfigured shall invoke the configured RCP plausibility check and return LifecycleErrc::rcp_cfg_inconsistent without advancing state when that check returns false.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LIFECYCLE-005",
+      "title": "Register-locking tied to lifecycle state",
+      "text": "ServerLifecycle::generic_config_locked shall report true from HwConfigured onward, and ServerLifecycle::functional_config_locked shall report true only at RcpConfigured, with both reporting false at HwUnconfigured.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LIFECYCLE-006",
+      "title": "Explicit deconfigure() backward path",
+      "text": "ServerLifecycle::deconfigure shall reset state to HwUnconfigured and clear both generic_config_locked and functional_config_locked regardless of the state deconfigure was called from, after which advance shall again accept the normal forward sequence.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-001",
+      "title": "Generic vs. functional endpoint config split",
+      "text": "rcp::regmap shall represent an endpoint's server-owned generic config (EndpointGenericConfig: HW pin indices, request/response queue sizes) and its endpoint-type-specific functional config (EndpointFunctionalConfig) as distinct, independently settable types.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-002",
+      "title": "EP0 whole-register-map read is unrestricted",
+      "text": "Ep0::check_read_access shall return no error for any in-range target, including EP0 itself, regardless of which client is asking, and Ep0::read_whole_map shall return the current RegisterMap contents to any caller.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-003",
+      "title": "EP0 whole-register-map write requires the root client",
+      "text": "Ep0::write_whole_map shall return RegMapErrc::unauthorized_access and leave the RegisterMap unchanged when called by a client that is not the currently claimed root client (svr_root_client_index), and shall apply the write when called by the root client.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-004",
+      "title": "Root-client claim is exclusive",
+      "text": "Ep0::claim_root_client shall return RegMapErrc::request_rejected when a client distinct from the currently claimed root client attempts to claim the slot, shall treat the current root client re-claiming its own slot as a no-op success, and shall allow a new claim once Ep0::release_root_client has been called.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-005",
+      "title": "Per-endpoint write restriction for non-root clients",
+      "text": "Ep0::check_write_access (and the write_generic_config/write_functional_config calls built on it) shall permit a non-root client to write only the endpoint config it owns per Ep0::set_endpoint_owner, shall return RegMapErrc::unauthorized_access for any other endpoint, shall always permit the root client, and shall return RegMapErrc::invalid_parameter for an out-of-range endpoint id.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-006",
+      "title": "Config-block locks are enforced independently by EP0",
+      "text": "Ep0::write_generic_config shall return RegMapErrc::locked_mem_access once ServerLifecycle::generic_config_locked is true, and Ep0::write_functional_config shall return RegMapErrc::locked_mem_access once ServerLifecycle::functional_config_locked is true, even when called by an otherwise-authorized owning or root client.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-007",
+      "title": "General bootstrap register-map fields",
+      "text": "RegisterMap shall hold magic, protocol_version_major/minor, vendor_id, device_id, endpoint_count, max_streams, max_queue_depth, svr_implemented_options, and a TablePointer (offset+capacity) for each of the HW pin-map, request-stream, response-stream, EP-ID mapping, and functional-config tables, all independently settable and retrievable.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-008",
+      "title": "HW pin-mapping config storage",
+      "text": "RegisterMap::hw_pin_map shall store an ordered list of HwPinMapEntry (pin_id, function) values and return them unchanged.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-009",
+      "title": "Request-stream config carries inert rx_* fields",
+      "text": "RequestStreamConfig shall provide rx_wd_timeout_s, rx_wd_action, and rx_safety_measure fields that store and return an assigned value; no watchdog/safe-state behavior is wired to these fields until v2.6.0.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-010",
+      "title": "EP-ID/byte_bus_id mapping preserves client insertion order",
+      "text": "RegisterMap::ep_id_mapping shall preserve EpIdMappingEntry values in the exact order a client inserted them, without the server re-deriving, validating, or re-sorting an ordering of its own.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-011",
+      "title": "Response/ack queue config fields",
+      "text": "ResponseQueueConfig shall provide independently settable response_queue_size and ack_queue_size fields.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-012",
+      "title": "Sequencer-state registers persist independent 8-bit values",
+      "text": "RegisterMap::sequencer_states shall store one persistent 8-bit SequencerState value per configured slot, each independently settable and retrievable, ahead of the sequencing behavior introduced in v2.5.0.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-013",
+      "title": "INVALID_PARAMETER on out-of-range register-map requests",
+      "text": "Ep0::check_read_access, Ep0::check_write_access, and Ep0::set_endpoint_owner shall return RegMapErrc::invalid_parameter for a target endpoint id outside the configured endpoint_count range, or (for set_endpoint_owner) for a request to assign an owner to EP0 itself.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-014",
+      "title": "The four mandatory register-map error codes are distinct",
+      "text": "rcp::regmap::RegMapErrc shall define UNAUTHORIZED_ACCESS, LOCKED_MEM_ACCESS, REQUEST_REJECTED, and INVALID_PARAMETER as pairwise-distinct error codes in their own error_category, each with a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
     }
   ]
 }

@@ -14,6 +14,14 @@ add_executable(test_legacy_wire test_legacy_wire.cpp)
 target_link_libraries(test_legacy_wire PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_legacy_wire COMMAND test_legacy_wire)
 
+add_executable(test_lifecycle test_lifecycle.cpp)
+target_link_libraries(test_lifecycle PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_lifecycle COMMAND test_lifecycle)
+
+add_executable(test_regmap test_regmap.cpp)
+target_link_libraries(test_regmap PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_regmap COMMAND test_regmap)
+
 add_executable(test_e2e test_e2e.cpp)
 target_link_libraries(test_e2e PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_e2e COMMAND test_e2e)
