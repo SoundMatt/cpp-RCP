@@ -10,14 +10,16 @@
 // v0.5.1_RC endpoint type builds request handling on top of, rather than
 // each reinventing its own copy (extraction §4.5, §5.x).
 //
-// ROADMAP.md milestone 47, "Basic Endpoint Types I — GPIO & SPI (v2.3.0)":
-// GPIO (rcp/gpio.hpp) and SPI (rcp/spi.hpp) are deliberately sequenced first
-// because their request/response payload shapes are the simplest fully
-// specified ones, which makes them the right place to establish this
-// reusable pattern before later, more complex endpoint types (I2C, UART,
-// ADC, PWM_OUT, PWM_IN at v2.4.0; LIN, CAN, ISELED, MDIO, Wakeup at v2.7.0)
-// need it too. This header holds exactly the parts of that pattern GPIO and
-// SPI both need directly:
+// ROADMAP.md milestone 47, "Basic Endpoint Types I — GPIO & SPI (v2.3.0)",
+// and milestone 48, "Basic Endpoint Types II — I2C, UART, ADC, PWM_OUT,
+// PWM_IN (v2.4.0)": GPIO (rcp/gpio.hpp) and SPI (rcp/spi.hpp) were
+// deliberately sequenced first because their request/response payload
+// shapes are the simplest fully specified ones, which made them the right
+// place to establish this reusable pattern before the milestone 48 endpoint
+// types (rcp/i2c.hpp, rcp/uart.hpp, rcp/adc.hpp, rcp/pwm.hpp) — and later,
+// LIN, CAN, ISELED, MDIO, Wakeup at v2.7.0 — needed it too. This header
+// holds exactly the parts of that pattern every endpoint type needs
+// directly:
 //   - endpoint-type id constants (ep_type), extended by each later milestone
 //   - the 8-way evt[2:0] write-semantics decode shared by every endpoint
 //     type whose functional payload is a combinable value (GPIO now,
@@ -56,16 +58,22 @@ namespace endpoint {
 
 // ── Endpoint-type ids (ep_type) ──────────────────────────────────────────────
 // Assigned starting at 1, per rcp/regmap.hpp's own header comment reserving
-// this numbering for endpoint milestones. Only the two types this milestone
-// implements are given real constants; later milestones' ids are named in
-// comments here so the numbering stays visibly centralized in one place
-// rather than getting re-derived ad hoc by each new header.
+// this numbering for endpoint milestones. Ids are added here as each
+// milestone's endpoint types are implemented, so the numbering stays
+// visibly centralized in one place rather than getting re-derived ad hoc by
+// each new header. 0x06 has no assignment in either v2.3.0 or v2.4.0's
+// scope (the extraction does not name an endpoint type for it) and is left
+// unallocated rather than guessed at.
 
 using EndpointTypeId = uint8_t;
 
-constexpr EndpointTypeId kEndpointTypeGpio = 0x02; // this milestone (v2.3.0)
-constexpr EndpointTypeId kEndpointTypeSpi  = 0x03; // this milestone (v2.3.0)
-// 0x04 I2C, 0x05 UART, 0x07 PWM_OUT, 0x08 PWM_IN, 0x09 ADC — v2.4.0
+constexpr EndpointTypeId kEndpointTypeGpio   = 0x02; // v2.3.0
+constexpr EndpointTypeId kEndpointTypeSpi    = 0x03; // v2.3.0
+constexpr EndpointTypeId kEndpointTypeI2c    = 0x04; // this milestone (v2.4.0)
+constexpr EndpointTypeId kEndpointTypeUart   = 0x05; // this milestone (v2.4.0)
+constexpr EndpointTypeId kEndpointTypePwmOut = 0x07; // this milestone (v2.4.0)
+constexpr EndpointTypeId kEndpointTypePwmIn  = 0x08; // this milestone (v2.4.0)
+constexpr EndpointTypeId kEndpointTypeAdc    = 0x09; // this milestone (v2.4.0)
 // LIN, CAN (incl. CAN XL), ISELED, MDIO, Wakeup control — v2.7.0 (ids TBD there)
 
 // ── evt[2:0] write semantics ──────────────────────────────────────────────────

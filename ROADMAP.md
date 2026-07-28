@@ -361,6 +361,49 @@ lives in `tests/test_endpoint.cpp` (REQ-ENDPOINT-001..006),
 
 ### 48. Basic Endpoint Types II — I²C, UART, ADC, PWM_OUT, PWM_IN (v2.4.0)
 
+**Done (v2.4.0):** `rcp/endpoint.hpp` gains real `ep_type` id constants for
+all five endpoint types this milestone covers
+(`kEndpointTypeI2c`/`kEndpointTypeUart`/`kEndpointTypePwmOut`/
+`kEndpointTypePwmIn`/`kEndpointTypeAdc`), replacing the comment placeholder
+milestone 47 left for them. `rcp/i2c.hpp` implements I²C (`ep_type 0x04`):
+a controller-only `I2cEndpoint::transfer` recording a raw byte stream
+(address bytes included, since I²C has no separate address field in this
+milestone's scope), `compound_wait_matches_bits` implementing the
+arbitrary-bit-sequence compound-wait match (distinct from SPI's fixed
+4-of-20-byte truncation), and `i2c_mode_of` deliberately decoding only the
+coarse `hs` high-speed-requested bit — the finer `i2c_mode` speed-grade
+mapping is flagged as an open item in the header's own comments rather than
+guessed at, pending a future spec errata pass. `rcp/uart.hpp` implements
+UART (`ep_type 0x05`): independent TX/RX queues (`enqueue_tx`/`drain_tx` vs.
+`rx_fill`/`handle_read`), `handle_read`'s read-size-or-timeout completion
+rule, `handle_pure_read` for payload-less reads, and
+`pack_frame_to_octet`/`unpack_frame_bits` for sub-octet bit-width padding;
+`kMaxReadSize`/`kRxFifoCapacity`/`kTxQueueCapacity` bound both the RX FIFO
+and configurable read size to a conservative single-AVTPDU ceiling,
+documented explicitly as an accepted limitation tied to milestone 52's
+already-final fragmentation no-go decision, not left implicit. `rcp/adc.hpp`
+implements ADC (`ep_type 0x09`): `AdcEndpoint::request_reading` (SelfTimed
+cadence) and `request_reading_from_trigger_queue` (ExternalTrigger cadence,
+keyed to `rcp/pwm.hpp`'s PWM_IN mid-pulse signal) both drive the same
+three-level `compute_average` combinator
+(`adc_avg_intervals_per_request` → `adc_combine_avg_values`), request-driven
+only — sampling never free-runs outside a call — with `AdcErrc::no_signal`
+as the no-signal timeout/underrun path analogous to PWM_IN_NO_SIGNAL.
+`rcp/pwm.hpp` implements both PWM_OUT (`ep_type 0x07`) and PWM_IN
+(`ep_type 0x08`) sharing one `PwmValue{period, active_duration}` payload
+struct: `PwmOutEndpoint::handle_write` reuses `rcp::endpoint::
+apply_bitmask_write` directly (so GPIO's saturating add/subtract rule
+applies to both fields without re-derivation) and leaves Reconfigure to that
+function's own built-in rejection rather than inventing a PWM_OUT-specific
+target; `PwmInEndpoint` is response-only (`handle_read`/
+`record_measurement`), returns `PwmErrc::no_signal` (PWM_IN_NO_SIGNAL)
+before any measurement or after `clear_signal()`, and fires the MidPulse
+trigger signal `rcp/adc.hpp`'s ExternalTrigger cadence pattern is meant to
+key off of. New coverage lives in `tests/test_i2c.cpp` (REQ-I2C-001..005),
+`tests/test_uart.cpp` (REQ-UART-001..007), `tests/test_adc.cpp`
+(REQ-ADC-001..006), and `tests/test_pwm.cpp` (REQ-PWM-001..007), traced in
+`.fusa-reqs.json`.
+
 - I²C (`ep_type 0x04`): controller-only, raw byte stream including address
   bytes, compound-wait against arbitrary received-bit-sequence match; flag
   the unresolved `i2c_mode` high-speed enum ambiguity in code comments as an
