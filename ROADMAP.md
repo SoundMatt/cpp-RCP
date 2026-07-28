@@ -873,6 +873,57 @@ file's own disclaimer pattern in `rcp/e2e.hpp`/`rcp/regmap.hpp`/
   already does one layer up
 - Depends on: RC Server lifecycle & register map (v2.1.0)
 
+**Done (v2.11.0):** Both `rcp/authz.hpp` and `rcp/ratelimit.hpp` are ADAPTed
+in place per the Satellite Package Disposition table's entries for these
+two files — the `AccessPolicy`/`PolicyEntry`/`AuthzErrc` and
+`Config`/token-bucket shapes survive; only their keying axes change.
+`authz.hpp`'s `PolicyEntry` and `AccessPolicy::permit` now key on
+(`Identity`, target stream, target endpoint, request kind) instead of
+(`Identity`, `Zone`, `CommandType`): a target stream is the same opaque
+`uint64_t` per-connection key `rcp/regmap.hpp`'s `Ep0` and
+`rcp/watchdog.hpp`'s `Manager` already use (typically an
+`avtp::StreamId::to_u64()`), a target endpoint is an `avtp::ByteBusId`, and
+a request kind is `rcp::request::RequestCategory` (v2.5.0) — already the
+single taxonomy spanning the mandatory standard kind and every
+conditional/cancellation kind. Per the roadmap's own framing, this package
+does not reimplement `regmap.hpp`'s root-client/per-endpoint-owner access
+model (v2.1.0) — it has no dependency on `regmap.hpp` at all — it adds an
+independent policy gate a dispatch call site consults *in addition to*
+that model. The pre-replacement `AuthController` wrapper is dropped
+outright rather than rebound: there is no longer a single unified
+`Controller::send()` chokepoint to wrap (that unification, if any, does
+not land until the CLI/capi/adapt rebuilds at v2.16.0), so `permit`/`check`
+are standalone primitives a dispatch call site invokes directly, the same
+"primitives driven by the embedding application" pattern
+`rcp/e2e.hpp`/`rcp/watchdog.hpp`/`rcp/request.hpp` already established.
+
+`ratelimit.hpp`'s token bucket is now one per (target stream, target
+endpoint) admission-control domain (`ratelimit::EndpointKey`), keyed the
+same stream/`byte_bus_id` way, instead of one per `Controller`
+instance/`Zone`; `ratelimit::Manager` multiplexes domains lazily, mirroring
+`rcp/watchdog.hpp`'s `Manager` multiplexing one `StreamWatchdog` per
+stream. The pre-replacement `Priority::Critical` bypass — `Priority` being
+`rcp/prioqueue.hpp`'s whole client-side-priority-wrapper concept, marked
+DEPRECATE outright per the disposition table, with no TC18 analog — is
+replaced by an explicit `is_safety_tagged` argument callers derive from
+`rcp::request::is_safety_variant` (v2.6.0): the traffic class that
+ultimately drives an endpoint through its configured safe state once it
+executes is the closest real analog to "must not be dropped by an
+admission-control layer" here. Like every other Phase 14 primitive header,
+`TokenBucket::take`/`Manager::admit` take an explicit `now_ms` rather than
+reading a clock internally, the same convention `rcp/e2e.hpp`'s
+`RxWatchdog` and `rcp/watchdog.hpp`'s `StreamWatchdog` already use.
+
+Nothing else in this tree depended on the old `AuthController`/
+`ratelimit::Controller` APIs (only their own tests did), so no legacy shim
+was needed, same as every other Phase 14 rebuild. New/rewritten coverage
+lives in `tests/test_authz.cpp` (`REQ-AUTH-001..008`, entirely rewritten)
+and `tests/test_ratelimit.cpp` (`REQ-RL-001..008`, entirely rewritten),
+traced in `.fusa-reqs.json`. Full bit-for-bit conformance against other
+TC18 implementations is not claimed — see this file's own disclaimer
+pattern in `rcp/regmap.hpp`/`rcp/request.hpp`/`rcp/e2e.hpp`/
+`rcp/watchdog.hpp`.
+
 ### 56. Test & Simulation Harness Rebuild (v2.12.0)
 
 - Rebuild `mock.hpp` as an in-process RC Server simulator implementing the

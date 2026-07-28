@@ -1186,64 +1186,64 @@
     },
     {
       "id": "REQ-RL-001",
-      "title": "Token bucket with configurable rate and burst",
-      "text": "ratelimit::Controller shall implement a token bucket with configurable rate (tokens/s) and burst capacity.",
+      "title": "Manager::admit admits while the domain's bucket has tokens",
+      "text": "rcp::ratelimit::Manager::admit shall return a success (falsy) std::error_code for a target EndpointKey whose token bucket has at least one token available.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-002",
-      "title": "Tokens refilled based on elapsed time",
-      "text": "The token bucket shall refill tokens proportionally to elapsed wall-clock time since the last take().",
+      "title": "Tokens refill proportionally to elapsed now_ms",
+      "text": "rcp::ratelimit::TokenBucket::take shall refill tokens proportionally to the elapsed now_ms since the previous take() call on the same bucket, before evaluating admission, capped at Config::burst.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-003",
-      "title": "ErrBusy when bucket exhausted",
-      "text": "send() shall return ErrBusy immediately, without calling inner send(), when fewer than 1 token remains.",
+      "title": "admit() returns ErrAdmissionDenied once the bucket is exhausted",
+      "text": "rcp::ratelimit::Manager::admit shall return ratelimit::ErrAdmissionDenied, unchanged, once fewer than one token remains in the target EndpointKey's bucket.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-004",
-      "title": "Critical commands exempt when configured",
-      "text": "When Config::exempt_critical is true, Priority::Critical commands shall bypass the token bucket.",
+      "title": "Safety-tagged requests bypass the bucket when exempted",
+      "text": "When Config::exempt_safety_tagged is true, rcp::ratelimit::Manager::admit shall return success for an is_safety_tagged=true request without consuming a token, regardless of the target bucket's remaining token count.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-005",
-      "title": "Non-critical commands not exempt",
-      "text": "Priority::Normal and Priority::High commands shall always be subject to the token bucket.",
+      "title": "Safety-tagged requests are throttled when not exempted",
+      "text": "When Config::exempt_safety_tagged is false, rcp::ratelimit::Manager::admit shall subject an is_safety_tagged=true request to the same token-bucket admission check as any other request.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-006",
-      "title": "Zone mismatch rejected",
-      "text": "send() shall return ErrZoneMismatch if cmd.zone differs from the inner controller's zone.",
+      "title": "Distinct (stream, endpoint) domains have independent buckets",
+      "text": "rcp::ratelimit::Manager shall maintain an independent token bucket per distinct EndpointKey, such that exhausting one EndpointKey's bucket shall not affect admission for any other EndpointKey.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-007",
-      "title": "Close stops sends",
-      "text": "close() shall cause subsequent send() calls to return ErrClosed.",
+      "title": "reset() rebuilds a domain's bucket at full burst",
+      "text": "rcp::ratelimit::Manager::reset shall discard the target EndpointKey's bucket state, such that its next admit() call is evaluated against a freshly constructed bucket at full Config::burst capacity.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-008",
-      "title": "send() after close returns ErrClosed",
-      "text": "Any send() call after close() shall return ErrClosed.",
+      "title": "ErrAdmissionDenied is a distinct error code",
+      "text": "ratelimit::ErrAdmissionDenied shall be a non-zero std::error_code in a category distinct from every other rcp error category.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1682,24 +1682,24 @@
     },
     {
       "id": "REQ-AUTH-001",
-      "title": "AuthController enforces AccessPolicy on every send",
-      "text": "AuthController.send() shall check the presented Identity against the AccessPolicy before forwarding any Command. If the identity is not permitted, ErrForbidden shall be returned without invoking the inner controller.",
+      "title": "AccessPolicy::permit grants access only on a full (identity, stream, endpoint, kind) match",
+      "text": "rcp::authz::AccessPolicy::permit shall return true only when at least one PolicyEntry for the given identity matches the given target stream, target endpoint, and request kind simultaneously; it shall return false if any one axis does not match.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-AUTH-002",
-      "title": "Empty zone/type set means all allowed",
-      "text": "A PolicyEntry with an empty zones set shall permit any Zone. A PolicyEntry with an empty cmd_types set shall permit any CommandType.",
+      "title": "Empty streams/endpoints/kinds sets mean unrestricted on that axis",
+      "text": "A PolicyEntry with an empty streams set shall match any target stream. A PolicyEntry with an empty endpoints set shall match any target endpoint. A PolicyEntry with an empty kinds set shall match any request kind.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-AUTH-003",
-      "title": "Identity resolver takes precedence over set_identity",
-      "text": "If an IdentityFn is supplied to AuthController, it shall be called on each send() and its result shall be used as the caller identity, superseding any value set via set_identity().",
+      "title": "Identity not covered by any PolicyEntry is denied",
+      "text": "rcp::authz::AccessPolicy::permit shall return false for any identity with no PolicyEntry present in the policy, regardless of the requested stream, endpoint, or kind.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-B"
@@ -1714,24 +1714,24 @@
     },
     {
       "id": "REQ-AUTH-005",
-      "title": "AuthController::zone() delegates to inner",
-      "text": "AuthController::zone() shall return the same zone as the wrapped inner controller.",
+      "title": "check() returns ErrForbidden when permit() would deny",
+      "text": "rcp::authz::check shall return authz::ErrForbidden, unchanged, whenever the equivalent AccessPolicy::permit() call would return false.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-AUTH-006",
-      "title": "AuthController::subscribe() delegates to inner",
-      "text": "AuthController::subscribe() shall forward the call to the inner controller unchanged.",
+      "title": "check() returns success when permit() would allow",
+      "text": "rcp::authz::check shall return a default-constructed (falsy) std::error_code whenever the equivalent AccessPolicy::permit() call would return true.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-AUTH-007",
-      "title": "AuthController::close() delegates to inner",
-      "text": "AuthController::close() shall forward the call to the inner controller and return its error code.",
+      "title": "An identity with zero policy entries is denied by default",
+      "text": "rcp::authz::AccessPolicy::permit shall return false for any identity for which AccessPolicy::allow() has never been called, i.e. the policy defaults to deny, not allow.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-A"
@@ -1739,7 +1739,7 @@
     {
       "id": "REQ-AUTH-008",
       "title": "ErrForbidden is a distinct error code",
-      "text": "authz::ErrForbidden shall be a non-zero std::error_code distinct from all other rcp error codes.",
+      "text": "authz::ErrForbidden shall be a non-zero std::error_code in a category distinct from every other rcp error category.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-B"
