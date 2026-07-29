@@ -3,12 +3,14 @@
 // fusa:test REQ-SOMEIP-003
 // fusa:test REQ-SOMEIP-004
 
-// someipbr protocol-bridge stub conformance tests.
+// someipbr protocol-bridge stub conformance tests (ROADMAP.md milestone
+// 59, "Application-Layer Protocol Bridge Rebind", v2.15.0).
 //
-// The SomeIpController is a compile-time interface stub: until a concrete backend is
-// linked, send()/subscribe() return std::errc::function_not_supported, zone()
-// reports the configured zone, and close() succeeds. These tests pin that
-// contract so callers get a well-defined error rather than undefined behaviour.
+// SomeIpBridge is a compile-time interface stub: until a concrete vsomeip
+// adapter is linked, request() returns std::errc::function_not_supported,
+// stream_key()/endpoint() report the values supplied at construction, and
+// close() succeeds. These tests pin that contract so callers get a
+// well-defined error rather than undefined behaviour.
 #include <catch2/catch_test_macros.hpp>
 
 #include "rcp/someipbr.hpp"
@@ -22,27 +24,25 @@ const std::error_code kUnsupported =
     std::make_error_code(std::errc::function_not_supported);
 } // namespace
 
-TEST_CASE("someipbr: send returns function_not_supported when stub", "[someipbr][REQ-SOMEIP-001]") {
-    auto ctrl = someipbr::new_controller(Zone::FrontLeft, someipbr::Config{});
-    Command cmd;
-    cmd.zone = Zone::FrontLeft;
-    cmd.type = CommandType::Set;
-    Response resp;
-    REQUIRE(ctrl->send(Context{}, cmd, resp) == kUnsupported);
+TEST_CASE("someipbr: request returns function_not_supported when stub", "[someipbr][REQ-SOMEIP-001]") {
+    auto bridge = someipbr::new_bridge(/*stream_key=*/1, /*endpoint=*/3, someipbr::Config{});
+    auto req = acf::make_standard_request(3, 1, /*write=*/false, /*read_size=*/2);
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    REQUIRE(bridge->request(Context{}, req, {}, resp, resp_payload) == kUnsupported);
 }
 
-TEST_CASE("someipbr: zone returns configured zone", "[someipbr][REQ-SOMEIP-002]") {
-    auto ctrl = someipbr::new_controller(Zone::RearRight, someipbr::Config{});
-    REQUIRE(ctrl->zone() == Zone::RearRight);
+TEST_CASE("someipbr: stream_key returns configured value", "[someipbr][REQ-SOMEIP-002]") {
+    auto bridge = someipbr::new_bridge(42, 3, someipbr::Config{});
+    REQUIRE(bridge->stream_key() == 42);
 }
 
-TEST_CASE("someipbr: subscribe returns function_not_supported when stub", "[someipbr][REQ-SOMEIP-003]") {
-    auto ctrl = someipbr::new_controller(Zone::Central, someipbr::Config{});
-    std::shared_ptr<StatusChannel> ch;
-    REQUIRE(ctrl->subscribe(Context{}, ch) == kUnsupported);
+TEST_CASE("someipbr: endpoint returns configured value", "[someipbr][REQ-SOMEIP-003]") {
+    auto bridge = someipbr::new_bridge(1, /*endpoint=*/9, someipbr::Config{});
+    REQUIRE(bridge->endpoint() == 9);
 }
 
 TEST_CASE("someipbr: close returns no error", "[someipbr][REQ-SOMEIP-004]") {
-    auto ctrl = someipbr::new_controller(Zone::FrontRight, someipbr::Config{});
-    REQUIRE_FALSE(ctrl->close());
+    auto bridge = someipbr::new_bridge(1, 3, someipbr::Config{});
+    REQUIRE_FALSE(bridge->close());
 }
