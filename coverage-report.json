@@ -231,6 +231,15 @@
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/legacy_mock.hpp",
+      "linePct": 100.0,
+      "linesHit": 110,
+      "linesTotal": 110
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/legacy_wire.hpp",
       "linePct": 89.07563025210084,
       "linesHit": 106,
@@ -295,9 +304,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/mock.hpp",
-      "linePct": 100.0,
-      "linesHit": 110,
-      "linesTotal": 110
+      "linePct": 85.5421686746988,
+      "linesHit": 71,
+      "linesTotal": 83
     },
     {
       "branchPct": 0.0,
@@ -331,8 +340,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/prioqueue.hpp",
-      "linePct": 91.04477611940298,
-      "linesHit": 61,
+      "linePct": 86.56716417910448,
+      "linesHit": 58,
       "linesTotal": 67
     },
     {
@@ -430,9 +439,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/sim.hpp",
-      "linePct": 90.0990099009901,
-      "linesHit": 91,
-      "linesTotal": 101
+      "linePct": 100.0,
+      "linesHit": 24,
+      "linesTotal": 24
     },
     {
       "branchPct": 0.0,
@@ -539,8 +548,8 @@
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/atomic",
       "linePct": 100.0,
-      "linesHit": 22,
-      "linesTotal": 22
+      "linesHit": 21,
+      "linesTotal": 21
     },
     {
       "branchPct": 0.0,
@@ -628,8 +637,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/chrono.h",
-      "linePct": 82.43243243243244,
-      "linesHit": 61,
+      "linePct": 78.37837837837837,
+      "linesHit": 58,
       "linesTotal": 74
     },
     {
@@ -781,8 +790,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/predefined_ops.h",
-      "linePct": 68.33333333333333,
-      "linesHit": 41,
+      "linePct": 60.0,
+      "linesHit": 36,
       "linesTotal": 60
     },
     {
@@ -1024,8 +1033,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_heap.h",
-      "linePct": 53.333333333333336,
-      "linesHit": 32,
+      "linePct": 23.333333333333332,
+      "linesHit": 14,
       "linesTotal": 60
     },
     {
@@ -1425,15 +1434,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-07-28T23:35:21Z",
-  "linePct": 69.10551687198715,
+  "generatedAt": "2026-07-29T00:16:16Z",
+  "linePct": 68.79014989293361,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 6451,
+    "hitLines": 6425,
     "totalBranches": 0,
-    "totalLines": 9335
+    "totalLines": 9340
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0
