@@ -168,6 +168,12 @@ TEST_CASE("decode_frame rejects an unrecognized ACF message type", "[udp][REQ-UD
     REQUIRE(decode_frame(bytes.data(), bytes.size(), out));
 }
 
+// Server/Client exercise real UDP sockets, which only exist on the POSIX
+// build (RCP_UDP_POSIX, set by rcp/udp.hpp itself) — on Windows both classes
+// are the function_not_supported stub rcp/udp.hpp's own header comment
+// documents, so REQ-UDP-007..012 have nothing real to exercise there.
+#if defined(RCP_UDP_POSIX)
+
 // ── Server (real UDP sockets, loopback) ──────────────────────────────────────
 
 TEST_CASE("Server dispatches a decoded request through its handler and answers the sender",
@@ -324,3 +330,5 @@ TEST_CASE("Server and Client close() are idempotent and requests after close fai
     auto ctx = Context::background();
     REQUIRE(client.request(ctx, standard_request(1, 1), {}, resp, resp_payload) == ErrClosed);
 }
+
+#endif // RCP_UDP_POSIX
