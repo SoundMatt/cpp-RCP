@@ -355,16 +355,16 @@ enum class CompoundWaitCheck : uint8_t {
 };
 
 constexpr CompoundWaitCheck compound_wait_check_of(bool cs) noexcept {
-    return cs ? CompoundWaitCheck::Immediate : CompoundWaitCheck::AfterChangeOnly;
+    return cs ? CompoundWaitCheck::AfterChangeOnly : CompoundWaitCheck::Immediate;
 }
 
 // should_execute_chained answers, for one chained successor: given its own
 // `cs` bit and whether its predecessor finished in error, should this
-// successor still run? cs=true means "execute regardless"; cs=false means
+// successor still run? cs=false means "execute regardless"; cs=true means
 // "abort if the predecessor errored". A predecessor that did *not* error
 // always permits the successor to run, independent of cs.
 constexpr bool should_execute_chained(bool cs, bool predecessor_errored) noexcept {
-    return cs || !predecessor_errored;
+    return !cs || !predecessor_errored;
 }
 
 // ── Optional-feature bundling ──────────────────────────────────────────────────
