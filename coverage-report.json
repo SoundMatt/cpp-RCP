@@ -240,15 +240,6 @@
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
-      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/legacy_wire.hpp",
-      "linePct": 89.07563025210084,
-      "linesHit": 106,
-      "linesTotal": 119
-    },
-    {
-      "branchPct": 0.0,
-      "branchesHit": 0,
-      "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/lifecycle.hpp",
       "linePct": 78.43137254901961,
       "linesHit": 40,
@@ -492,6 +483,15 @@
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/udp.hpp",
+      "linePct": 92.96482412060301,
+      "linesHit": 185,
+      "linesTotal": 199
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/udsbr.hpp",
       "linePct": 100.0,
       "linesHit": 11,
@@ -548,8 +548,8 @@
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/atomic",
       "linePct": 100.0,
-      "linesHit": 21,
-      "linesTotal": 21
+      "linesHit": 22,
+      "linesTotal": 22
     },
     {
       "branchPct": 0.0,
@@ -619,8 +619,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/char_traits.h",
-      "linePct": 18.181818181818183,
-      "linesHit": 8,
+      "linePct": 15.909090909090908,
+      "linesHit": 7,
       "linesTotal": 44
     },
     {
@@ -628,8 +628,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/charconv.h",
-      "linePct": 92.0,
-      "linesHit": 23,
+      "linePct": 100.0,
+      "linesHit": 25,
       "linesTotal": 25
     },
     {
@@ -952,8 +952,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/shared_ptr_base.h",
-      "linePct": 93.87755102040816,
-      "linesHit": 184,
+      "linePct": 94.38775510204081,
+      "linesHit": 185,
       "linesTotal": 196
     },
     {
@@ -1123,8 +1123,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_tree.h",
-      "linePct": 84.25531914893617,
-      "linesHit": 396,
+      "linePct": 84.68085106382979,
+      "linesHit": 398,
       "linesTotal": 470
     },
     {
@@ -1285,9 +1285,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/future",
-      "linePct": 73.78048780487805,
-      "linesHit": 121,
-      "linesTotal": 164
+      "linePct": 74.54545454545455,
+      "linesHit": 123,
+      "linesTotal": 165
     },
     {
       "branchPct": 0.0,
@@ -1434,15 +1434,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-07-29T00:16:16Z",
-  "linePct": 68.79014989293361,
+  "generatedAt": "2026-07-29T00:57:06Z",
+  "linePct": 69.1042241562301,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 6425,
+    "hitLines": 6511,
     "totalBranches": 0,
-    "totalLines": 9340
+    "totalLines": 9422
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0

@@ -1,7 +1,7 @@
 # TARA — cpp-RCP
 
 Standard: iso21434  
-Generated: 2026-07-29T00:16:16Z  
+Generated: 2026-07-29T00:57:06Z  
 Coverage: 8/8 assets (100.0%)
 
 | ID | Asset | Threat | Feasibility | Risk | Treatment |
