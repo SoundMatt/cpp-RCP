@@ -22,13 +22,13 @@ reference.
 | Header | Description |
 |---|---|
 | `<rcp/rcp.hpp>` | Core interfaces: `Controller`, `Registry`, `Command`, `Response`, `Status`, `Zone`, `Context`, `StatusChannel` |
-| `<rcp/adapt.hpp>` | `Adapt()` — the RELAY §10.3 entry point, wraps a `Controller` as a `relay::Caller`; `ToMessage`/`FromMessage` conversions |
+| `<rcp/adapt.hpp>` | `Adapt()` — the RELAY §10.3 entry point, wraps a `RequestFn` (a client-side send-equivalent call) as a `relay::Caller`; `response_to_message`/`message_to_request` conversions, keyed by a server+endpoint identifier (ROADMAP.md v2.16.0) |
 | `<relay/relay.hpp>` | `relay::` namespace types (§18.2): `Protocol`, `Message`, `Errc` sentinels, `Channel<T>`, `Context`, `Node`, `Caller` |
 | `<rcp/mock.hpp>` | In-process TC18 RC Server simulator (lifecycle + register map + GPIO/SPI) — zero I/O, default for unit tests (ROADMAP.md v2.12.0) |
-| `<rcp/legacy_mock.hpp>` | Pre-replacement in-process `Controller`/`Registry`, kept only for the old-model dependents not yet rebound to the new request model (`capi_impl.hpp`/`cli.hpp`/`config.hpp`, v2.16.0) |
-| `<rcp/cli.hpp>` | RELAY-conformant CLI (§11/§12): `version`/`capabilities`/`status`/`send`; `cli/main.cpp` is a thin wrapper around it |
+| `<rcp/legacy_mock.hpp>` | Pre-replacement in-process `Controller`/`Registry`, kept only for the one old-model dependent not yet rebound to the new request model (`config.hpp`) |
+| `<rcp/cli.hpp>` | RELAY-conformant CLI (§11/§12): `version`/`capabilities`/`status`/`send`; `send` addresses an RC Server endpoint via `--server`/`--endpoint` against the `<rcp/mock.hpp>` demo backend; `cli/main.cpp` is a thin wrapper around it (ROADMAP.md v2.16.0) |
 | `<rcp/version.hpp>` | Binary version string — single source of truth for the CLI |
-| `<rcp/capi.h>` / `<rcp/capi_impl.hpp>` | C ABI / FFI surface for RTOS/bare-metal targets (Zephyr/FreeRTOS) |
+| `<rcp/capi.h>` / `<rcp/capi_impl.hpp>` | C ABI / FFI surface for RTOS/bare-metal targets (Zephyr/FreeRTOS): server+endpoint addressing, a caller-supplied `rcp_request_fn_t` callback, no heap allocation (ROADMAP.md v2.16.0) |
 
 ### Protocol bridges
 

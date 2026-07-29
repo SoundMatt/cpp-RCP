@@ -8,10 +8,17 @@
 //
 // Verifies that cpp-RCP satisfies the mandatory RELAY-conformance requirements
 // as enumerated in Appendix A of the RELAY spec.
+//
+// ROADMAP.md milestone 60 (v2.16.0): the §10.3/§15.7.5 sections below
+// (Adapt(), endpoint-id round trips) are entirely rewritten against
+// rcp/adapt.hpp's v2.16.0 RequestFn-based redesign — see that header's own
+// comment. The general §3/§5/§14/§18.2/§19.4 relay:: conformance sections
+// above them are unaffected by this milestone and unchanged.
 #include <catch2/catch_test_macros.hpp>
 
+#include <rcp/acf.hpp>
 #include <rcp/adapt.hpp>
-#include <rcp/legacy_mock.hpp>
+#include <rcp/mock.hpp>
 #include <relay/relay.hpp>
 
 #include <thread>
@@ -140,135 +147,172 @@ TEST_CASE("relay: Channel recv returns nullopt after close with empty queue", "[
     REQUIRE_FALSE(ch.recv().has_value());
 }
 
-// ── §10.3: Adapt() wraps Controller as relay::Caller ─────────────────────────
+// ── §10.3: Adapt() wraps a RequestFn as relay::Caller ────────────────────────
+// mock_request_fn wires a fresh rcp::mock::Server (v2.12.0) as the RequestFn
+// every test case below adapts — the same "client-side send-equivalent
+// call" shape rcp/record.hpp's and rcp/observe.hpp's own RequestFn already
+// standardize on (v2.14.0).
+
+namespace {
+std::shared_ptr<rcp::mock::Server> make_configured_mock_server() {
+    auto srv = std::make_shared<rcp::mock::Server>();
+    srv->advance_to_rcp_configured();
+    return srv;
+}
+
+rcp::RequestFn mock_request_fn(std::shared_ptr<rcp::mock::Server> srv) {
+    return [srv](const rcp::Context&, const rcp::acf::AcfMessageInfo& req,
+                 const std::vector<uint8_t>& payload,
+                 rcp::acf::AcfMessageInfo& out, std::vector<uint8_t>& out_payload) {
+        return srv->dispatch(0, req, payload, out, out_payload);
+    };
+}
+} // namespace
 
 TEST_CASE("relay: Adapt() returns non-null relay::Caller", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
-    auto caller = rcp::Adapt(ctrl);
+    auto caller = rcp::Adapt(mock_request_fn(make_configured_mock_server()));
     REQUIRE(caller != nullptr);
 }
 
 TEST_CASE("relay: Adapt() protocol() returns RCP", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
-    auto caller = rcp::Adapt(ctrl);
+    auto caller = rcp::Adapt(mock_request_fn(make_configured_mock_server()));
     REQUIRE(caller->protocol() == relay::Protocol::RCP);
 }
 
-TEST_CASE("relay: Adapt() call() sends command and returns response", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
-    auto caller = rcp::Adapt(ctrl);
+TEST_CASE("relay: Adapt() call() sends a request and returns the response", "[relay][adapt]") {
+    auto caller = rcp::Adapt(mock_request_fn(make_configured_mock_server()));
 
     relay::Message req;
-    req.protocol            = relay::Protocol::RCP;
-    req.id                  = "FrontLeft";
-    req.meta["rcp.cmd_type"] = "get";
+    req.protocol = relay::Protocol::RCP;
+    req.id       = rcp::endpoint_id_to_relay_id(0, rcp::mock::kGpioByteBusId);
+    req.meta["rcp.op"] = "read";
 
     auto ctx = relay::Context::with_timeout(1s);
     auto [resp, ec] = caller->call(ctx, req);
     REQUIRE_FALSE(ec);
-    REQUIRE(resp.id == "FrontLeft");
+    REQUIRE(resp.id == req.id);
     REQUIRE(resp.protocol == relay::Protocol::RCP);
 }
 
+TEST_CASE("relay: Adapt() call() reports invalid_argument for an unparseable id",
+          "[relay][adapt]") {
+    auto caller = rcp::Adapt(mock_request_fn(make_configured_mock_server()));
+
+    relay::Message req;
+    req.id = "not-a-valid-id";
+
+    auto ctx = relay::Context::with_timeout(1s);
+    auto [resp, ec] = caller->call(ctx, req);
+    REQUIRE(ec == std::errc::invalid_argument);
+    REQUIRE(resp.id.empty());
+}
+
 TEST_CASE("relay: Adapt() send() succeeds", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
-    auto caller = rcp::Adapt(ctrl);
+    auto caller = rcp::Adapt(mock_request_fn(make_configured_mock_server()));
 
     relay::Message msg;
-    msg.id                  = "FrontLeft";
-    msg.meta["rcp.cmd_type"] = "set";
+    msg.id             = rcp::endpoint_id_to_relay_id(0, rcp::mock::kSpiByteBusId);
+    msg.meta["rcp.op"] = "write";
 
     auto ctx = relay::Context::with_timeout(1s);
     REQUIRE_FALSE(caller->send(ctx, msg));
 }
 
-TEST_CASE("relay: Adapt() subscribe() returns valid channel", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
-    auto caller = rcp::Adapt(ctrl);
+// subscribe() has no analog in the target specification's request/response
+// shape — see rcp/adapt.hpp's own header comment and rcp/mqttbr.hpp's
+// (v2.15.0) equivalent note for the seven ADAPTed application bridges.
+TEST_CASE("relay: Adapt() subscribe() reports function_not_supported", "[relay][adapt]") {
+    auto caller = rcp::Adapt(mock_request_fn(make_configured_mock_server()));
 
     auto [ch, ec] = caller->subscribe();
-    REQUIRE_FALSE(ec);
-    REQUIRE(ch != nullptr);
-
-    // Publish a status and verify it arrives via the relay channel.
-    ctrl->publish({0x01, 0x02});
-
-    relay::Message msg;
-    bool got = false;
-    auto deadline = std::chrono::steady_clock::now() + 500ms;
-    while (std::chrono::steady_clock::now() < deadline) {
-        auto m = ch->try_recv();
-        if (m) {
-            msg = *m;
-            got = true;
-            break;
-        }
-        std::this_thread::sleep_for(1ms);
-    }
-
-    REQUIRE(got);
-    REQUIRE(msg.protocol == relay::Protocol::RCP);
-    REQUIRE(msg.id == "FrontLeft");
-    REQUIRE(msg.meta.count("rcp.healthy") == 1);
+    REQUIRE(ch == nullptr);
+    REQUIRE(ec == std::errc::function_not_supported);
 }
 
 TEST_CASE("relay: Adapt() close() idempotent", "[relay][adapt]") {
-    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
-    auto caller = rcp::Adapt(ctrl);
+    auto caller = rcp::Adapt(mock_request_fn(make_configured_mock_server()));
     REQUIRE_FALSE(caller->close());
     REQUIRE_FALSE(caller->close()); // second call must be no-op
 }
 
-// ── §15.7.5: zone_to_relay_id / zone_from_relay_id round-trips ───────────────
+// ── §15.7.5: endpoint_id_to_relay_id / relay_id_to_endpoint_id round-trips ───
 
-TEST_CASE("relay: zone round-trips through relay ID", "[relay][conform]") {
-    using rcp::Zone;
-    for (auto z : {Zone::FrontLeft, Zone::FrontRight,
-                   Zone::RearLeft,  Zone::RearRight, Zone::Central}) {
-        REQUIRE(rcp::zone_from_relay_id(rcp::zone_to_relay_id(z)) == z);
+TEST_CASE("relay: server+endpoint id round-trips through relay ID", "[relay][conform]") {
+    for (auto pair : {std::pair<uint64_t, rcp::avtp::ByteBusId>{uint64_t{0}, rcp::avtp::ByteBusId{1}},
+                       std::pair<uint64_t, rcp::avtp::ByteBusId>{uint64_t{0x1122334455667788ULL}, rcp::avtp::ByteBusId{2}},
+                       std::pair<uint64_t, rcp::avtp::ByteBusId>{uint64_t{42}, rcp::avtp::ByteBusId{255}}}) {
+        auto id = rcp::endpoint_id_to_relay_id(pair.first, pair.second);
+        uint64_t stream_key = 0;
+        rcp::avtp::ByteBusId byte_bus_id = 0;
+        REQUIRE(rcp::relay_id_to_endpoint_id(id, stream_key, byte_bus_id));
+        REQUIRE(stream_key == pair.first);
+        REQUIRE(byte_bus_id == pair.second);
     }
 }
 
-// ── v0.3 golden vector: status_to_message matches RELAY spec/vectors ─────────
-//
-// Pins rcp::status_to_message() to the canonical reference in
-// RELAY spec/vectors/rcp-status.json (v0.3). The vector's `value` is the
-// rcp.Status input; its `message` is the expected relay.Message output.
-// Mandatory fields (protocol, id, payload, seq, meta["rcp.healthy"]) MUST match
-// losslessly; timestamp is "ignored on receive" per §15.7 and is not pinned.
-
-TEST_CASE("relay: status_to_message matches rcp-status golden vector (v0.3)",
-          "[relay][conformance][vectors]") {
-    // From spec/vectors/rcp-status.json `value`:
-    //   zone=1 (FrontLeft), seq=3, healthy=true, payload="AQ==" (== byte 0x01)
-    rcp::Status s;
-    s.zone    = rcp::Zone::FrontLeft;
-    s.seq     = 3;
-    s.healthy = true;
-    s.payload = {0x01};
-
-    auto msg = rcp::status_to_message(s);
-
-    // Expected `message` fields from the golden vector:
-    REQUIRE(static_cast<int>(msg.protocol) == 5);          // relay.RCP
-    REQUIRE(msg.id == "FrontLeft");
-    REQUIRE(msg.seq == 3);
-    REQUIRE(msg.payload == std::vector<uint8_t>{0x01});     // base64 "AQ=="
-    REQUIRE(msg.meta.at("rcp.healthy") == "true");
+TEST_CASE("relay: relay_id_to_endpoint_id rejects the pre-v2.16.0 zone-name form",
+          "[relay][conform]") {
+    uint64_t stream_key = 0;
+    rcp::avtp::ByteBusId byte_bus_id = 0;
+    REQUIRE_FALSE(rcp::relay_id_to_endpoint_id("FrontLeft", stream_key, byte_bus_id));
 }
 
-// ── §14.1 (v0.3): SubscriberOptions carries topic_name; RCP ignores it ───────
+// ── §15.7.5: response_to_message / message_to_request mapping ────────────────
+//
+// This implementation's own mapping from an ACF response (rcp/acf.hpp) to a
+// relay::Message — not an externally pinned golden vector, since the
+// pre-v2.16.0 Status/subscribe push model this milestone's own scope note
+// retires has no analog to pin one against. Full bit-for-bit conformance of
+// this encoding against any other implementation is not claimed, same as
+// the equivalent disclaimers in rcp/avtp.hpp, rcp/acf.hpp, and rcp/udp.hpp.
+
+TEST_CASE("relay: response_to_message carries the endpoint id, payload, and response_kind",
+          "[relay][conformance]") {
+    rcp::acf::AcfMessageInfo resp;
+    resp.byte_bus_id = 7;
+    resp.rsp         = true;
+    resp.op          = false; // ReadResponse
+
+    auto msg = rcp::response_to_message(0x2A, resp, {0x01, 0x02});
+
+    REQUIRE(static_cast<int>(msg.protocol) == 5); // relay.RCP
+    REQUIRE(msg.id == "000000000000002a:7");
+    REQUIRE(msg.payload == std::vector<uint8_t>{0x01, 0x02});
+    REQUIRE(msg.meta.at("rcp.err") == "false");
+    REQUIRE(msg.meta.at("rcp.response_kind") ==
+            std::to_string(static_cast<int>(rcp::acf::ResponseKind::ReadResponse)));
+}
+
+TEST_CASE("relay: message_to_request decodes op/evt_op from meta", "[relay][conformance]") {
+    relay::Message msg;
+    msg.id                   = rcp::endpoint_id_to_relay_id(9, 3);
+    msg.meta["rcp.op"]        = "write";
+    msg.meta["rcp.evt_op"]    = "5";
+    msg.payload                = {0xAA};
+
+    uint64_t stream_key = 0;
+    rcp::acf::AcfMessageInfo req;
+    std::vector<uint8_t> payload;
+    REQUIRE(rcp::message_to_request(msg, stream_key, req, payload));
+    REQUIRE(stream_key == 9);
+    REQUIRE(req.byte_bus_id == 3);
+    REQUIRE(req.op == true);
+    REQUIRE(req.evt_op == 5);
+    REQUIRE(payload == std::vector<uint8_t>{0xAA});
+}
+
+// ── §14.1 (v0.3): SubscriberOptions carries topic_name ───────────────────────
 
 TEST_CASE("relay: SubscriberOptions has topic_name field, default empty",
           "[relay][conformance]") {
     relay::SubscriberOptions opts;
     REQUIRE(opts.topic_name.empty());
 
-    // RCP adapter must ignore topic_name (only DDS routes on it, §14.1).
-    auto ctrl   = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
-    auto caller = rcp::Adapt(ctrl);
+    // subscribe() reports function_not_supported regardless of topic_name —
+    // see this file's own §10.3 section above.
+    auto caller = rcp::Adapt(mock_request_fn(make_configured_mock_server()));
     opts.topic_name = "ignored-by-rcp";
     auto [ch, ec] = caller->subscribe(opts);
-    REQUIRE_FALSE(ec);
-    REQUIRE(ch != nullptr);
+    REQUIRE(ch == nullptr);
+    REQUIRE(ec == std::errc::function_not_supported);
 }
