@@ -698,23 +698,34 @@ still not claimed — see this file's own disclaimer pattern in
 
 ### 52. Fragmentation — Go/No-Go Decision (v2.8.0)
 
-**Done (v2.8.0):** this milestone's call was made in prose (below) before
+**Done (v2.14.1):** this milestone's call was made in prose (below) before
 any of its downstream consequences landed, and every one of those
 consequences was already built and cross-referencing "ROADMAP.md milestone
 52" as settled fact by the time this close-out PR was opened: the
 single-AVTPDU UART RX-FIFO/`read_size` bound in `rcp/uart.hpp`, the
 equivalent SPI framing note in `rcp/spi.hpp`, the CAN XL
 `kMaxXlPayloadSingleAvtpdu` vs. `kMaxXlPayloadSpec` split in `rcp/can.hpp`,
-the `ms` ("more segments") field comment in `rcp/wire.hpp`, and the
-`REQ-UART-006`/`REQ-CANEP-004` traceability entries in `.fusa-reqs.json`.
+the `ms` ("more segments") field comment in `rcp/acf.hpp` (`rcp/wire.hpp`
+at the time this close-out was first drafted; split into `rcp/avtp.hpp`/
+`rcp/acf.hpp` by the post-hoc naming reconciliation below, v2.7.1 — the
+`ms` field itself lives in the ACF message-format half, `rcp/acf.hpp`), and
+the `REQ-UART-006`/`REQ-CANEP-004` traceability entries in `.fusa-reqs.json`.
 This milestone formally closes the decision itself: the
 `kOptFragmentation` bit comment in `rcp/regmap.hpp` — the one remaining
 place in the tree still describing the call as "pending" — now reads
 consistently with the rest of the codebase (reserved, never set, per this
-already-decided no-go), and `rcp::kVersion`/the CMake project version move
-to `2.8.0` to mark the milestone as landed. No wire-format, endpoint, or
-safety-mechanism behavior changes in this milestone — it is a documentation
-and version close-out only.
+already-decided no-go). This milestone's designated slot, `v2.8.0`, is the
+label used throughout the tree's forward references to this decision
+(`rcp/uart.hpp`, `rcp/spi.hpp`, `rcp/can.hpp`, `rcp/acf.hpp`,
+`rcp/avtp.hpp`, and this file's own milestone heading above) and is left
+unchanged for that reason, but it was never tagged — this close-out PR sat
+open while `main` moved through the v2.7.1 naming reconciliation and six
+more milestones to v2.14.0 — so `rcp::kVersion`/the CMake project version
+move to `2.14.1` instead, an out-of-band patch bump on top of current
+`main` rather than the unavailable `2.8.0` slot, the same convention
+`v2.7.1` itself set for landing non-sequential, milestone-adjacent work.
+No wire-format, endpoint, or safety-mechanism behavior changes in this
+milestone — it is a documentation and version close-out only.
 
 **Decision: no-go for this cycle.** Fragmentation (the `ms`/`segment_num`
 mechanism for splitting one logical request/response across multiple
@@ -768,6 +779,39 @@ disposition table below for the full reasoning per package.
 - Depends on: Wakeup control endpoint (v2.7.0), RC Server lifecycle
   (v2.1.0)
 
+**Done (v2.9.0):** `rcp/powerstate.hpp` is replaced in full, per the
+Satellite Package Disposition table's entry for this file — the prior
+ad-hoc `Active`/`Sleeping`/`BusOff` model built on `rcp.hpp`'s
+`Zone`/`CommandType`/`Controller` is discarded, not adapted. `PowerMode`
+gains the specification's actual four modes (`Normal`/`StandBy`/`Sleep`/
+`Unpowered`); `start_kind_on_exit` fixes `StandBy` as always `Hot` and
+`Sleep` as always `Cold`, exposed on `PowerManager` as
+`pending_start_kind()`. `PowerManager::enter_standby`/`enter_sleep` apply
+the three entry-refusal conditions in a fixed order — an unacknowledged
+wake-up event (queried directly from `rcp::wakeup::WakeupEndpoint::
+wakeup_message_pending()`), a non-idle endpoint, and a non-empty
+response/ack queue — with the latter two exposed as caller-supplied
+`Hooks::endpoints_idle`/`Hooks::response_ack_queues_empty` predicates
+rather than a direct `rcp/regmap.hpp` dependency, mirroring
+`rcp/lifecycle.hpp`'s `PlausibilityCheck` pattern. `resume_from_standby`
+implements the hot-start rule directly (no handshake, straight back to
+`Normal`); `begin_wake_from_sleep`/`note_wakeup_attempt_sent`/
+`acknowledge_wakeup` implement the hot-start-from-Sleep handshake by
+directly driving `WakeupEndpoint::wakeup_message_pending()`/
+`acknowledge_wakeup()` in a repeat-until-echoed-or-limit loop
+(`Config::wakeup_repeat_limit`, default 8, this implementation's own
+choice), with `Hooks::reenable_network_interface`/
+`Hooks::reenable_response_ack_queues` covering the handshake's step 1 and
+step 3. `notify_power_removed`/`notify_power_restored` model `Unpowered`
+as a hardware-driven, unconditional transition with no refusal path.
+Nothing else in the tree depended on the old `powerstate::Manager` API
+(only this file's own test did), so no legacy shim was needed, same as
+`rcp/e2e.hpp`'s equivalent note at v2.6.0. New coverage lives in
+`tests/test_powerstate.cpp` (`REQ-PWR-001..014`, entirely rewritten),
+traced in `.fusa-reqs.json`. Full bit-for-bit conformance against other
+TC18 implementations is not claimed — see this file's own disclaimer
+pattern in `rcp/lifecycle.hpp`/`rcp/regmap.hpp`/`rcp/wakeup.hpp`.
+
 ### 54. Watchdog & Liveness Rebuild (v2.10.0)
 
 - Replace `watchdog.hpp`'s client-driven periodic `CommandType::Watchdog`
@@ -782,6 +826,64 @@ disposition table below for the full reasoning per package.
   subscription concept to poll in the new model (extraction §3.10, §5.1)
 - Depends on: RC Server lifecycle & register map (v2.1.0), E2E safe points
   (v2.6.0)
+
+**Done (v2.10.0):** `rcp/watchdog.hpp` is replaced in full, per the
+Satellite Package Disposition table's entry for this file — the prior
+client-driven `CommandType::Watchdog` kick model built on `rcp.hpp`'s
+`Zone`/`Command`/`Controller` is discarded, not adapted. The actual
+per-stream watchdog timeout/latch primitive already existed as
+`rcp::e2e::RxWatchdog` (v2.6.0); this milestone's real work is the driver
+layer around it. `watchdog::StreamWatchdog::kick_from_request` resets a
+stream's watchdog on every accepted inbound request regardless of kind or
+safety tag, matching the "reset by *any* inbound request" rule directly;
+`StreamWatchdog::check` reads a live `regmap::RequestStreamConfig` on every
+poll, reports `HealthEvent::overflowed` on timeout, and — only when
+`rx_wd_safestate_enable` is set — calls `rcp::e2e::apply_watchdog_overflow`
+to latch safe state and purge normal (non-safety) requests from the
+supplied `request::RequestLedger`, exactly the v2.6.0 purge-normal/
+retain-safety rule reused unmodified. `watchdog::Manager` multiplexes
+`StreamWatchdog` across every request stream the embedding application
+registers, keyed by an opaque `uint64_t` (typically an
+`avtp::StreamId::to_u64()`), and fans out `HealthEvent`s to subscribed
+callbacks — this is the "driver/wiring layer" the roadmap called for, not
+a reimplementation of watchdog detection itself.
+
+`rcp/deadline.hpp` is likewise rebuilt in full per the disposition table's
+"ADAPT" call for this file: the concept of "declare a target dead once its
+liveness signal goes silent past a deadline, alive again once it resumes"
+survives from the pre-replacement `Monitor`, but every concrete signal
+source is rebound away from `Status`-subscription polling, which does not
+exist in the target model. Two independent liveness signals feed the new
+`deadline::Monitor`, matching the roadmap's own "and/or": `note_heartbeat`
+for `regmap::ResponseQueueConfig::flush_time`'s periodic flush cadence, and
+`note_lifecycle_change` for `lifecycle::ServerLifecycle`'s new
+`subscribe_state_changed` trigger — either alone is sufficient evidence of
+liveness. Both `ResponseQueueConfig::flush_time` and
+`ServerLifecycle::subscribe_state_changed` are small, explicitly-scoped
+additions landed at this milestone (see those headers' own v2.10.0 comments)
+since neither existed in the tree before this rebuild needed them; both are
+purely additive; every pre-existing field and transition rule in
+`regmap.hpp`/`lifecycle.hpp` is unchanged. `deadline::Monitor::check`
+evaluates every registered target independently, emitting a
+`LivenessEvent` on each alive/dead transition (including the initial dead
+report for a target that has never reported) and suppressing repeats,
+carrying forward the pre-replacement `Monitor`'s alive/dead semantics
+without its background-thread-per-zone machinery — this header, like every
+other one touched since v2.6.0, provides primitives driven by the
+embedding application's own clock/scheduler, not a running thread of its
+own.
+
+Nothing else in this tree depended on the old `watchdog::Keeper` or
+`deadline::Monitor` APIs (only their own tests did; `rcp/redundancy.hpp`
+mentions `watchdog::Keeper` only in a doc comment, with no code dependency
+on it), so no legacy shim was needed, same as every other Phase 14 rebuild.
+New/rewritten coverage lives in `tests/test_watchdog.cpp`
+(`REQ-WDG-001..008`, entirely rewritten), `tests/test_deadline.cpp`
+(`REQ-DL-001..008`, entirely rewritten), and `tests/test_lifecycle.cpp`
+(`REQ-LIFECYCLE-007`, new), traced in `.fusa-reqs.json`. Full bit-for-bit
+conformance against other TC18 implementations is not claimed — see this
+file's own disclaimer pattern in `rcp/e2e.hpp`/`rcp/regmap.hpp`/
+`rcp/lifecycle.hpp`/`rcp/powerstate.hpp`.
 
 ### 55. Authorization & Admission-Control Rebind (v2.11.0)
 
@@ -800,6 +902,57 @@ disposition table below for the full reasoning per package.
   already does one layer up
 - Depends on: RC Server lifecycle & register map (v2.1.0)
 
+**Done (v2.11.0):** Both `rcp/authz.hpp` and `rcp/ratelimit.hpp` are ADAPTed
+in place per the Satellite Package Disposition table's entries for these
+two files — the `AccessPolicy`/`PolicyEntry`/`AuthzErrc` and
+`Config`/token-bucket shapes survive; only their keying axes change.
+`authz.hpp`'s `PolicyEntry` and `AccessPolicy::permit` now key on
+(`Identity`, target stream, target endpoint, request kind) instead of
+(`Identity`, `Zone`, `CommandType`): a target stream is the same opaque
+`uint64_t` per-connection key `rcp/regmap.hpp`'s `Ep0` and
+`rcp/watchdog.hpp`'s `Manager` already use (typically an
+`avtp::StreamId::to_u64()`), a target endpoint is an `avtp::ByteBusId`, and
+a request kind is `rcp::request::RequestCategory` (v2.5.0) — already the
+single taxonomy spanning the mandatory standard kind and every
+conditional/cancellation kind. Per the roadmap's own framing, this package
+does not reimplement `regmap.hpp`'s root-client/per-endpoint-owner access
+model (v2.1.0) — it has no dependency on `regmap.hpp` at all — it adds an
+independent policy gate a dispatch call site consults *in addition to*
+that model. The pre-replacement `AuthController` wrapper is dropped
+outright rather than rebound: there is no longer a single unified
+`Controller::send()` chokepoint to wrap (that unification, if any, does
+not land until the CLI/capi/adapt rebuilds at v2.16.0), so `permit`/`check`
+are standalone primitives a dispatch call site invokes directly, the same
+"primitives driven by the embedding application" pattern
+`rcp/e2e.hpp`/`rcp/watchdog.hpp`/`rcp/request.hpp` already established.
+
+`ratelimit.hpp`'s token bucket is now one per (target stream, target
+endpoint) admission-control domain (`ratelimit::EndpointKey`), keyed the
+same stream/`byte_bus_id` way, instead of one per `Controller`
+instance/`Zone`; `ratelimit::Manager` multiplexes domains lazily, mirroring
+`rcp/watchdog.hpp`'s `Manager` multiplexing one `StreamWatchdog` per
+stream. The pre-replacement `Priority::Critical` bypass — `Priority` being
+`rcp/prioqueue.hpp`'s whole client-side-priority-wrapper concept, marked
+DEPRECATE outright per the disposition table, with no TC18 analog — is
+replaced by an explicit `is_safety_tagged` argument callers derive from
+`rcp::request::is_safety_variant` (v2.6.0): the traffic class that
+ultimately drives an endpoint through its configured safe state once it
+executes is the closest real analog to "must not be dropped by an
+admission-control layer" here. Like every other Phase 14 primitive header,
+`TokenBucket::take`/`Manager::admit` take an explicit `now_ms` rather than
+reading a clock internally, the same convention `rcp/e2e.hpp`'s
+`RxWatchdog` and `rcp/watchdog.hpp`'s `StreamWatchdog` already use.
+
+Nothing else in this tree depended on the old `AuthController`/
+`ratelimit::Controller` APIs (only their own tests did), so no legacy shim
+was needed, same as every other Phase 14 rebuild. New/rewritten coverage
+lives in `tests/test_authz.cpp` (`REQ-AUTH-001..008`, entirely rewritten)
+and `tests/test_ratelimit.cpp` (`REQ-RL-001..008`, entirely rewritten),
+traced in `.fusa-reqs.json`. Full bit-for-bit conformance against other
+TC18 implementations is not claimed — see this file's own disclaimer
+pattern in `rcp/regmap.hpp`/`rcp/request.hpp`/`rcp/e2e.hpp`/
+`rcp/watchdog.hpp`.
+
 ### 56. Test & Simulation Harness Rebuild (v2.12.0)
 
 - Rebuild `mock.hpp` as an in-process RC Server simulator implementing the
@@ -812,6 +965,75 @@ disposition table below for the full reasoning per package.
 - Depends on: everything in Phase 13 through v2.6.0 at minimum, to have a
   representative register map and safe-state model to simulate
 
+**Done (v2.12.0):** `rcp/mock.hpp` is replaced in full, per the Satellite
+Package Disposition table's entry for this file — the prior in-process
+`Controller`/`Registry` pair built on rcp.hpp's Zone/Command model is
+discarded, not adapted, since zone-addressed request/response has no
+analog once addressing moves to server+endpoint identifiers. `mock::Server`
+holds a real `lifecycle::ServerLifecycle` (starting `HW_UNCONFIGURED`, per
+v2.1.0), a real `regmap::RegisterMap` plus `regmap::Ep0` (including EP0's
+unrestricted whole-map read and root-client-gated whole-map write, also
+v2.1.0), and one instance each of `gpio::GpioEndpoint` and
+`spi::SpiEndpoint` (v2.3.0) as its representative endpoint set — GPIO and
+SPI were the natural choice, being the two endpoint types the roadmap
+itself sequenced first specifically for having the simplest fully-built
+request/response shapes (see milestone 47's own note). `Server::dispatch`
+is the single request/response entry point: it decodes the mandatory
+standard request kind's `evt[2:0]`/`op` fields (`rcp/acf.hpp`, v2.0.0),
+answers EP0 reads with the register map's magic number (the one field a
+`rcp/discovery.hpp`-shaped read needs by default — whole-map wire
+serialization itself remains out of scope, per `regmap.hpp`'s own header
+comment), rejects EP0 writes (reachable only through `ep0().write_whole_map`
+directly), and gates GPIO/SPI operational traffic on the lifecycle being
+`RCP_CONFIGURED` — this mock's own choice, not a rule reused from
+`regmap::Ep0::check_write_access`'s config-block locking, which models a
+different thing (whether an endpoint's *configuration* may still change,
+not whether the endpoint may be *operated*).
+
+The old `Controller`/`Registry` content is preserved unchanged, under
+`rcp/legacy_mock.hpp`, purely so the still-untouched old-model dependents
+that build against it keep working until each is rebound at its own later
+milestone — `rcp/capi_impl.hpp`, `rcp/cli.hpp`, and `rcp/config.hpp` (all
+v2.16.0 per the disposition table), plus every test file that used the old
+mock as a generic in-process test double for its own not-yet-rebuilt
+package (`firmware`/`prioqueue`/`proxy`/`record`/`redundancy`/`tsn`/
+`zonegroup`/`federation`/`observe`/`faultinject`/`loan`/`admin`, most
+themselves DEPRECATE/ADAPT candidates for later milestones). This is the
+same file-split precedent `rcp/wire.hpp`'s `rcp/legacy_wire.hpp` established
+at v2.0.0 — REQ-CTRL-*/REQ-REG-*/REQ-RESP-*/REQ-STAT-*/REQ-ERR-011 and
+their `tests/test_mock.cpp` coverage move to `tests/test_legacy_mock.cpp`
+unchanged, matching `REQ-UDP-*`'s equivalent move at that milestone.
+
+`rcp/sim.hpp` is likewise replaced in full — the prior `sim::Controller`,
+which implemented the full old `rcp::Controller` interface plus a
+client-driven `CommandType::Watchdog` kick model, is discarded outright
+(nothing else in this tree depended on it beyond its own test, so no
+legacy shim was needed here, unlike `mock.hpp`'s split). `sim::Simulator`
+wraps one `mock::Server` with the latency/jitter modeling concept carried
+forward unchanged from the pre-replacement design (`LatencyModel::
+Constant`/`Jitter`, `simulated_latency_ms()`) and the same Fault/Recover
+scenario-testing concept, re-targeted at this module's
+`std::error_code`/`AcfMessageInfo` response shape. Watchdog-miss detection
+is wired through `rcp::watchdog::StreamWatchdog`/`Manager` (v2.10.0)
+exactly as the roadmap called for: `Simulator::dispatch` kicks a
+registered stream's watchdog via `Manager::on_request_received` on every
+accepted request, and `poll_watchdog` forwards to `Manager::poll` for the
+caller to drive on its own schedule. Per the same "primitives, not a
+scheduler" convention every Phase 14 header has followed since v2.9.0/
+v2.10.0, `Simulator` spawns no background thread of its own — the old
+`sim::Controller`'s status/watchdog polling threads are not carried
+forward; `simulated_latency_ms()` reports a delay for the caller to apply
+however it sees fit rather than sleeping on the caller's behalf.
+
+New/rewritten coverage lives in `tests/test_mock.cpp` (`REQ-MOCK-001..010`,
+new) and `tests/test_sim.cpp` (`REQ-SIM-001..007`, entirely rewritten under
+the same file/prefix identity as the discarded pre-replacement coverage),
+traced in `.fusa-reqs.json`; the pre-replacement mock coverage lives on,
+unchanged, as `tests/test_legacy_mock.cpp`. Full bit-for-bit conformance
+against other TC18 implementations is not claimed, same as the equivalent
+disclaimers in `rcp/regmap.hpp`, `rcp/lifecycle.hpp`, `rcp/gpio.hpp`, and
+`rcp/spi.hpp`.
+
 ---
 ### Phase 15 — Transport & Ecosystem Bridge Migration
 ---
@@ -823,6 +1045,45 @@ disposition table below for the full reasoning per package.
   header it uses today — `wire.hpp` is retired outright, not adapted, since
   it *is* the old wire format this whole roadmap replaces
 - Depends on: Wire format core (v2.0.0)
+
+**Done (v2.13.0):** `rcp/udp.hpp` is replaced in full, per the Satellite
+Package Disposition table's entry for this file — the bespoke `R`/`C`-magic
+16-byte Zone/Command/Response/Status frame this file used to carry
+(`rcp/legacy_wire.hpp`) is discarded outright, not adapted, matching the
+roadmap's own call for this milestone. `udp::Frame`/`encode_frame`/
+`decode_frame` compose `rcp/avtp.hpp`'s NTSCF/TSCF header codec with
+`rcp/acf.hpp`'s ACF_ABB/ACF_GBB message codec into one AVTPDU, carried as
+the UDP datagram payload unmodified — this implementation's own reading of
+IEEE 1722 Annex J's UDP/IP encapsulation, consistent with `rcp/avtp.hpp`'s
+own header comment that its framing is transport-agnostic by design; no
+additional encapsulation header is layered on top. `udp::Server` binds a UDP
+socket, decodes each inbound datagram as a `Frame`, dispatches the carried
+ACF request to a caller-supplied `Handler` shaped to match
+`rcp::mock::Server::dispatch`'s signature (v2.12.0) so that simulator can be
+wired up as this transport's handler directly, and answers the sender under
+the same NTSCF/TSCF header kind the request arrived under; distinct sender
+addresses are assigned stable, distinct opaque client ids, first-seen order.
+`udp::Client` connects to one server address and correlates each response by
+the `(byte_bus_id, transaction_num)` echo rule `rcp/acf.hpp`'s
+`make_response` documents, rather than a locally invented request id — the
+new addressing model has no analog of the old `Command::id`. Neither class
+builds on `rcp.hpp`'s `Zone`/`Command`/`Controller`/`Registry` model, per
+that file's own header comment that nothing new should; `udp::Registry`'s
+old Zone-keyed controller-collection role has no replacement here since
+addressing moved to stream/byte_bus_id. Grepping the tree for consumers of
+the old `udp::ZoneServer`/`udp::Controller`/`udp::Registry` API before this
+change found none beyond this file's own (now-deleted) test and
+`rcp/tsn.hpp`'s doc comment — `rcp/tsn.hpp` itself only ever depended on the
+generic `rcp::Controller` interface plus a raw socket fd, never on `udp::`
+types directly — so no legacy-shim split file was needed here, unlike
+`rcp/mock.hpp`'s at v2.12.0; `rcp/legacy_wire.hpp` is deleted outright in the
+same change. New coverage lives in `tests/test_udp.cpp` (`REQ-UDP-001..012`,
+entirely rewritten under the same file/prefix identity as the discarded
+pre-replacement coverage, the same convention `tests/test_sim.cpp`'s
+`REQ-SIM-001..007` rewrite followed at v2.12.0), traced in `.fusa-reqs.json`.
+Full bit-for-bit conformance against other TC18/Annex-J implementations is
+not claimed, same as the equivalent disclaimers in `rcp/avtp.hpp`,
+`rcp/acf.hpp`, and `rcp/discovery.hpp`.
 
 ### 58. Auxiliary Transport & Cross-Cutting Rebind (v2.14.0)
 
@@ -856,6 +1117,82 @@ disposition table below for the full reasoning per package.
   unaffected
 - Depends on: Wire format core (v2.0.0); UDP/IP transport (v2.13.0) for the
   `mdns`/`tls` items specifically
+
+**Done (v2.14.0):** All seven files are ADAPTed in place per the Satellite
+Package Disposition table's entries — each concept survives, rebound onto
+the new stream/`byte_bus_id` addressing model instead of the removed
+`Zone`/`Command`/`Controller`/`Registry` types. `rcp/rcp.hpp`'s own
+"nothing new should build on this" notice held throughout: none of the
+seven include it for anything beyond `rcp::Context`/the generic
+`ErrClosed`/`ErrNotFound`/`ErrAlreadyExists`/`ErrTimeout` error constants
+(also not part of that pre-replacement model) and, for `loan.hpp`, the
+already-generic `rcp::Loan` RAII buffer holder.
+
+`mdns.hpp`'s `Discoverer`/`StaticDiscoverer`/`Announcer` interfaces are
+unchanged in shape; `ZoneInfo` becomes `ServerInfo`, keyed by an opaque
+`stream_key` (typically `avtp::StreamId::to_u64()`) instead of `Zone`.
+`tls.hpp`'s `Config` (cert/key/ca/verify_peer) survives unchanged;
+`Controller`/`ZoneServer`/`Registry` are replaced by `SecureClient`/
+`SecureServer` wrapping `rcp/udp.hpp`'s `Server`/`Client` (v2.13.0), same
+OpenSSL-gated-real-backend/`function_not_supported`-stub split as before.
+The header now also states plainly, per this milestone's own instruction,
+that the specification's preferred link-security mechanism is MACsec
+(802.1AE) at layer 2 — this package addresses the UDP/IP path only and
+does not implement MACsec itself.
+
+`tsn.hpp`'s `PCPMap` now maps all seven `rcp::request::RequestCategory`
+values (v2.5.0) instead of the removed `Priority` enum's three, preserving
+the same cancellation > triggered > timed > compound > compound-wait >
+chained > standard execution-priority ordering `rcp/request.hpp`'s
+`priority_rank` already defines (extraction §3.14). The `Controller`
+wrapper is dropped for a standalone `apply_priority(fd, cfg, category)`
+free function — there is no unified client-side `send()` chokepoint left
+to wrap (that unification, if any, does not land until the CLI/capi/adapt
+rebuilds at v2.16.0, per `rcp/authz.hpp`'s equivalent v2.11.0 note) — and
+its header comment now notes that genuine IEEE 1722 stream reservation
+(802.1Qat SRP), where available, is preferable to this socket-level hint.
+
+`shmem.hpp`'s `ZoneServer`/`Controller` pair becomes `Channel`/`Registry`,
+keyed by `stream_key` the same way `rcp/watchdog.hpp`'s `Manager` already
+is; `Channel::request()` still dispatches to a caller-supplied handler
+in-process with no wire encode/decode step, the same zero-copy value
+proposition as before, now shaped to match `udp::Server::Handler`/
+`rcp::mock::Server::dispatch`'s signature.
+
+`loan.hpp`'s `loan::Controller` (which wrapped the now-gone
+`rcp::LoaningController`) becomes a standalone `BufferPool`, the same
+"primitive, not a wrapped chokepoint" choice `tsn.hpp` makes at this
+milestone — a caller draws a `rcp::Loan` from it immediately before
+building an AVTPDU/ACF-framed request. Buffers are re-zeroed on reuse
+(closing a small aliasing gap the pre-replacement pool didn't guarantee).
+
+`record.hpp` and `observe.hpp` both now wrap a `RequestFn` — a
+`std::function` shaped like `udp::Client::request`'s core signature (the
+"new client-side send-equivalent call" this milestone calls for) — rather
+than the removed `rcp::Controller`. `record::Entry` carries
+`acf::AcfMessageInfo`/payload pairs for both the request and response
+instead of `Command`/`Response`/`Status`; `Record::write_binary` now has a
+matching `read_binary`, encoding each message via `rcp::acf::encode_acf_abb`/
+`encode_acf_gbb` (the same codec the wire path itself uses) so the on-disk
+format round-trips losslessly rather than only being asserted non-empty.
+`observe::Span`/`Metric` swap `Zone`/`CommandType` for `byte_bus_id`/
+`acf_msg_type` and an opaque `stream_key`; the OTel-style span/counter
+approach itself (`MetricsSink`/`NoopSink`/`InMemorySink`) is unchanged.
+
+Grepping the tree for consumers of each file's pre-v2.14.0 API beyond its
+own (now-rewritten) test found none, so no legacy-shim split file was
+needed for any of the seven, same as `rcp/udp.hpp`'s v2.13.0 rebuild.
+New/rewritten coverage lives in `tests/test_mdns.cpp` (`REQ-MDNS-001..008`),
+`tests/test_tls.cpp` (`REQ-TLS-001..010`), `tests/test_tsn.cpp`
+(`REQ-TSN-001..006`), `tests/test_shmem.cpp` (`REQ-SHMEM-001..008`),
+`tests/test_loan.cpp` (`REQ-LOAN-001..006`), `tests/test_record.cpp`
+(`REQ-REC-001..008`), and `tests/test_observe.cpp` (`REQ-OBS-001..008`) —
+all entirely rewritten under the same file/prefix identity as the
+discarded pre-replacement coverage, the same convention `tests/test_udp.cpp`
+followed at v2.13.0 — traced in `.fusa-reqs.json`. Full bit-for-bit
+conformance against other TC18/Annex-J implementations is not claimed,
+same as the equivalent disclaimers in `rcp/avtp.hpp`, `rcp/acf.hpp`,
+`rcp/discovery.hpp`, and `rcp/udp.hpp`.
 
 ### 59. Application-Layer Protocol Bridge Rebind (v2.15.0)
 
@@ -997,6 +1334,36 @@ orthogonal to the protocol replacement.
 | `version.hpp` | KEEP AS-IS | Single version-string constant; mechanically bumped per release, no design dependency on the protocol |
 | `relay/relay.hpp` | KEEP AS-IS | Protocol-agnostic `Message`/`Channel`/`Node`/`Caller`/`Errc` types have no dependency on `rcp::` internals; only the RCP-side mapping in `adapt.hpp` needs rework |
 | Safety/certification tooling (`.fusa*.json`, `fmea.*`, `HARA.md`, `TARA-ANALYSIS.md`, `SAFETY_PLAN.md`, `CYBERSECURITY.md`, `AUDIT_PACK.md`, `tla/`, `cmake/`, `tooling/`) | KEEP AS-IS | Genuinely orthogonal process/tooling scaffolding; regenerated with new requirement IDs at the Certification Refresh milestone (v2.18.0) rather than redesigned |
+
+### Post-hoc naming reconciliation (RELAY spec §13.7.2, issue #45)
+
+RELAY spec v1.14 expanded §13.7.2's standard module-name registry with
+canonical names for the RCP protocol-core concerns this Phase 13 rewrite
+builds, prompted by comparing this effort against the equivalent go/rust/c
+RCP replacements. Two naming deltas from milestone 44/49 above were
+corrected to match, without any behavior change:
+
+- `rcp/wire.hpp` (milestone 44, v2.0.0) is split into `rcp/avtp.hpp`
+  (AVTPDU/NTSCF/TSCF header framing) and `rcp/acf.hpp` (ACF_ABB/ACF_GBB
+  message format) — the registry names these two concerns separately.
+  Every table/paragraph above that refers to `rcp/wire.hpp` as the then-
+  current file is describing the shape of the milestone 44/49/50/51 work as
+  it shipped at the time; the file itself now lives under those two names.
+  `rcp/legacy_wire.hpp` (the pre-replacement 16-byte codec) is unaffected
+  and keeps its name.
+- `rcp/sequencer.hpp` (milestone 49, v2.5.0) is renamed `rcp/request.hpp` to
+  match the registry's `request` entry ("conditional-request taxonomy... and
+  sequencers") — the file's contents already covered exactly that combined
+  scope, so this was a rename, not a split; `SequencerTable` keeps its name
+  as the internal sequencer-state sub-concept within the module.
+- `rcp/lifecycle.hpp`, `rcp/regmap.hpp`, `rcp/discovery.hpp`, and
+  `rcp/e2e.hpp` already matched the registry and were left unchanged.
+- `rcp/fragment.hpp` is not created: milestone 52 (v2.8.0) above already
+  decided fragmentation no-go for this cycle, so there is no fragmentation
+  logic anywhere in this tree to extract into a module.
+- `canbr.hpp`/`linbr.hpp`'s DEPRECATE call above (vs. go-RCP's ADAPT) is a
+  real cross-repo architectural difference, not a naming issue, and is
+  intentionally left unresolved here — see issue #45.
 
 ---
 ### Appendix A — Legacy Roadmap (v0.1.0–v1.11, superseded)

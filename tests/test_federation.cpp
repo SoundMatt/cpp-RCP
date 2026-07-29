@@ -9,17 +9,17 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "rcp/federation.hpp"
-#include "rcp/mock.hpp"
+#include "rcp/legacy_mock.hpp"
 
 using namespace rcp;
 
 TEST_CASE("federation: local controller preferred over lease", "[federation]") {
     auto reg = federation::new_registry("hpc-a");
-    auto local_ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto local_ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     REQUIRE_FALSE(reg->register_ctrl(local_ctrl));
 
     // Add a lease for the same zone — local should win
-    auto remote_ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto remote_ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     federation::Lease lease;
     lease.owner       = "hpc-b";
     lease.expires_at  = std::chrono::steady_clock::now() + std::chrono::seconds(60);
@@ -34,7 +34,7 @@ TEST_CASE("federation: local controller preferred over lease", "[federation]") {
 TEST_CASE("federation: remote lease used when no local", "[federation][REQ-FED-004]") {
     auto reg = federation::new_registry("hpc-a");
 
-    auto remote_ctrl = std::make_shared<mock::Controller>(Zone::RearLeft);
+    auto remote_ctrl = std::make_shared<legacy_mock::Controller>(Zone::RearLeft);
     federation::Lease lease;
     lease.owner       = "hpc-b";
     lease.expires_at  = std::chrono::steady_clock::now() + std::chrono::seconds(60);
@@ -49,7 +49,7 @@ TEST_CASE("federation: remote lease used when no local", "[federation][REQ-FED-0
 TEST_CASE("federation: expired lease returns ErrNotFound", "[federation]") {
     auto reg = federation::new_registry("hpc-a");
 
-    auto remote_ctrl = std::make_shared<mock::Controller>(Zone::Central);
+    auto remote_ctrl = std::make_shared<legacy_mock::Controller>(Zone::Central);
     federation::Lease lease;
     lease.owner       = "hpc-b";
     lease.expires_at  = std::chrono::steady_clock::now() - std::chrono::seconds(1); // expired
@@ -64,7 +64,7 @@ TEST_CASE("federation: expired lease returns ErrNotFound", "[federation]") {
 TEST_CASE("federation: revoke_lease removes lease", "[federation]") {
     auto reg = federation::new_registry("hpc-a");
 
-    auto remote_ctrl = std::make_shared<mock::Controller>(Zone::FrontRight);
+    auto remote_ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontRight);
     federation::Lease lease;
     lease.owner       = "hpc-b";
     lease.expires_at  = std::chrono::steady_clock::now() + std::chrono::seconds(60);
@@ -83,18 +83,18 @@ TEST_CASE("federation: local_id is preserved", "[federation][REQ-FED-005]") {
 
 TEST_CASE("federation: register_ctrl rejects duplicate zone", "[federation][REQ-FED-008]") {
     auto reg = federation::new_registry("hpc-a");
-    REQUIRE_FALSE(reg->register_ctrl(std::make_shared<mock::Controller>(Zone::Central)));
-    auto ec = reg->register_ctrl(std::make_shared<mock::Controller>(Zone::Central));
+    REQUIRE_FALSE(reg->register_ctrl(std::make_shared<legacy_mock::Controller>(Zone::Central)));
+    auto ec = reg->register_ctrl(std::make_shared<legacy_mock::Controller>(Zone::Central));
     REQUIRE(ec == ErrAlreadyExists);
 }
 
 TEST_CASE("federation: close closes local and remote controllers", "[federation][REQ-FED-006]") {
     auto reg = federation::new_registry("hpc-a");
 
-    auto local_ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto local_ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     REQUIRE_FALSE(reg->register_ctrl(local_ctrl));
 
-    auto remote_ctrl = std::make_shared<mock::Controller>(Zone::RearLeft);
+    auto remote_ctrl = std::make_shared<legacy_mock::Controller>(Zone::RearLeft);
     federation::Lease lease;
     lease.owner       = "hpc-b";
     lease.expires_at  = std::chrono::steady_clock::now() + std::chrono::seconds(60);

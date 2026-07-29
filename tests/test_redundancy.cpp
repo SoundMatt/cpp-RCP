@@ -8,7 +8,7 @@
 // fusa:test REQ-RED-008
 #include <catch2/catch_test_macros.hpp>
 
-#include "rcp/mock.hpp"
+#include "rcp/legacy_mock.hpp"
 #include "rcp/redundancy.hpp"
 
 #include <memory>
@@ -34,8 +34,8 @@ private:
 } // namespace
 
 TEST_CASE("redundancy: primary succeeds, standby unused", "[redundancy]") {
-    auto primary = std::make_shared<mock::Controller>(Zone::FrontLeft);
-    auto standby = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto primary = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
+    auto standby = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
 
     auto ctrl = redundancy::new_controller(primary, standby);
     REQUIRE(ctrl->is_primary_active());
@@ -49,8 +49,8 @@ TEST_CASE("redundancy: primary succeeds, standby unused", "[redundancy]") {
 }
 
 TEST_CASE("redundancy: manual promote switches to standby", "[redundancy]") {
-    auto primary = std::make_shared<mock::Controller>(Zone::FrontLeft);
-    auto standby = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto primary = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
+    auto standby = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl    = redundancy::new_controller(primary, standby);
 
     ctrl->promote();
@@ -64,8 +64,8 @@ TEST_CASE("redundancy: manual promote switches to standby", "[redundancy]") {
 }
 
 TEST_CASE("redundancy: double promote returns to primary", "[redundancy]") {
-    auto primary = std::make_shared<mock::Controller>(Zone::FrontLeft);
-    auto standby = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto primary = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
+    auto standby = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl    = redundancy::new_controller(primary, standby);
 
     ctrl->promote();
@@ -74,15 +74,15 @@ TEST_CASE("redundancy: double promote returns to primary", "[redundancy]") {
 }
 
 TEST_CASE("redundancy: zone() returns zone of active controller", "[redundancy][REQ-RED-008]") {
-    auto primary = std::make_shared<mock::Controller>(Zone::RearRight);
-    auto standby = std::make_shared<mock::Controller>(Zone::RearRight);
+    auto primary = std::make_shared<legacy_mock::Controller>(Zone::RearRight);
+    auto standby = std::make_shared<legacy_mock::Controller>(Zone::RearRight);
     auto ctrl    = redundancy::new_controller(primary, standby);
     REQUIRE(ctrl->zone() == Zone::RearRight);
 }
 
 TEST_CASE("redundancy: auto-promotes standby on ErrClosed", "[redundancy][REQ-RED-002]") {
     auto primary = std::make_shared<FailController>(Zone::FrontLeft, ErrClosed);
-    auto standby = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto standby = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl    = redundancy::new_controller(primary, standby);
     REQUIRE(ctrl->is_primary_active());
 
@@ -94,7 +94,7 @@ TEST_CASE("redundancy: auto-promotes standby on ErrClosed", "[redundancy][REQ-RE
 
 TEST_CASE("redundancy: auto-promotes standby on ErrTimeout", "[redundancy][REQ-RED-003]") {
     auto primary = std::make_shared<FailController>(Zone::FrontLeft, ErrTimeout);
-    auto standby = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto standby = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     auto ctrl    = redundancy::new_controller(primary, standby);
 
     Command cmd; cmd.zone = Zone::FrontLeft; cmd.type = CommandType::Get;
@@ -106,7 +106,7 @@ TEST_CASE("redundancy: auto-promotes standby on ErrTimeout", "[redundancy][REQ-R
 TEST_CASE("redundancy: auto_promote=false disables automatic failover",
           "[redundancy][REQ-RED-007]") {
     auto primary = std::make_shared<FailController>(Zone::FrontLeft, ErrClosed);
-    auto standby = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto standby = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     redundancy::Config cfg;
     cfg.auto_promote = false;
     auto ctrl = redundancy::new_controller(primary, standby, cfg);
@@ -118,8 +118,8 @@ TEST_CASE("redundancy: auto_promote=false disables automatic failover",
 }
 
 TEST_CASE("redundancy: close() closes both controllers", "[redundancy][REQ-RED-006]") {
-    auto primary = std::make_shared<mock::Controller>(Zone::Central);
-    auto standby = std::make_shared<mock::Controller>(Zone::Central);
+    auto primary = std::make_shared<legacy_mock::Controller>(Zone::Central);
+    auto standby = std::make_shared<legacy_mock::Controller>(Zone::Central);
     auto ctrl    = redundancy::new_controller(primary, standby);
 
     REQUIRE_FALSE(ctrl->close());

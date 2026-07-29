@@ -7,104 +7,260 @@
 // fusa:test REQ-WDG-007
 // fusa:test REQ-WDG-008
 
+// Tests for rcp/watchdog.hpp — the per-request-stream watchdog driver
+// (ROADMAP.md milestone 54, "Watchdog & Liveness Rebuild", v2.10.0).
+
 #include <catch2/catch_test_macros.hpp>
-#include <rcp/mock.hpp>
-#include <rcp/watchdog.hpp>
 
-#include <atomic>
-#include <chrono>
-#include <thread>
+#include "rcp/watchdog.hpp"
 
-using namespace rcp;
+#include <vector>
 
-// ── Keeper creation ───────────────────────────────────────────────────────────
+using namespace rcp::watchdog;
+using rcp::regmap::RequestStreamConfig;
+using rcp::request::request_record_for;
+using rcp::request::RequestLedger;
+using rcp::request::RequestState;
+using rcp::request::RequestTypeOpcode;
 
-TEST_CASE("Watchdog Keeper constructs without error", "[watchdog][REQ-WDG-001]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
-    watchdog::Config cfg;
-    cfg.interval      = std::chrono::milliseconds(200);
-    cfg.timeout       = std::chrono::milliseconds(50);
-    cfg.degrade_after = 3;
-    cfg.fault_after   = 5;
-    watchdog::Keeper keeper(cfg, {ctrl});
+// ── StreamWatchdog::check — overflow detection ───────────────────────────────
+
+TEST_CASE("StreamWatchdog never overflows while disabled or before any kick", "[watchdog][REQ-WDG-001]") {
+    RequestStreamConfig cfg;
+    cfg.rx_wd_timeout_interval = 100;
+    RequestLedger ledger;
+    StreamWatchdog wd;
+
+    REQUIRE_FALSE(wd.check(/*stream_key=*/1, cfg, ledger, /*now_ms=*/10'000).has_value());
+
+    cfg.rx_wd_enable = true;
+    REQUIRE_FALSE(wd.check(1, cfg, ledger, 10'000).has_value()); // never kicked
 }
 
-// ── Health state transitions ──────────────────────────────────────────────────
+TEST_CASE("StreamWatchdog::check reports overflow once the timeout interval elapses since the last kick",
+          "[watchdog][REQ-WDG-001]") {
+    RequestStreamConfig cfg;
+    cfg.rx_wd_enable           = true;
+    cfg.rx_wd_timeout_interval = 100;
+    RequestLedger ledger;
+    StreamWatchdog wd;
 
-TEST_CASE("Watchdog transitions zone to Faulted after misses exceed fault_after", "[watchdog][REQ-WDG-002][REQ-WDG-003]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    wd.kick_from_request(1'000);
+    REQUIRE_FALSE(wd.check(1, cfg, ledger, 1'050).has_value());
 
-    // Close so every kick returns ErrClosed immediately.
-    { auto ec = ctrl->close(); (void)ec; }
-
-    watchdog::Config cfg;
-    cfg.interval      = std::chrono::milliseconds(20);
-    cfg.timeout       = std::chrono::milliseconds(5);
-    cfg.degrade_after = 2;
-    cfg.fault_after   = 3;
-
-    std::atomic<watchdog::HealthState> last_state{watchdog::HealthState::Healthy};
-    watchdog::Keeper keeper(cfg, {ctrl});
-    keeper.subscribe([&](const watchdog::HealthEvent& ev) {
-        last_state.store(ev.state);
-    });
-
-    // The background keeper thread needs fault_after (3) miss cycles of 20 ms to
-    // reach Faulted. On loaded/preempted CI runners the thread may be scheduled
-    // late, so poll up to a generous deadline rather than asserting after one
-    // fixed sleep (which is flaky — observed on macOS shared runners).
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (last_state.load() != watchdog::HealthState::Faulted &&
-           std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-
-    REQUIRE(last_state.load() == watchdog::HealthState::Faulted);
+    auto ev = wd.check(1, cfg, ledger, 1'101);
+    REQUIRE(ev.has_value());
+    REQUIRE(ev->overflowed);
+    REQUIRE(ev->stream_key == 1);
 }
 
-// ── Initial state ─────────────────────────────────────────────────────────────
+// ── kick_from_request resets on any inbound request ──────────────────────────
 
-TEST_CASE("Watchdog zone starts Healthy", "[watchdog][REQ-WDG-004]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+TEST_CASE("kick_from_request resets the watchdog regardless of what triggers it",
+          "[watchdog][REQ-WDG-002]") {
+    RequestStreamConfig cfg;
+    cfg.rx_wd_enable           = true;
+    cfg.rx_wd_timeout_interval = 100;
+    RequestLedger ledger;
+    StreamWatchdog wd;
 
-    watchdog::Config cfg;
-    cfg.interval = std::chrono::milliseconds(500); // long so no kicks fire
-    watchdog::Keeper keeper(cfg, {ctrl});
-
-    REQUIRE(keeper.health(Zone::FrontLeft) == watchdog::HealthState::Healthy);
+    wd.kick_from_request(1'000);
+    wd.kick_from_request(1'050); // a second, unrelated inbound request also resets it
+    REQUIRE_FALSE(wd.check(1, cfg, ledger, 1'100).has_value());
+    REQUIRE(wd.check(1, cfg, ledger, 1'151).has_value());
 }
 
-// ── Health recovery ───────────────────────────────────────────────────────────
+// ── Overflow -> safe-state latch + purge-normal/retain-safety ───────────────
 
-TEST_CASE("Watchdog zone stays Healthy when kicks succeed", "[watchdog][REQ-WDG-005][REQ-WDG-006]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+TEST_CASE("Overflow with rx_wd_safestate_enable latches safe state and purges normal requests",
+          "[watchdog][REQ-WDG-003]") {
+    RequestStreamConfig cfg;
+    cfg.rx_wd_enable           = true;
+    cfg.rx_wd_timeout_interval = 100;
+    cfg.rx_wd_safestate_enable = true;
 
-    watchdog::Config cfg;
-    cfg.interval      = std::chrono::milliseconds(20);
-    cfg.timeout       = std::chrono::milliseconds(10);
-    cfg.degrade_after = 2;
-    cfg.fault_after   = 3;
+    RequestLedger ledger;
+    REQUIRE_FALSE(ledger.submit(request_record_for(1, RequestTypeOpcode::Compound, /*cs=*/false)));
+    REQUIRE_FALSE(ledger.submit(request_record_for(2, RequestTypeOpcode::CompoundSafety, /*cs=*/false)));
 
-    std::atomic<watchdog::HealthState> last_state{watchdog::HealthState::Healthy};
-    watchdog::Keeper keeper(cfg, {ctrl});
-    keeper.subscribe([&](const watchdog::HealthEvent& ev) {
-        last_state.store(ev.state);
-    });
+    StreamWatchdog wd;
+    wd.kick_from_request(0);
+    auto ev = wd.check(7, cfg, ledger, 200);
 
-    // Wait a few kick cycles — controller responds OK.
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
-
-    // Should never have transitioned away from Healthy.
-    REQUIRE(last_state.load() == watchdog::HealthState::Healthy);
+    REQUIRE(ev.has_value());
+    REQUIRE(ev->overflowed);
+    REQUIRE(ev->entered_safe_state);
+    REQUIRE(ev->canceled_request_count == 1);
+    REQUIRE(wd.in_safe_state());
+    REQUIRE(ledger.find(1)->state == RequestState::Canceled);
+    REQUIRE(ledger.find(2)->state == RequestState::Pending);
 }
 
-// ── Close ─────────────────────────────────────────────────────────────────────
+TEST_CASE("Overflow without rx_wd_safestate_enable reports overflowed but does not latch or purge",
+          "[watchdog][REQ-WDG-003]") {
+    RequestStreamConfig cfg;
+    cfg.rx_wd_enable           = true;
+    cfg.rx_wd_timeout_interval = 100; // rx_wd_safestate_enable defaults to false
 
-TEST_CASE("Watchdog Keeper::close stops background kicks", "[watchdog][REQ-WDG-007][REQ-WDG-008]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
-    watchdog::Config cfg;
-    cfg.interval = std::chrono::milliseconds(50);
-    watchdog::Keeper keeper(cfg, {ctrl});
-    keeper.close();
-    // Destructor should join without hanging.
+    RequestLedger ledger;
+    REQUIRE_FALSE(ledger.submit(request_record_for(1, RequestTypeOpcode::Compound, /*cs=*/false)));
+
+    StreamWatchdog wd;
+    wd.kick_from_request(0);
+    auto ev = wd.check(1, cfg, ledger, 200);
+
+    REQUIRE(ev.has_value());
+    REQUIRE(ev->overflowed);
+    REQUIRE_FALSE(ev->entered_safe_state);
+    REQUIRE(ev->canceled_request_count == 0);
+    REQUIRE_FALSE(wd.in_safe_state());
+    REQUIRE(ledger.find(1)->state == RequestState::Pending);
+}
+
+// ── Latch persistence / explicit clear ───────────────────────────────────────
+
+TEST_CASE("Once latched, check() does not re-detect overflow until clear_safe_state",
+          "[watchdog][REQ-WDG-004]") {
+    RequestStreamConfig cfg;
+    cfg.rx_wd_enable           = true;
+    cfg.rx_wd_timeout_interval = 100;
+    cfg.rx_wd_safestate_enable = true;
+
+    RequestLedger ledger;
+    StreamWatchdog wd;
+    wd.kick_from_request(0);
+    REQUIRE(wd.check(1, cfg, ledger, 200)->overflowed);
+    REQUIRE(wd.in_safe_state());
+
+    // Still overdue at a later time, but the latch already fired -- no
+    // second "overflowed" report (should_emit_info_notification is off
+    // since rx_wd_info_enable defaults false, so this is nullopt).
+    REQUIRE_FALSE(wd.check(1, cfg, ledger, 500).has_value());
+
+    wd.clear_safe_state();
+    REQUIRE_FALSE(wd.in_safe_state());
+
+    // A fresh kick + a fresh overdue interval can latch again.
+    wd.kick_from_request(500);
+    auto ev = wd.check(1, cfg, ledger, 700);
+    REQUIRE(ev.has_value());
+    REQUIRE(ev->overflowed);
+    REQUIRE(wd.in_safe_state());
+}
+
+// ── Repeating info notification ───────────────────────────────────────────────
+
+TEST_CASE("check() reports the repeating info notification while latched with rx_wd_info_enable set",
+          "[watchdog][REQ-WDG-005]") {
+    RequestStreamConfig cfg;
+    cfg.rx_wd_enable           = true;
+    cfg.rx_wd_timeout_interval = 100;
+    cfg.rx_wd_safestate_enable = true;
+    cfg.rx_wd_info_enable      = true;
+
+    RequestLedger ledger;
+    StreamWatchdog wd;
+    wd.kick_from_request(0);
+
+    auto overflow_ev = wd.check(1, cfg, ledger, 200);
+    REQUIRE(overflow_ev.has_value());
+    REQUIRE(overflow_ev->info_notification_due); // due immediately on the latching poll too
+
+    // Every subsequent poll while latched repeats the notification.
+    auto ev2 = wd.check(1, cfg, ledger, 300);
+    REQUIRE(ev2.has_value());
+    REQUIRE_FALSE(ev2->overflowed); // already latched -- this is purely the repeat
+    REQUIRE(ev2->info_notification_due);
+
+    auto ev3 = wd.check(1, cfg, ledger, 400);
+    REQUIRE(ev3.has_value());
+    REQUIRE(ev3->info_notification_due);
+}
+
+TEST_CASE("check() reports nothing while latched with rx_wd_info_enable clear",
+          "[watchdog][REQ-WDG-005]") {
+    RequestStreamConfig cfg;
+    cfg.rx_wd_enable           = true;
+    cfg.rx_wd_timeout_interval = 100;
+    cfg.rx_wd_safestate_enable = true; // rx_wd_info_enable defaults false
+
+    RequestLedger ledger;
+    StreamWatchdog wd;
+    wd.kick_from_request(0);
+    REQUIRE(wd.check(1, cfg, ledger, 200)->overflowed);
+    REQUIRE_FALSE(wd.check(1, cfg, ledger, 300).has_value());
+}
+
+// ── Manager: multi-stream independence ────────────────────────────────────────
+
+TEST_CASE("Manager tracks each registered stream's watchdog state independently",
+          "[watchdog][REQ-WDG-006]") {
+    Manager mgr;
+    mgr.register_stream(1);
+    mgr.register_stream(2);
+
+    RequestStreamConfig cfg;
+    cfg.rx_wd_enable           = true;
+    cfg.rx_wd_timeout_interval = 100;
+    cfg.rx_wd_safestate_enable = true;
+    RequestLedger ledger1;
+    RequestLedger ledger2;
+
+    REQUIRE_FALSE(mgr.on_request_received(1, 0));
+    // Stream 2 is never kicked at all.
+
+    REQUIRE_FALSE(mgr.poll(1, cfg, ledger1, 50)); // not yet overdue (kicked at t=0, timeout 100ms)
+    REQUIRE_FALSE(mgr.in_safe_state(1));
+
+    REQUIRE_FALSE(mgr.poll(2, cfg, ledger2, 50)); // never kicked, but timeout has not elapsed yet either
+    REQUIRE_FALSE(mgr.in_safe_state(2));
+
+    // Stream 1 crosses its deadline (elapsed 150ms > 100ms) and latches;
+    // stream 2 -- still never kicked, so still not yet overdue at t=50 in
+    // its own clock frame -- is unaffected.
+    REQUIRE_FALSE(mgr.poll(1, cfg, ledger1, 150));
+    REQUIRE(mgr.in_safe_state(1));
+    REQUIRE_FALSE(mgr.in_safe_state(2));
+}
+
+// ── Unregistered stream error handling ───────────────────────────────────────
+
+TEST_CASE("Operations on an unregistered stream return stream_not_registered without side effects",
+          "[watchdog][REQ-WDG-007]") {
+    Manager mgr;
+    mgr.register_stream(1);
+
+    RequestStreamConfig cfg;
+    RequestLedger ledger;
+
+    REQUIRE(mgr.on_request_received(99, 0) == make_error_code(WatchdogErrc::stream_not_registered));
+    REQUIRE(mgr.poll(99, cfg, ledger, 0) == make_error_code(WatchdogErrc::stream_not_registered));
+    REQUIRE(mgr.clear_safe_state(99) == make_error_code(WatchdogErrc::stream_not_registered));
+    REQUIRE_FALSE(mgr.in_safe_state(99));
+
+    // Stream 1 remains registered and unaffected.
+    REQUIRE(mgr.is_registered(1));
+    REQUIRE_FALSE(mgr.on_request_received(1, 0));
+}
+
+// ── Subscribed callbacks ──────────────────────────────────────────────────────
+
+TEST_CASE("Manager::poll invokes every subscribed callback in registration order",
+          "[watchdog][REQ-WDG-008]") {
+    Manager mgr;
+    mgr.register_stream(1);
+
+    RequestStreamConfig cfg;
+    cfg.rx_wd_enable           = true;
+    cfg.rx_wd_timeout_interval = 100;
+    RequestLedger ledger;
+
+    std::vector<int> order;
+    mgr.subscribe([&](const HealthEvent&) { order.push_back(1); });
+    mgr.subscribe([&](const HealthEvent&) { order.push_back(2); });
+
+    REQUIRE_FALSE(mgr.on_request_received(1, 0));
+    REQUIRE_FALSE(mgr.poll(1, cfg, ledger, 200)); // overflow -> one HealthEvent
+
+    REQUIRE(order == std::vector<int>{1, 2});
 }

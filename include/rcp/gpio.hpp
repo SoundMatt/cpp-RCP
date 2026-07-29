@@ -19,7 +19,7 @@
 // trigger-signal table (v2.3.0), and is also the vehicle that exercises the
 // add/subtract saturation rule PWM_OUT reuses at v2.4.0. It rides on
 // rcp/regmap.hpp's generic/functional endpoint config split (v2.1.0) for
-// its functional config block and on rcp/wire.hpp's big-endian field codec
+// its functional config block and on rcp/avtp.hpp's big-endian field codec
 // helpers (v2.0.0) for its 4-byte payload, without changing either header.
 //
 // Field names and behavior below implement TC18's *behavior* as described in
@@ -27,12 +27,12 @@
 // text from that document is reproduced here. The concrete pin-direction bit
 // convention, functional-config layout, and trigger-signal id encoding
 // chosen in this file are this implementation's own, same as the equivalent
-// disclaimers in rcp/wire.hpp, rcp/regmap.hpp, and rcp/endpoint.hpp.
+// disclaimers in rcp/avtp.hpp, rcp/regmap.hpp, and rcp/endpoint.hpp.
 #pragma once
 
+#include <rcp/avtp.hpp>
 #include <rcp/endpoint.hpp>
 #include <rcp/regmap.hpp>
-#include <rcp/wire.hpp>
 
 #include <algorithm>
 #include <array>
@@ -108,19 +108,19 @@ inline std::error_code apply_gpio_write(endpoint::WriteSemantics op, GpioState& 
 }
 
 // ── Payload codec ─────────────────────────────────────────────────────────────
-// Big-endian 4-byte encoding, matching rcp/wire.hpp's own field convention
+// Big-endian 4-byte encoding, matching rcp/avtp.hpp's own field convention
 // (reusing its internal put_u32/get_u32 rather than re-deriving byte order
 // here).
 
 inline std::vector<uint8_t> encode_gpio_payload(PinMask mask) {
     std::vector<uint8_t> buf(kGpioPayloadLen);
-    wire::detail::put_u32(buf.data(), mask);
+    avtp::detail::put_u32(buf.data(), mask);
     return buf;
 }
 
 inline std::error_code decode_gpio_payload(const uint8_t* buf, size_t len, PinMask& out) noexcept {
-    if (len < kGpioPayloadLen) return wire::make_error_code(wire::WireErrc::short_buffer);
-    out = wire::detail::get_u32(buf);
+    if (len < kGpioPayloadLen) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    out = avtp::detail::get_u32(buf);
     return {};
 }
 
@@ -174,7 +174,7 @@ inline regmap::EndpointFunctionalConfig
 encode_gpio_functional_config(PinMask directions, const std::array<uint8_t, kMaxPins>& enabled_edge_masks) {
     regmap::EndpointFunctionalConfig cfg;
     cfg.data.resize(kGpioFunctionalConfigLen);
-    wire::detail::put_u32(cfg.data.data(), directions);
+    avtp::detail::put_u32(cfg.data.data(), directions);
     std::copy(enabled_edge_masks.begin(), enabled_edge_masks.end(),
               cfg.data.begin() + static_cast<long>(kGpioPayloadLen));
     return cfg;
@@ -184,8 +184,8 @@ inline std::error_code decode_gpio_functional_config(const regmap::EndpointFunct
                                                        PinMask& out_directions,
                                                        std::array<uint8_t, kMaxPins>& out_enabled_edge_masks) noexcept {
     if (cfg.data.size() < kGpioFunctionalConfigLen)
-        return wire::make_error_code(wire::WireErrc::short_buffer);
-    out_directions = wire::detail::get_u32(cfg.data.data());
+        return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    out_directions = avtp::detail::get_u32(cfg.data.data());
     std::copy(cfg.data.begin() + static_cast<long>(kGpioPayloadLen),
               cfg.data.begin() + static_cast<long>(kGpioFunctionalConfigLen),
               out_enabled_edge_masks.begin());

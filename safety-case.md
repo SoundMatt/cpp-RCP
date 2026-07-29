@@ -1,28 +1,30 @@
 # Safety Case — cpp-RCP
 
 **Standard:** iso26262  
-**Generated:** 2026-07-28T19:39:17Z  
+**Generated:** 2026-07-29T01:48:24Z  
 
 ## Goals
 
 | ID | Type | Status | Description |
 |----|------|--------|-------------|
-| G1 | Goal | undeveloped | cpp-RCP is acceptably safe for iso26262 ASIL-ASIL-B |
-| G2 | Goal | supported | Software development process meets iso26262 requirements |
-| G3 | Goal | undeveloped | No unacceptable residual risks remain |
-| G4 | Goal | undeveloped | All requirements are implemented and verified |
-| G5 | Goal | undeveloped | Static analysis reports no unmitigated errors |
-| G6 | Goal | supported | Tool is qualified per ISO 26262 Part 8 |
-| S1 | Strategy |  | Argument over safety process evidence |
-| S2 | Strategy |  | Argument over verification evidence |
-| Sn1 | Solution |  | SAFETY_PLAN.md — documented safety plan |
-| Sn2 | Solution |  | .fusa.json — project safety configuration |
-| Sn3 | Solution |  | .fusa-reqs.json — requirements register |
-| Sn4 | Solution |  | qualify-report.json — tool qualification evidence |
-| Sn5 | Solution |  | .fusa-evidence.json — test execution evidence |
-| Sn6 | Solution |  | check-report.json — safety check report |
-| C1 | Context |  | Project: cpp-RCP standard: iso26262 ASIL-ASIL-B |
-| A1 | Assumption |  | Compiler toolchain is itself qualified |
+| G1 | goal | undeveloped | cpp-RCP produces conformant, non-fabricated safety evidence for iso26262 ASIL-B |
+| G2 | goal | supported | cpp-RCP's own development process satisfies iso26262's tool-confidence-level requirements (ISO 26262-8 Clause 11) |
+| G3 | goal | supported | Every generated evidence artifact (fmea/tara/hara/safety-case/sas) passes the §1.6 content-quality baseline (no placeholder text, no blanket qualitative fallback) |
+| G4 | goal | undeveloped | Every requirement in .fusa-reqs.json is implemented and independently verified |
+| G5 | goal | undeveloped | Static analysis (check/lint/analyze/cyber) reports no unmitigated ERROR findings |
+| G6 | goal | supported | cpp-RCP itself is qualified as a verification tool per ISO 26262-8 Clause 11 |
+| St1 | strategy |  | Argument by direct inspection of generated evidence artifacts |
+| St2 | strategy |  | Argument over independent verification and qualification records |
+| Sn1 | solution |  | SAFETY_PLAN.md — documented development and evidence-generation plan |
+| Sn2 | solution |  | .fusa.json — declares the standard/ASIL this project is held to |
+| Sn3 | solution |  | .fusa-reqs.json — requirement registry with req/test traceability |
+| Sn4 | solution |  | qualify-report.json — tool qualification cases and pass/fail record |
+| Sn5 | solution |  | .fusa-evidence.json — collected test execution evidence |
+| Sn6 | solution |  | check-report.json — the aggregated finding report `check` produced |
+| Sn7 | solution |  | fmea.json / tara.json / .fusa-hara.json — pass the §1.6 quality baseline |
+| C1 | context |  | Project: cpp-RCP, standard: iso26262 ASIL-B |
+| A1 | assumption |  | The compiler toolchain used to build cpp-RCP is itself qualified or independently trusted for its intended use |
+| J1 | justification |  | §1.6.1's FUSA-STUB001/002 heuristics are an automatable proxy for content quality, not a substitute for a human reviewer's judgement — hence §1.6.2's attestation mechanism rather than a purely mechanical gate |
 
 ## Evidence (13 files)
 

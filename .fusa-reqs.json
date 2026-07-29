@@ -353,6 +353,86 @@
       "asil": "ASIL-A"
     },
     {
+      "id": "REQ-MOCK-001",
+      "title": "Server starts HW_UNCONFIGURED with a representative two-endpoint register map",
+      "text": "rcp::mock::Server shall construct with rcp::lifecycle::ServerLifecycle in state HwUnconfigured and an rcp::regmap::RegisterMap whose endpoint_count, generic_configs, functional_configs, and ep_id_mapping describe exactly two endpoints: GPIO at endpoint id/byte_bus_id 1 and SPI at endpoint id/byte_bus_id 2.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-002",
+      "title": "advance_to_rcp_configured drives the lifecycle straight to RCP_CONFIGURED",
+      "text": "rcp::mock::Server::advance_to_rcp_configured shall advance the server's ServerLifecycle from HwUnconfigured through HwConfigured to RcpConfigured and return a falsy std::error_code, since Server supplies no PlausibilityCheck of its own.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-003",
+      "title": "EP0 read answers the register map's magic number for any client",
+      "text": "rcp::mock::Server::dispatch, for a read request addressed to regmap::kEp0, shall return a ReadResponse whose payload is the RegisterMap::magic field encoded big-endian, for any client identity, per Ep0::check_read_access's unrestricted-read rule.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-004",
+      "title": "EP0 write via dispatch is always rejected",
+      "text": "rcp::mock::Server::dispatch, for a write request addressed to regmap::kEp0, shall return regmap::RegMapErrc::request_rejected and an ErrorResponse, since whole-map writes are only reachable through Ep0::write_whole_map directly, not through dispatch.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-005",
+      "title": "write_whole_map requires the root client",
+      "text": "rcp::mock::Server::ep0()'s write_whole_map shall return regmap::RegMapErrc::unauthorized_access for any client that is not the current root client, and shall apply the replacement RegisterMap when called by the root client.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-006",
+      "title": "Operational GPIO/SPI requests are rejected before RCP_CONFIGURED",
+      "text": "rcp::mock::Server::dispatch, for a request addressed to the GPIO or SPI endpoint while the server's lifecycle state is not RcpConfigured, shall return regmap::RegMapErrc::request_rejected and an ErrorResponse without touching either endpoint's live state.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-007",
+      "title": "GPIO write applies evt[2:0] semantics and read reflects the new state",
+      "text": "rcp::mock::Server::dispatch, for a write request addressed to the GPIO endpoint while RcpConfigured, shall decode the request's evt[2:0] field as an endpoint::WriteSemantics, apply it to the endpoint's live pin-value bitmask via gpio::GpioEndpoint::handle_write, and a subsequent read request shall observe the resulting value.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-008",
+      "title": "GPIO write with evt_ack set produces an Acknowledge response",
+      "text": "rcp::mock::Server::dispatch, for a GPIO write request with AcfMessageInfo::evt_ack set, shall build its response via acf::ResponseKind::Acknowledge instead of WriteResponse.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-009",
+      "title": "SPI transfer answers with the scripted POCI-in bytes for the addressed channel",
+      "text": "rcp::mock::Server::dispatch, for a request addressed to the SPI endpoint while RcpConfigured, shall decode the request's evt[2:0] field as a channel selector, drive spi::SpiEndpoint::transfer with the request payload as PICO-out data and whatever bytes set_spi_poci last scripted for that channel as POCI-in data, and answer with those POCI-in bytes as a ReadResponse.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-010",
+      "title": "dispatch to an unmapped byte_bus_id reports invalid_parameter",
+      "text": "rcp::mock::Server::dispatch, for a request whose byte_bus_id addresses neither EP0, GPIO, nor SPI, shall return regmap::RegMapErrc::invalid_parameter and an ErrorResponse.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-CTRL-001",
       "title": "Controller::send returns StatusOK with no handler",
       "text": "When no Handler is configured, Controller::send shall return a Response with status=ResponseStatus::OK.",
@@ -674,96 +754,96 @@
     },
     {
       "id": "REQ-UDP-001",
-      "title": "Header magic bytes 'RC'",
-      "text": "All wire frames shall begin with the two-byte sequence 0x52 ('R'), 0x43 ('C').",
+      "title": "Frame round-trips an NTSCF-framed ACF_ABB request",
+      "text": "rcp::udp::encode_frame/decode_frame shall round-trip a Frame carrying an NTSCF header (rcp::avtp::NtscfHeader) wrapping an ACF_ABB message (rcp::acf::AcfMessageInfo) unchanged: stream_id, sequence_num, the request's byte_bus_id/transaction_num/op, and its payload shall all be recoverable from the encoded bytes.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-002",
-      "title": "Protocol version field",
-      "text": "All wire frames shall carry the protocol version (currently 0x01) in byte 2.",
+      "title": "Frame round-trips a TSCF-framed request with avtp_timestamp",
+      "text": "rcp::udp::encode_frame/decode_frame shall round-trip a Frame carrying a TSCF header (rcp::avtp::TscfHeader), including its timestamp_valid flag and 32-bit avtp_timestamp, unchanged.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-003",
-      "title": "Message type field",
-      "text": "Byte 3 of every wire frame shall encode the message type: Command, Response, Status, Subscribe, or Unsubscribe.",
+      "title": "Frame round-trips an ACF_GBB message_timestamp",
+      "text": "rcp::udp::encode_frame/decode_frame shall round-trip a Frame whose AcfMessageInfo::acf_msg_type is kAcfMsgTypeGbb, including its mtv flag, 64-bit message_timestamp, and payload, unchanged.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-004",
-      "title": "Zone field",
-      "text": "Bytes 4 of every wire frame shall encode the target Zone as a uint8.",
+      "title": "decode_frame rejects a buffer shorter than the AVTPDU header",
+      "text": "rcp::udp::decode_frame shall return a non-zero std::error_code when given fewer bytes than the AVTPDU header (NTSCF or TSCF, selected by the subtype byte) requires.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-005",
-      "title": "CommandType field for commands",
-      "text": "Bytes 5\u20136 of Command frames shall encode the CommandType as a big-endian uint16.",
+      "title": "decode_frame rejects a buffer shorter than the ACF common header",
+      "text": "rcp::udp::decode_frame shall return a non-zero std::error_code when the AVTPDU header decodes successfully but fewer bytes than the 10-byte ACF common header (rcp::acf::kAcfCommonHeaderLen) remain.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-006",
-      "title": "Priority/Status field",
-      "text": "Byte 7 shall encode Priority for Command frames, ResponseStatus for Response frames, and Healthy flag for Status frames.",
+      "title": "decode_frame rejects an unrecognized ACF message type",
+      "text": "rcp::udp::decode_frame shall return a non-zero std::error_code when the byte immediately following a valid AVTPDU header is neither rcp::acf::kAcfMsgTypeAbb nor rcp::acf::kAcfMsgTypeGbb.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-007",
-      "title": "Command/response ID field",
-      "text": "Bytes 8\u201311 shall encode the Command or Response ID as a big-endian uint32.",
+      "title": "Server dispatches a decoded request through its handler and answers the sender",
+      "text": "rcp::udp::Server shall decode each inbound UDP datagram as a Frame, invoke its registered Handler with the decoded AcfMessageInfo and payload, and send the handler's response back to the originating sender address, framed under the same NTSCF/TSCF header kind the request arrived under.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-008",
-      "title": "Payload length field",
-      "text": "Bytes 12\u201315 shall encode the payload byte count as a big-endian uint32.",
+      "title": "Server answers Acknowledge by default when no handler is registered",
+      "text": "rcp::udp::Server shall respond to a decoded request with rcp::acf::ResponseKind::Acknowledge when no Handler has been set via set_handler.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-009",
-      "title": "Payload follows header",
-      "text": "The variable-length payload shall immediately follow the 16-byte header.",
+      "title": "Server assigns stable per-sender client ids",
+      "text": "rcp::udp::Server shall pass the same opaque client id to its Handler for every request originating from the same sender address, and a distinct id for a request from a different sender address.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-010",
-      "title": "Big-endian multi-byte fields",
-      "text": "All multi-byte fields in wire frames shall be encoded in big-endian (network) byte order.",
+      "title": "Client::request returns ErrTimeout when no response arrives",
+      "text": "rcp::udp::Client::request shall return rcp::ErrTimeout when the supplied rcp::Context's deadline elapses before a matching response frame is received.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-011",
-      "title": "Frame validation rejects bad magic",
-      "text": "The decoder shall return an error if frame bytes 0\u20131 are not 0x52, 0x43.",
+      "title": "Client::request correlates concurrent requests by byte_bus_id/transaction_num",
+      "text": "rcp::udp::Client::request shall match each inbound response frame to the pending request whose AcfMessageInfo::byte_bus_id and AcfMessageInfo::transaction_num it echoes, so that two outstanding requests with distinct (byte_bus_id, transaction_num) pairs each receive their own response.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-012",
-      "title": "Frame validation rejects bad version",
-      "text": "The decoder shall return an error if the version byte does not equal the supported protocol version.",
+      "title": "Server and Client close() are idempotent and requests after close fail",
+      "text": "rcp::udp::Server::close and rcp::udp::Client::close shall be safe to call more than once without blocking indefinitely or crashing, and rcp::udp::Client::request shall return rcp::ErrClosed once the Client has been closed.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -882,192 +962,240 @@
     },
     {
       "id": "REQ-WDG-001",
-      "title": "Keeper kicks all zones periodically",
-      "text": "watchdog::Keeper shall send a CmdWatchdog command to every registered zone controller at the configured interval.",
+      "title": "StreamWatchdog reports overflow per rx_wd_enable/rx_wd_timeout_interval",
+      "text": "rcp::watchdog::StreamWatchdog::check shall report HealthEvent::overflowed only once more than RequestStreamConfig::rx_wd_timeout_interval milliseconds have elapsed since the stream's last kick_from_request call, and only while RequestStreamConfig::rx_wd_enable is set.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-002",
-      "title": "Zone starts Healthy",
-      "text": "A zone controller shall be in the Healthy state immediately after Keeper construction.",
+      "title": "kick_from_request resets the watchdog for any inbound request",
+      "text": "rcp::watchdog::StreamWatchdog::kick_from_request shall reset that stream's watchdog on every call, regardless of the accepted request's kind or is_safety tag.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-003",
-      "title": "Degraded after degrade_after misses",
-      "text": "A zone controller shall transition to Degraded after degrade_after consecutive kick failures.",
+      "title": "Overflow purges normal requests and retains safety-tagged ones when safestate-enabled",
+      "text": "rcp::watchdog::StreamWatchdog::check shall, on overflow while RequestStreamConfig::rx_wd_safestate_enable is set, latch the stream into safe state and cancel every pending/started non-safety request on the supplied RequestLedger while leaving is_safety=true records untouched, reporting HealthEvent::entered_safe_state and the purge count; it shall latch nothing and purge nothing when rx_wd_safestate_enable is clear.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-004",
-      "title": "Faulted after fault_after misses",
-      "text": "A zone controller shall transition to Faulted after fault_after consecutive kick failures.",
+      "title": "Latched safe state does not re-fire until explicitly cleared",
+      "text": "Once rcp::watchdog::StreamWatchdog::check has latched a stream into safe state, subsequent check calls shall not re-detect overflow for that stream until clear_safe_state is called.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-005",
-      "title": "Recovery to Healthy on success",
-      "text": "A zone controller shall transition back to Healthy on the next successful kick after any degraded or faulted state.",
+      "title": "Repeating info notification while latched",
+      "text": "rcp::watchdog::StreamWatchdog::check shall report HealthEvent::info_notification_due on every call while the stream is latched into safe state and RequestStreamConfig::rx_wd_info_enable is set, and shall not report it otherwise.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-006",
-      "title": "Callback fires on transition",
-      "text": "The health callback shall be invoked with the new HealthState whenever a zone's health state changes.",
+      "title": "Manager multiplexes independent per-stream watchdog state",
+      "text": "rcp::watchdog::Manager shall track each registered stream_key's watchdog state independently, such that kicking, overflowing, or latching one registered stream shall not affect any other registered stream's state.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-007",
-      "title": "Kick timeout respected",
-      "text": "Each kick shall use a Context with the configured timeout; a timeout response shall count as a miss.",
+      "title": "Unregistered stream operations report stream_not_registered",
+      "text": "rcp::watchdog::Manager::on_request_received, poll, and clear_safe_state shall return WatchdogErrc::stream_not_registered, unchanged, for any stream_key not passed to register_stream, without altering any other registered stream's state.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-WDG-008",
-      "title": "Close stops background thread",
-      "text": "Keeper::close() shall cause the background kick thread to terminate without hanging.",
+      "title": "Subscribed callbacks fire in registration order",
+      "text": "rcp::watchdog::Manager::poll shall invoke every callback registered via subscribe, in registration order, exactly once for each HealthEvent it produces.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-001",
-      "title": "Monitor subscribes to all zones",
-      "text": "deadline::Monitor shall subscribe to each registered zone controller's Status stream on construction.",
+      "title": "Never-reported target is dead",
+      "text": "rcp::deadline::LivenessTracker::dead shall return true for a target on which note_activity has never been called, regardless of the elapsed time argument.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-002",
-      "title": "Dead event on initial deadline",
-      "text": "The monitor shall emit LivenessEvent{alive=false} for any zone that does not publish a Status within the configured deadline, including the very first deadline period.",
+      "title": "Heartbeat and lifecycle-change signals are independently sufficient",
+      "text": "rcp::deadline::Monitor::note_heartbeat and note_lifecycle_change shall each independently reset a registered target's last-seen-activity clock, such that either call alone is sufficient to keep that target's LivenessTracker::dead false within the configured deadline.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-003",
-      "title": "Repeated dead events suppressed",
-      "text": "The monitor shall not re-emit LivenessEvent{alive=false} for a zone that is already known to be dead.",
+      "title": "Dead event fires on the first check of a never-reported target",
+      "text": "rcp::deadline::Monitor::check shall emit LivenessEvent{alive=false} for a registered target that has never received a note_heartbeat/note_lifecycle_change call, on the first check call that evaluates it.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-004",
-      "title": "Alive event on first status",
-      "text": "The monitor shall emit LivenessEvent{alive=true} when the first Status arrives for a previously-dead zone.",
+      "title": "Repeated dead events suppressed",
+      "text": "rcp::deadline::Monitor::check shall not re-emit LivenessEvent{alive=false} for a target whose alive state was already reported false by a prior check call.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-005",
-      "title": "Deadline timer resets on status",
-      "text": "Receipt of a Status shall reset the per-zone deadline timer.",
+      "title": "Alive event fires on recovery",
+      "text": "rcp::deadline::Monitor::check shall emit LivenessEvent{alive=true} for a target whose prior reported state was dead once a note_heartbeat/note_lifecycle_change call has occurred within the configured deadline before that check call.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-006",
-      "title": "alive() returns false before first status",
-      "text": "Monitor::alive(z) shall return false for any zone that has not yet published a Status.",
+      "title": "alive() returns false before any check",
+      "text": "rcp::deadline::Monitor::alive shall return false for any target not yet evaluated by check, including a target that has already received a note_heartbeat/note_lifecycle_change call.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-007",
-      "title": "Close terminates watch threads",
-      "text": "Monitor::close() shall signal all watch threads to stop.",
+      "title": "Subscribed callbacks fire in registration order",
+      "text": "rcp::deadline::Monitor::check shall invoke every callback registered via subscribe, in registration order, exactly once for each LivenessEvent it produces.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-DL-008",
-      "title": "Destructor joins threads",
-      "text": "The Monitor destructor shall join all watch threads before returning.",
+      "title": "Targets are evaluated independently",
+      "text": "rcp::deadline::Monitor::check shall evaluate each registered target's liveness independently, such that one target's deadline expiry or recovery shall not affect any other registered target's reported alive state.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-001",
-      "title": "sleep() sends CmdSleep",
-      "text": "powerstate::Manager::sleep() shall send CommandType::Sleep to the target zone.",
+      "title": "PowerManager starts in Normal with four defined modes",
+      "text": "rcp::powerstate::PowerMode shall define exactly four modes (Normal, StandBy, Sleep, Unpowered), and a freshly constructed PowerManager shall report Normal as its initial mode() value.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-002",
-      "title": "sleep() transitions Active\u2192Sleeping",
-      "text": "A successful sleep() call shall transition the zone from Active to Sleeping.",
+      "title": "enter_standby/enter_sleep are only defined from Normal",
+      "text": "PowerManager::enter_standby and PowerManager::enter_sleep shall succeed only when mode() is Normal, transitioning to the requested low-power mode, and shall return PowerErrc::invalid_transition without changing mode() when called from any other mode.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-003",
-      "title": "wake() sends CmdWake",
-      "text": "powerstate::Manager::wake() shall send CommandType::Wake to the target zone.",
+      "title": "Entry refusal: unacknowledged wake-up event",
+      "text": "PowerManager::enter_standby/enter_sleep shall return PowerErrc::unacknowledged_wakeup_event without changing mode() whenever the associated WakeupEndpoint::wakeup_message_pending() reports true.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-004",
-      "title": "wake() transitions Sleeping\u2192Active",
-      "text": "A successful wake() call shall transition the zone from Sleeping or BusOff to Active.",
+      "title": "Entry refusal: non-idle endpoint",
+      "text": "PowerManager::enter_standby/enter_sleep shall return PowerErrc::endpoint_not_idle without changing mode() whenever the configured Hooks::endpoints_idle predicate returns false.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-005",
-      "title": "Command failure yields BusOff",
-      "text": "A send error during sleep() or wake() shall transition the zone to BusOff.",
+      "title": "Entry refusal: non-empty response/ack queue",
+      "text": "PowerManager::enter_standby/enter_sleep shall return PowerErrc::response_ack_queue_not_empty without changing mode() whenever the configured Hooks::response_ack_queues_empty predicate returns false.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-006",
-      "title": "recover_loop retries BusOff zones",
-      "text": "The background recovery loop shall periodically attempt wake() for every zone in the BusOff state.",
+      "title": "StandBy always resumes as a hot start with no handshake",
+      "text": "PowerManager::resume_from_standby shall, when mode() is StandBy, transition directly to Normal without invoking any hot-start-from-Sleep handshake hook, and shall return PowerErrc::invalid_transition without changing mode() when called from any other mode.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-007",
-      "title": "state() is thread-safe",
-      "text": "powerstate::Manager::state(z) shall be safe to call concurrently with sleep(), wake(), or the recovery loop.",
+      "title": "begin_wake_from_sleep requires Sleep and re-enables the network interface",
+      "text": "PowerManager::begin_wake_from_sleep shall, when mode() is Sleep, invoke the configured Hooks::reenable_network_interface hook exactly once and set wake_stage() to HandshakeActive while leaving mode() at Sleep, and shall return PowerErrc::not_asleep without side effects when mode() is not Sleep.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-PWR-008",
-      "title": "Close stops recovery loop",
-      "text": "Manager::close() shall stop the background recovery thread without hanging.",
+      "title": "Handshake steps are refused outside of an active handshake",
+      "text": "PowerManager::note_wakeup_attempt_sent and PowerManager::acknowledge_wakeup shall both return PowerErrc::not_asleep without side effects whenever wake_stage() is not HandshakeActive.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-009",
+      "title": "note_wakeup_attempt_sent enforces the WakeUp repeat limit",
+      "text": "PowerManager::note_wakeup_attempt_sent shall return PowerErrc::handshake_repeat_limit_exceeded and set wake_stage() to Failed once it has been called more than Config::wakeup_repeat_limit times since begin_wake_from_sleep while the associated WakeupEndpoint::wakeup_message_pending() continues to report true, and mode() shall remain Sleep when this occurs.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-010",
+      "title": "acknowledge_wakeup completes the handshake and returns to Normal",
+      "text": "PowerManager::acknowledge_wakeup shall, while wake_stage() is HandshakeActive, call the associated WakeupEndpoint::acknowledge_wakeup, invoke the configured Hooks::reenable_response_ack_queues hook exactly once, set wake_stage() to Complete, and transition mode() to Normal.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-011",
+      "title": "notify_power_removed forces Unpowered unconditionally",
+      "text": "PowerManager::notify_power_removed shall set mode() to Unpowered regardless of the current mode() or any entry-refusal condition that would otherwise apply to enter_standby/enter_sleep.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-012",
+      "title": "notify_power_restored returns to Normal from Unpowered",
+      "text": "PowerManager::notify_power_restored shall set mode() to Normal and wake_stage() to Idle.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-013",
+      "title": "start_kind_on_exit fixes StandBy as hot and Sleep as cold",
+      "text": "rcp::powerstate::start_kind_on_exit shall return StartKind::Hot for PowerMode::StandBy and StartKind::Cold for PowerMode::Sleep, and PowerManager::pending_start_kind shall report start_kind_on_exit(mode()).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWR-014",
+      "title": "PowerErrc is a distinct error category with a non-empty message",
+      "text": "rcp::powerstate::make_error_code(PowerErrc::invalid_transition) shall report rcp::powerstate::power_category() as its category and shall have a non-empty diagnostic message.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1138,128 +1266,120 @@
     },
     {
       "id": "REQ-RL-001",
-      "title": "Token bucket with configurable rate and burst",
-      "text": "ratelimit::Controller shall implement a token bucket with configurable rate (tokens/s) and burst capacity.",
+      "title": "Manager::admit admits while the domain's bucket has tokens",
+      "text": "rcp::ratelimit::Manager::admit shall return a success (falsy) std::error_code for a target EndpointKey whose token bucket has at least one token available.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-002",
-      "title": "Tokens refilled based on elapsed time",
-      "text": "The token bucket shall refill tokens proportionally to elapsed wall-clock time since the last take().",
+      "title": "Tokens refill proportionally to elapsed now_ms",
+      "text": "rcp::ratelimit::TokenBucket::take shall refill tokens proportionally to the elapsed now_ms since the previous take() call on the same bucket, before evaluating admission, capped at Config::burst.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-003",
-      "title": "ErrBusy when bucket exhausted",
-      "text": "send() shall return ErrBusy immediately, without calling inner send(), when fewer than 1 token remains.",
+      "title": "admit() returns ErrAdmissionDenied once the bucket is exhausted",
+      "text": "rcp::ratelimit::Manager::admit shall return ratelimit::ErrAdmissionDenied, unchanged, once fewer than one token remains in the target EndpointKey's bucket.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-004",
-      "title": "Critical commands exempt when configured",
-      "text": "When Config::exempt_critical is true, Priority::Critical commands shall bypass the token bucket.",
+      "title": "Safety-tagged requests bypass the bucket when exempted",
+      "text": "When Config::exempt_safety_tagged is true, rcp::ratelimit::Manager::admit shall return success for an is_safety_tagged=true request without consuming a token, regardless of the target bucket's remaining token count.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-005",
-      "title": "Non-critical commands not exempt",
-      "text": "Priority::Normal and Priority::High commands shall always be subject to the token bucket.",
+      "title": "Safety-tagged requests are throttled when not exempted",
+      "text": "When Config::exempt_safety_tagged is false, rcp::ratelimit::Manager::admit shall subject an is_safety_tagged=true request to the same token-bucket admission check as any other request.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-006",
-      "title": "Zone mismatch rejected",
-      "text": "send() shall return ErrZoneMismatch if cmd.zone differs from the inner controller's zone.",
+      "title": "Distinct (stream, endpoint) domains have independent buckets",
+      "text": "rcp::ratelimit::Manager shall maintain an independent token bucket per distinct EndpointKey, such that exhausting one EndpointKey's bucket shall not affect admission for any other EndpointKey.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-007",
-      "title": "Close stops sends",
-      "text": "close() shall cause subsequent send() calls to return ErrClosed.",
+      "title": "reset() rebuilds a domain's bucket at full burst",
+      "text": "rcp::ratelimit::Manager::reset shall discard the target EndpointKey's bucket state, such that its next admit() call is evaluated against a freshly constructed bucket at full Config::burst capacity.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-RL-008",
-      "title": "send() after close returns ErrClosed",
-      "text": "Any send() call after close() shall return ErrClosed.",
+      "title": "ErrAdmissionDenied is a distinct error code",
+      "text": "ratelimit::ErrAdmissionDenied shall be a non-zero std::error_code in a category distinct from every other rcp error category.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-001",
-      "title": "send() returns OK by default",
-      "text": "sim::Controller::send() shall return ResponseStatus::OK unless a fault has been injected.",
+      "title": "dispatch forwards to the wrapped mock::Server by default",
+      "text": "sim::Simulator::dispatch shall, absent an injected fault, forward its request unchanged to the wrapped mock::Server::dispatch and return its result.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-002",
-      "title": "zone() returns configured zone",
-      "text": "sim::Controller::zone() shall return the Zone value from the Config struct.",
+      "title": "fault() causes dispatch to fail without touching the server",
+      "text": "sim::Simulator::fault(ec) shall cause every subsequent dispatch() call to return ec and an ErrorResponse without calling mock::Server::dispatch, until recover() is called.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-003",
-      "title": "Constant latency model",
-      "text": "When LatencyModel::Constant is configured, send() shall sleep for exactly base_latency before returning.",
+      "title": "recover() restores normal dispatch",
+      "text": "sim::Simulator::recover() shall clear any injected fault and restore dispatch() to forwarding requests to the wrapped mock::Server.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-004",
-      "title": "Jitter latency model",
-      "text": "When LatencyModel::Jitter is configured, send() shall sleep for a duration uniformly distributed in [base_latency, base_latency + jitter].",
+      "title": "Constant latency model always reports base_latency",
+      "text": "sim::Simulator::simulated_latency_ms, when Config::latency_model is LatencyModel::Constant, shall always return Config::base_latency.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-005",
-      "title": "fault() causes send to fail",
-      "text": "fault(ec) shall cause all subsequent send() calls to return ec instead of delegating to the handler.",
+      "title": "Jitter latency model reports a delay within [base_latency, base_latency+jitter]",
+      "text": "sim::Simulator::simulated_latency_ms, when Config::latency_model is LatencyModel::Jitter, shall return a value uniformly distributed in [base_latency, base_latency + jitter].",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-006",
-      "title": "recover() restores normal operation",
-      "text": "recover() shall clear any injected fault and restore send() to OK responses.",
+      "title": "dispatch kicks a registered stream's watchdog on every accepted request",
+      "text": "sim::Simulator::dispatch shall call watchdog::Manager::on_request_received for stream_key when that stream is registered (via register_stream), resetting its watchdog per rcp/watchdog.hpp's reset-by-any-inbound-request rule.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SIM-007",
-      "title": "Status published on interval",
-      "text": "If Config::status_interval > 0, the simulator shall publish a Status on that cadence to all subscribers.",
-      "standard": "iso26262",
-      "level": "ASIL-B",
-      "asil": "ASIL-B"
-    },
-    {
-      "id": "REQ-SIM-008",
-      "title": "close() stops background threads",
-      "text": "close() shall terminate the status and watchdog background threads without hanging.",
+      "title": "dispatch on an unregistered stream does not touch the watchdog manager",
+      "text": "sim::Simulator::dispatch, for a stream_key never passed to register_stream, shall not call watchdog::Manager::on_request_received and shall leave that stream unregistered.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1331,7 +1451,7 @@
     {
       "id": "REQ-LOAN-001",
       "title": "loan() returns zeroed buffer",
-      "text": "loan::Controller::loan(n) shall return a zeroed byte vector of exactly n bytes.",
+      "text": "loan::BufferPool::loan(n) shall return a zeroed byte vector of exactly n bytes.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1339,47 +1459,47 @@
     {
       "id": "REQ-LOAN-002",
       "title": "loan() returns ErrClosed when closed",
-      "text": "loan() shall return ErrClosed if the controller has been closed.",
+      "text": "loan() shall return ErrClosed once the pool has been closed.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-LOAN-003",
-      "title": "loan() returns error for negative size",
-      "text": "loan() shall return an error if size < 0.",
+      "title": "loan() returns an error for negative size",
+      "text": "loan() shall return std::errc::invalid_argument if size < 0.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-LOAN-004",
-      "title": "send_loaned() delegates to inner",
-      "text": "send_loaned() shall delegate command delivery to the inner controller.",
+      "title": "Released buffers become available for reuse",
+      "text": "A Loan's buffer, once released (destruction or explicit ret()), shall become available for a subsequent loan() call to draw from the pool rather than freshly allocating.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-LOAN-005",
-      "title": "Loan RAII releases buffer to pool",
-      "text": "When a Loan is destroyed without being sent, its destructor shall return the buffer to the pool.",
+      "title": "Released buffers are re-zeroed before reuse",
+      "text": "A buffer drawn from the pool via loan() shall be re-zeroed, even if a prior borrower left non-zero data in it, so no stale data leaks across reuse.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-LOAN-006",
-      "title": "zone() delegates to inner",
-      "text": "zone() shall return the inner controller's zone.",
+      "title": "close() is idempotent and safe with outstanding Loans alive",
+      "text": "BufferPool::close() shall be safe to call more than once, including while Loans obtained before the call are still alive.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TLS-001",
-      "title": "Mutual TLS authentication",
-      "text": "TLS transport shall require both client and server to present valid X.509 certificates.",
+      "title": "Mutual TLS authentication for the UDP/IP transport",
+      "text": "The secure channel option for rcp/udp.hpp's transport shall require both client and server to present valid X.509 certificates once a real (D)TLS backend is enabled.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1410,16 +1530,16 @@
     },
     {
       "id": "REQ-TLS-005",
-      "title": "Command frames encrypted",
-      "text": "All Command and Response frames shall be encrypted in transit.",
+      "title": "SecureClient never sends a request in the clear without a real backend",
+      "text": "Without RCP_TLS_OPENSSL, SecureClient::request shall return function_not_supported for every call rather than transmitting an unencrypted AVTPDU-framed request.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TLS-006",
-      "title": "Status frames encrypted",
-      "text": "All Status subscription frames shall be encrypted in transit.",
+      "title": "SecureServer never reports itself usable without a real backend",
+      "text": "Without RCP_TLS_OPENSSL, SecureServer::ok() shall report false, so an embedding cannot mistake the stub for a securely bound server.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1442,16 +1562,16 @@
     },
     {
       "id": "REQ-TLS-009",
-      "title": "close() terminates TLS session",
-      "text": "close() shall perform a clean TLS shutdown before closing the underlying socket.",
+      "title": "close() terminates the secure session cleanly",
+      "text": "SecureClient::close and SecureServer::close shall perform a clean shutdown and be safe to call more than once.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TLS-010",
-      "title": "Error propagation",
-      "text": "Any TLS handshake or I/O error shall be returned as a std::error_code to the caller.",
+      "title": "stream_id and Config are carried unchanged",
+      "text": "SecureClient and SecureServer shall expose the stream_id and Config they were constructed with, unchanged, for the embedding application to introspect.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1459,127 +1579,127 @@
     {
       "id": "REQ-SHMEM-001",
       "title": "In-process zero-copy delivery",
-      "text": "shmem::Controller::send() shall deliver commands to the ZoneServer without serialising to a byte buffer.",
+      "text": "shmem::Channel::request() shall deliver a request to the registered Handler directly, without serialising to a byte buffer.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-002",
-      "title": "Custom handler invoked",
-      "text": "If set_handler() has been called, the handler shall be invoked for each command; otherwise a default OK response is returned.",
+      "title": "Custom handler invoked, else default Acknowledge",
+      "text": "If set_handler() has been called, the handler shall be invoked for each request() call; otherwise Channel::request() shall answer ResponseKind::Acknowledge.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-003",
-      "title": "ErrZoneMismatch on wrong zone",
-      "text": "send() shall return ErrZoneMismatch if cmd.zone differs from the server's zone.",
+      "title": "ErrClosed after close()",
+      "text": "Channel::request() shall return ErrClosed once the Channel has been closed.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-004",
-      "title": "ErrClosed after close()",
-      "text": "send() shall return ErrClosed after the Controller or ZoneServer has been closed.",
+      "title": "Registry::lookup finds a channel registered via add_channel",
+      "text": "shmem::Registry::lookup() shall return the Channel for a stream_key registered via add_channel().",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-005",
-      "title": "publish() delivers to all subscribers",
-      "text": "ZoneServer::publish() shall push the Status to every active StatusChannel.",
+      "title": "Registry::close() closes all registered channels",
+      "text": "Registry::close() shall close every registered Channel and cause subsequent lookup() calls to return ErrClosed.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-006",
-      "title": "Payload copied before handler",
-      "text": "The controller shall copy the Command payload before passing it to the ZoneServer handler.",
+      "title": "Channel::request is thread-safe for concurrent callers",
+      "text": "Concurrent calls to Channel::request() from different threads shall not result in data races or lost/duplicated handler invocations.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-007",
-      "title": "Registry lookup finds registered server",
-      "text": "shmem::Registry::lookup() shall return the controller for a zone registered via add_server().",
+      "title": "Client id is forwarded to the handler unchanged",
+      "text": "The caller-supplied client id passed to Channel::request() shall be forwarded to the registered Handler unchanged.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-008",
-      "title": "Registry::close() releases all controllers",
-      "text": "Registry::close() shall close all registered controllers and cause subsequent lookup() to return ErrClosed.",
+      "title": "close() is idempotent",
+      "text": "Channel::close() and Registry::close() shall be safe to call more than once without crashing or blocking.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-001",
-      "title": "SO_PRIORITY set per command priority",
-      "text": "tsn::Controller::send() shall set the SO_PRIORITY socket option proportional to the command's rcp::Priority before sending.",
+      "title": "apply_priority sets SO_PRIORITY per RequestCategory",
+      "text": "tsn::apply_priority(fd, cfg, category) shall set the SO_PRIORITY socket option proportional to the request's rcp::request::RequestCategory before the next send on that socket, on platforms where RCP_TSN_SO_PRIORITY is defined; on other platforms it shall succeed as a no-op.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-002",
-      "title": "PCPMap maps Normal/High/Critical to PCP values",
-      "text": "The PCPMap struct shall provide separate PCP values for Priority::Normal, Priority::High, and Priority::Critical.",
+      "title": "PCPMap maps every RequestCategory to a PCP value",
+      "text": "The PCPMap struct shall provide a separate PCP value for each of the seven rcp::request::RequestCategory values.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-003",
-      "title": "Critical mapped to highest PCP",
-      "text": "Priority::Critical shall be mapped to PCP 7 by default.",
+      "title": "Cancellation mapped to the highest PCP",
+      "text": "RequestCategory::Cancellation (execution-priority rank 0) shall be mapped to PCP 7 by default.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-004",
-      "title": "High mapped to mid-range PCP",
-      "text": "Priority::High shall be mapped to PCP 5 by default.",
+      "title": "Triggered mapped to a mid/high-range PCP",
+      "text": "RequestCategory::Triggered shall be mapped to PCP 6 by default.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-005",
-      "title": "Normal mapped to low PCP",
-      "text": "Priority::Normal shall be mapped to PCP 2 by default.",
+      "title": "Standard mapped to the lowest PCP",
+      "text": "RequestCategory::Standard (the mandatory baseline kind, execution-priority rank 6) shall be mapped to PCP 1 by default, and the default PCPMap shall preserve the full seven-category execution-priority ordering.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-006",
-      "title": "subscribe() delegates to inner",
-      "text": "subscribe() shall delegate directly to the inner controller without modifying socket priority.",
+      "title": "apply_priority rejects an invalid socket fd",
+      "text": "apply_priority shall return std::errc::invalid_argument for a negative fd, on every platform.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-MDNS-001",
-      "title": "Discoverer interface for zone discovery",
-      "text": "mdns::Discoverer shall define the abstract interface for mDNS-based zone controller discovery.",
+      "title": "Discoverer interface for udp::Server host:port discovery",
+      "text": "mdns::Discoverer shall define the abstract interface for mDNS-based discovery of udp::Server instances reachable at a host:port, for the UDP/IP transport variant only.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-MDNS-002",
-      "title": "start() fires Added event for each discovered zone",
-      "text": "Discoverer::start() shall invoke the callback with EventType::Added for each discovered ZoneInfo.",
+      "title": "start() fires Added event for each discovered server",
+      "text": "Discoverer::start() shall invoke the callback with EventType::Added for each discovered ServerInfo.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1594,16 +1714,16 @@
     },
     {
       "id": "REQ-MDNS-004",
-      "title": "StaticDiscoverer emits configured zones",
-      "text": "StaticDiscoverer::start() shall emit all configured ZoneInfo entries synchronously before returning.",
+      "title": "StaticDiscoverer emits configured servers",
+      "text": "StaticDiscoverer::start() shall emit all configured ServerInfo entries synchronously before returning.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-MDNS-005",
-      "title": "ZoneInfo carries host, port, and zone",
-      "text": "ZoneInfo shall carry the Zone, host string, port number, and service instance name.",
+      "title": "ServerInfo carries stream_key, host, and port",
+      "text": "ServerInfo shall carry the opaque stream_key (typically avtp::StreamId::to_u64()), host string, port number, and service instance name.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1611,15 +1731,15 @@
     {
       "id": "REQ-MDNS-006",
       "title": "instance_name follows _rcp._udp.local convention",
-      "text": "make_instance_name() shall produce names of the form '<zone>.<host>._rcp._udp.local'.",
+      "text": "make_instance_name() shall produce names of the form '<hex-stream-key>.<host>._rcp._udp.local', distinct for every distinct stream_id.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-MDNS-007",
-      "title": "Announcer interface for zone registration",
-      "text": "mdns::Announcer shall define the abstract interface for announcing zone controllers via the local mDNS responder.",
+      "title": "Announcer interface for udp::Server registration",
+      "text": "mdns::Announcer shall define the abstract interface for announcing a udp::Server via the local mDNS responder.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1627,31 +1747,31 @@
     {
       "id": "REQ-MDNS-008",
       "title": "withdraw() removes mDNS record",
-      "text": "Announcer::withdraw(z) shall remove the mDNS record for the given zone.",
+      "text": "Announcer::withdraw(stream_key) shall remove the mDNS record for the given stream_key.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-AUTH-001",
-      "title": "AuthController enforces AccessPolicy on every send",
-      "text": "AuthController.send() shall check the presented Identity against the AccessPolicy before forwarding any Command. If the identity is not permitted, ErrForbidden shall be returned without invoking the inner controller.",
+      "title": "AccessPolicy::permit grants access only on a full (identity, stream, endpoint, kind) match",
+      "text": "rcp::authz::AccessPolicy::permit shall return true only when at least one PolicyEntry for the given identity matches the given target stream, target endpoint, and request kind simultaneously; it shall return false if any one axis does not match.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-AUTH-002",
-      "title": "Empty zone/type set means all allowed",
-      "text": "A PolicyEntry with an empty zones set shall permit any Zone. A PolicyEntry with an empty cmd_types set shall permit any CommandType.",
+      "title": "Empty streams/endpoints/kinds sets mean unrestricted on that axis",
+      "text": "A PolicyEntry with an empty streams set shall match any target stream. A PolicyEntry with an empty endpoints set shall match any target endpoint. A PolicyEntry with an empty kinds set shall match any request kind.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-AUTH-003",
-      "title": "Identity resolver takes precedence over set_identity",
-      "text": "If an IdentityFn is supplied to AuthController, it shall be called on each send() and its result shall be used as the caller identity, superseding any value set via set_identity().",
+      "title": "Identity not covered by any PolicyEntry is denied",
+      "text": "rcp::authz::AccessPolicy::permit shall return false for any identity with no PolicyEntry present in the policy, regardless of the requested stream, endpoint, or kind.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-B"
@@ -1666,24 +1786,24 @@
     },
     {
       "id": "REQ-AUTH-005",
-      "title": "AuthController::zone() delegates to inner",
-      "text": "AuthController::zone() shall return the same zone as the wrapped inner controller.",
+      "title": "check() returns ErrForbidden when permit() would deny",
+      "text": "rcp::authz::check shall return authz::ErrForbidden, unchanged, whenever the equivalent AccessPolicy::permit() call would return false.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-AUTH-006",
-      "title": "AuthController::subscribe() delegates to inner",
-      "text": "AuthController::subscribe() shall forward the call to the inner controller unchanged.",
+      "title": "check() returns success when permit() would allow",
+      "text": "rcp::authz::check shall return a default-constructed (falsy) std::error_code whenever the equivalent AccessPolicy::permit() call would return true.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-AUTH-007",
-      "title": "AuthController::close() delegates to inner",
-      "text": "AuthController::close() shall forward the call to the inner controller and return its error code.",
+      "title": "An identity with zero policy entries is denied by default",
+      "text": "rcp::authz::AccessPolicy::permit shall return false for any identity for which AccessPolicy::allow() has never been called, i.e. the policy defaults to deny, not allow.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-A"
@@ -1691,7 +1811,7 @@
     {
       "id": "REQ-AUTH-008",
       "title": "ErrForbidden is a distinct error code",
-      "text": "authz::ErrForbidden shall be a non-zero std::error_code distinct from all other rcp error codes.",
+      "text": "authz::ErrForbidden shall be a non-zero std::error_code in a category distinct from every other rcp error category.",
       "standard": "iec62443",
       "level": "SL-2",
       "asil": "ASIL-B"
@@ -1986,16 +2106,16 @@
     },
     {
       "id": "REQ-OBS-001",
-      "title": "ObservingController records a span per send",
-      "text": "ObservingController::send() shall record one Span for every call to the underlying controller.",
+      "title": "ObservingClient records a span per request",
+      "text": "ObservingClient::request() shall record one Span for every call to the wrapped RequestFn.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-OBS-002",
-      "title": "Span captures zone and command type",
-      "text": "The Span recorded by ObservingController shall include the Command zone and CommandType.",
+      "title": "Span captures byte_bus_id and acf_msg_type",
+      "text": "The Span recorded by ObservingClient shall include the request's byte_bus_id and acf_msg_type.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2003,7 +2123,7 @@
     {
       "id": "REQ-OBS-003",
       "title": "Span duration is non-negative",
-      "text": "The duration() of every recorded Span shall be \u2265 0 microseconds.",
+      "text": "The duration() of every recorded Span shall be >= 0 microseconds.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2011,7 +2131,7 @@
     {
       "id": "REQ-OBS-004",
       "title": "Span captures error code",
-      "text": "The Span result field shall reflect the error_code returned by the inner controller.",
+      "text": "The Span result field shall reflect the error_code returned by the wrapped RequestFn.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2034,16 +2154,16 @@
     },
     {
       "id": "REQ-OBS-007",
-      "title": "ObservingController increments rcp.commands.total counter",
-      "text": "ObservingController::send() shall call record_counter('rcp.commands.total') once per send.",
+      "title": "ObservingClient increments rcp.requests.total counter",
+      "text": "ObservingClient::request() shall call record_counter('rcp.requests.total') once per call.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-OBS-008",
-      "title": "ObservingController increments error counter on failure",
-      "text": "When send() returns a non-zero error_code, ObservingController shall also call record_counter('rcp.commands.errors').",
+      "title": "ObservingClient increments error counter on failure",
+      "text": "When request() returns a non-zero error_code, ObservingClient shall also call record_counter('rcp.requests.errors').",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2114,24 +2234,24 @@
     },
     {
       "id": "REQ-REC-001",
-      "title": "RecordingController captures command and response",
-      "text": "RecordingController::send() shall append one Entry to the Record containing the Command, Response, and error_code for every send call.",
+      "title": "RecordingClient captures request and response",
+      "text": "RecordingClient::request() shall append one Entry to the Record containing the request AcfMessageInfo/payload, the response AcfMessageInfo/payload, and the resulting error_code, for every call.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-REC-002",
-      "title": "Record::size() reflects number of sent commands",
-      "text": "Record::size() shall equal the total number of completed send() calls through the RecordingController.",
+      "title": "Record::size() reflects number of completed request() calls",
+      "text": "Record::size() shall equal the total number of completed request() calls through the RecordingClient.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-REC-003",
-      "title": "Record::write_binary creates a non-empty file",
-      "text": "Record::write_binary() shall create a file at the specified path, write all captured entries, and return no error.",
+      "title": "Record::write_binary/read_binary round-trip entries losslessly",
+      "text": "Record::write_binary() shall serialise every captured Entry to a file, and Record::read_binary() shall recover the timestamp, request/response AcfMessageInfo fields, and request/response payloads unchanged.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2139,7 +2259,7 @@
     {
       "id": "REQ-REC-004",
       "title": "Playback::run_all replays all entries",
-      "text": "Playback::run_all() shall send one command for every entry in the Record to the target controller.",
+      "text": "Playback::run_all() shall replay one request for every entry in the Record against the target RequestFn.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2155,15 +2275,15 @@
     {
       "id": "REQ-REC-006",
       "title": "Entry timestamp_ns is monotonically increasing",
-      "text": "The timestamp_ns fields of consecutive entries in a Record shall be non-decreasing.",
+      "text": "The timestamp_ns fields of consecutive entries appended to a Record shall be non-decreasing.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-REC-007",
-      "title": "RecordingController forwards send result unchanged",
-      "text": "RecordingController::send() shall return the same error_code as the inner controller.",
+      "title": "RecordingClient forwards the inner error_code unchanged",
+      "text": "RecordingClient::request() shall return the same error_code as the wrapped RequestFn.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2707,7 +2827,7 @@
     {
       "id": "REQ-WIRE-001",
       "title": "NTSCF header addressing and length fields",
-      "text": "rcp::wire::encode_ntscf_header/decode_ntscf_header shall round-trip stream_id, sequence_num, and control_data_length unchanged for a Non-Time-Synchronous Control Format AVTPDU header.",
+      "text": "rcp::avtp::encode_ntscf_header/decode_ntscf_header shall round-trip stream_id, sequence_num, and control_data_length unchanged for a Non-Time-Synchronous Control Format AVTPDU header.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2715,7 +2835,7 @@
     {
       "id": "REQ-WIRE-002",
       "title": "TSCF header carries avtp_timestamp",
-      "text": "rcp::wire::encode_tscf_header/decode_tscf_header shall round-trip stream_id, sequence_num, control_data_length, and the 32-bit avtp_timestamp field unchanged for a Time-Synchronous Control Format AVTPDU header.",
+      "text": "rcp::avtp::encode_tscf_header/decode_tscf_header shall round-trip stream_id, sequence_num, control_data_length, and the 32-bit avtp_timestamp field unchanged for a Time-Synchronous Control Format AVTPDU header.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2723,7 +2843,7 @@
     {
       "id": "REQ-WIRE-003",
       "title": "AVTPDU subtype validation",
-      "text": "decode_ntscf_header shall reject a buffer whose subtype byte is not the NTSCF subtype, and decode_tscf_header shall reject a buffer whose subtype byte is not the TSCF subtype, both returning WireErrc::bad_subtype.",
+      "text": "decode_ntscf_header shall reject a buffer whose subtype byte is not the NTSCF subtype, and decode_tscf_header shall reject a buffer whose subtype byte is not the TSCF subtype, both returning AvtpErrc::bad_subtype.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2755,7 +2875,7 @@
     {
       "id": "REQ-WIRE-007",
       "title": "StreamId addressing round-trips",
-      "text": "rcp::wire::StreamId shall round-trip its 48-bit MAC half and 16-bit locally-assigned suffix through to_u64()/from_u64() unchanged, and two StreamId values with different MAC halves shall compare unequal.",
+      "text": "rcp::avtp::StreamId shall round-trip its 48-bit MAC half and 16-bit locally-assigned suffix through to_u64()/from_u64() unchanged, and two StreamId values with different MAC halves shall compare unequal.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2763,7 +2883,7 @@
     {
       "id": "REQ-WIRE-008",
       "title": "byte_bus_id is echoed unchanged on responses",
-      "text": "rcp::wire::make_response shall always copy byte_bus_id and transaction_num from the request it is built from, unchanged, since byte_bus_id is unique only within the owning stream_id and a response/ack must echo it back exactly.",
+      "text": "rcp::acf::make_response shall always copy byte_bus_id and transaction_num from the request it is built from, unchanged, since byte_bus_id is unique only within the owning stream_id and a response/ack must echo it back exactly.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2771,7 +2891,7 @@
     {
       "id": "REQ-WIRE-009",
       "title": "Standard request kind is unconditional ACF_ABB",
-      "text": "rcp::wire::make_standard_request shall build a request using acf_msg_type ACF_ABB with rsp clear, representing the mandatory best-effort, unconditional standard request kind.",
+      "text": "rcp::acf::make_standard_request shall build a request using acf_msg_type ACF_ABB with rsp clear, representing the mandatory best-effort, unconditional standard request kind.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2779,7 +2899,7 @@
     {
       "id": "REQ-WIRE-010",
       "title": "Four response semantic types are distinguishable",
-      "text": "rcp::wire::response_kind_of shall recover Acknowledge, WriteResponse, ReadResponse, or ErrorResponse from a header built by make_response with the corresponding ResponseKind, and the four kinds shall be pairwise distinguishable from the shared header fields alone.",
+      "text": "rcp::acf::response_kind_of shall recover Acknowledge, WriteResponse, ReadResponse, or ErrorResponse from a header built by make_response with the corresponding ResponseKind, and the four kinds shall be pairwise distinguishable from the shared header fields alone.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2795,7 +2915,7 @@
     {
       "id": "REQ-WIRE-012",
       "title": "Timestamp fallback rule: TSCF preferred, then ACF_GBB, then none",
-      "text": "rcp::wire::effective_timestamp shall return the TSCF avtp_timestamp when timestamp_valid is set, shall fall back to a valid ACF_GBB message_timestamp when no TSCF timestamp is available, and shall return std::nullopt rather than zero when neither source is valid.",
+      "text": "rcp::acf::effective_timestamp shall return the TSCF avtp_timestamp when timestamp_valid is set, shall fall back to a valid ACF_GBB message_timestamp when no TSCF timestamp is available, and shall return std::nullopt rather than zero when neither source is valid.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2803,7 +2923,7 @@
     {
       "id": "REQ-WIRE-013",
       "title": "Decoders reject short buffers",
-      "text": "decode_ntscf_header, decode_tscf_header, decode_acf_abb, and decode_acf_gbb shall return WireErrc::short_buffer when given fewer bytes than their fixed-size header requires, without reading past the buffer.",
+      "text": "rcp::avtp::decode_ntscf_header, rcp::avtp::decode_tscf_header, rcp::acf::decode_acf_abb, and rcp::acf::decode_acf_gbb shall return AvtpErrc::short_buffer when given fewer bytes than their fixed-size header requires, without reading past the buffer.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2811,7 +2931,7 @@
     {
       "id": "REQ-WIRE-014",
       "title": "ACF message type mismatch is rejected",
-      "text": "decode_acf_abb shall return WireErrc::bad_acf_msg_type when given a buffer whose acf_msg_type byte is ACF_GBB, and decode_acf_gbb shall return the same error when given a buffer whose acf_msg_type byte is ACF_ABB.",
+      "text": "decode_acf_abb shall return AcfErrc::bad_acf_msg_type when given a buffer whose acf_msg_type byte is ACF_GBB, and decode_acf_gbb shall return the same error when given a buffer whose acf_msg_type byte is ACF_ABB.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2860,6 +2980,14 @@
       "id": "REQ-LIFECYCLE-006",
       "title": "Explicit deconfigure() backward path",
       "text": "ServerLifecycle::deconfigure shall reset state to HwUnconfigured and clear both generic_config_locked and functional_config_locked regardless of the state deconfigure was called from, after which advance shall again accept the normal forward sequence.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LIFECYCLE-007",
+      "title": "State-changed callback fires only on an actual state change",
+      "text": "ServerLifecycle::subscribe_state_changed callbacks shall be invoked with (previous, current) exactly once for every advance() or deconfigure() call that changes state(), in registration order, and shall not be invoked for a call that fails or that leaves state() unchanged.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3107,7 +3235,7 @@
     {
       "id": "REQ-GPIO-001",
       "title": "GPIO payload is a 4-byte big-endian bitmask",
-      "text": "rcp::gpio::kGpioPayloadLen shall be 4 and kMaxPins shall be 32; encode_gpio_payload/decode_gpio_payload shall round-trip a PinMask value in big-endian byte order, and decode_gpio_payload shall return wire::WireErrc::short_buffer when given fewer than kGpioPayloadLen bytes.",
+      "text": "rcp::gpio::kGpioPayloadLen shall be 4 and kMaxPins shall be 32; encode_gpio_payload/decode_gpio_payload shall round-trip a PinMask value in big-endian byte order, and decode_gpio_payload shall return avtp::AvtpErrc::short_buffer when given fewer than kGpioPayloadLen bytes.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3147,7 +3275,7 @@
     {
       "id": "REQ-GPIO-006",
       "title": "GPIO functional config block wiring",
-      "text": "rcp::gpio::encode_gpio_functional_config/decode_gpio_functional_config shall round-trip a pin-direction mask and per-pin enabled-edge bitmasks through rcp::regmap::EndpointFunctionalConfig::data, and decode_gpio_functional_config shall return wire::WireErrc::short_buffer for an undersized blob.",
+      "text": "rcp::gpio::encode_gpio_functional_config/decode_gpio_functional_config shall round-trip a pin-direction mask and per-pin enabled-edge bitmasks through rcp::regmap::EndpointFunctionalConfig::data, and decode_gpio_functional_config shall return avtp::AvtpErrc::short_buffer for an undersized blob.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3411,7 +3539,7 @@
     {
       "id": "REQ-SEQ-001",
       "title": "message_timestamp-repurposing request_type decode/encode (mtv=0)",
-      "text": "rcp::sequencer::decode_request_type shall return SequencerErrc::timestamp_not_repurposed when mtv is true, shall return SequencerErrc::unknown_request_type when the top byte of message_timestamp is not one of the 8 defined opcodes, and shall otherwise recover the opcode and the remaining 7 parameter bytes exactly as produced by encode_request_type for the same inputs; rcp::sequencer::make_conditional_request shall always build an ACF_GBB AcfMessageInfo with mtv clear.",
+      "text": "rcp::request::decode_request_type shall return RequestErrc::timestamp_not_repurposed when mtv is true, shall return RequestErrc::unknown_request_type when the top byte of message_timestamp is not one of the 8 defined opcodes, and shall otherwise recover the opcode and the remaining 7 parameter bytes exactly as produced by encode_request_type for the same inputs; rcp::request::make_conditional_request shall always build an ACF_GBB AcfMessageInfo with mtv clear.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3419,7 +3547,7 @@
     {
       "id": "REQ-SEQ-002",
       "title": "Request categories and execution-priority ordering",
-      "text": "rcp::sequencer::category_of shall map the 3 cancellation opcodes to RequestCategory::Cancellation, each of the 5 conditional opcodes to its own category, and std::nullopt to RequestCategory::Standard; rcp::sequencer::select_next_due shall pick the candidate with the lowest priority_rank among due candidates and shall break ties within a category by lowest arrival_seq (FIFO), returning std::nullopt for an empty input.",
+      "text": "rcp::request::category_of shall map the 3 cancellation opcodes to RequestCategory::Cancellation, each of the 5 conditional opcodes to its own category, and std::nullopt to RequestCategory::Standard; rcp::request::select_next_due shall pick the candidate with the lowest priority_rank among due candidates and shall break ties within a category by lowest arrival_seq (FIFO), returning std::nullopt for an empty input.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3427,7 +3555,7 @@
     {
       "id": "REQ-SEQ-003",
       "title": "Compound/compound-wait optional-feature bundling",
-      "text": "rcp::sequencer::validate_feature_bundles shall return SequencerErrc::compound_bundle_incomplete whenever FeatureSet::compound or FeatureSet::compound_wait is set unless compound, compound_wait, clear_non_safestate, and sequencer_count >= kMinCompoundSequencers (4) are all simultaneously true, and shall accept every other combination of triggered/chained/timed/clear_single independently of compound support.",
+      "text": "rcp::request::validate_feature_bundles shall return RequestErrc::compound_bundle_incomplete whenever FeatureSet::compound or FeatureSet::compound_wait is set unless compound, compound_wait, clear_non_safestate, and sequencer_count >= kMinCompoundSequencers (4) are all simultaneously true, and shall accept every other combination of triggered/chained/timed/clear_single independently of compound support.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3435,7 +3563,7 @@
     {
       "id": "REQ-SEQ-004",
       "title": "Sequencer-state default value and finalization advance rule",
-      "text": "rcp::sequencer::SequencerTable::ensure_size shall fill newly added slots with kDefaultState (1), never the storage's own zero-initialization default, shall never shrink existing storage, and try_advance shall increment a sequencer only when its current value equals the supplied expected_start, leaving it unchanged (and reporting out_advanced=false, not an error) otherwise; both accessors shall return SequencerErrc::index_out_of_range for an out-of-bounds index.",
+      "text": "rcp::request::SequencerTable::ensure_size shall fill newly added slots with kDefaultState (1), never the storage's own zero-initialization default, shall never shrink existing storage, and try_advance shall increment a sequencer only when its current value equals the supplied expected_start, leaving it unchanged (and reporting out_advanced=false, not an error) otherwise; both accessors shall return RequestErrc::index_out_of_range for an out-of-bounds index.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3443,7 +3571,7 @@
     {
       "id": "REQ-SEQ-005",
       "title": "Cancellation kinds and shared cancellation semantics",
-      "text": "rcp::sequencer::RequestLedger::cancel_single shall cancel a Pending/Started request and cascade cancellation to every transitive chained successor, and shall return SequencerErrc::request_not_found for an unknown transaction or one that is UnderExecution/Finalized/already Canceled; cancel_all shall cancel every Pending/Started record (optionally skipping is_safety records when non_safestate_only is set) without disturbing any UnderExecution or Finalized record; a canceled request's outcome_of shall report SequencerErrc::request_canceled.",
+      "text": "rcp::request::RequestLedger::cancel_single shall cancel a Pending/Started request and cascade cancellation to every transitive chained successor, and shall return RequestErrc::request_not_found for an unknown transaction or one that is UnderExecution/Finalized/already Canceled; cancel_all shall cancel every Pending/Started record (optionally skipping is_safety records when non_safestate_only is set) without disturbing any UnderExecution or Finalized record; a canceled request's outcome_of shall report RequestErrc::request_canceled.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3451,7 +3579,7 @@
     {
       "id": "REQ-SEQ-006",
       "title": "Request lifecycle state machine: pending -> started -> under_execution -> finalized",
-      "text": "rcp::sequencer::RequestLedger shall only permit the single-step forward sequence Pending->Started->UnderExecution->Finalized, returning SequencerErrc::invalid_lifecycle_transition for any other requested transition and SequencerErrc::unknown_transaction for an untracked id; submit shall return SequencerErrc::transaction_num_collision for a transaction_num already tracked; finalize shall drive SequencerTable::try_advance for a Compound/CompoundWait record's sequencer_index/expected_start_state as its side effect.",
+      "text": "rcp::request::RequestLedger shall only permit the single-step forward sequence Pending->Started->UnderExecution->Finalized, returning RequestErrc::invalid_lifecycle_transition for any other requested transition and RequestErrc::unknown_transaction for an untracked id; submit shall return RequestErrc::transaction_num_collision for a transaction_num already tracked; finalize shall drive SequencerTable::try_advance for a Compound/CompoundWait record's sequencer_index/expected_start_state as its side effect.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3459,7 +3587,7 @@
     {
       "id": "REQ-SEQ-007",
       "title": "Chained-successor propagation on predecessor finalization",
-      "text": "rcp::sequencer::RequestLedger::finalize shall, for every record whose chained_predecessor equals the finalized transaction_num, cascade-cancel that successor iff rcp::sequencer::should_execute_chained(successor.cs, errored) is false, and shall leave every such successor untouched when the predecessor finalized with errored=false.",
+      "text": "rcp::request::RequestLedger::finalize shall, for every record whose chained_predecessor equals the finalized transaction_num, cascade-cancel that successor iff rcp::request::should_execute_chained(successor.cs, errored) is false, and shall leave every such successor untouched when the predecessor finalized with errored=false.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3467,15 +3595,15 @@
     {
       "id": "REQ-SEQ-008",
       "title": "The cs field's dual meaning (compound-wait vs. chained)",
-      "text": "rcp::sequencer::compound_wait_check_of shall map cs=true to CompoundWaitCheck::Immediate and cs=false to CompoundWaitCheck::AfterChangeOnly; rcp::sequencer::should_execute_chained shall return true whenever cs is true regardless of predecessor_errored, and shall return true iff predecessor_errored is false when cs is false.",
+      "text": "rcp::request::compound_wait_check_of shall map cs=true to CompoundWaitCheck::Immediate and cs=false to CompoundWaitCheck::AfterChangeOnly; rcp::request::should_execute_chained shall return true whenever cs is true regardless of predecessor_errored, and shall return true iff predecessor_errored is false when cs is false.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SEQ-009",
-      "title": "SequencerErrc is a distinct error category with non-empty, distinct messages",
-      "text": "Every rcp::sequencer::SequencerErrc value shall report rcp::sequencer::sequencer_category() as its category and shall have a non-empty diagnostic message distinct from every other SequencerErrc value's message.",
+      "title": "RequestErrc is a distinct error category with non-empty, distinct messages",
+      "text": "Every rcp::request::RequestErrc value shall report rcp::request::request_category() as its category and shall have a non-empty diagnostic message distinct from every other RequestErrc value's message.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3483,7 +3611,7 @@
     {
       "id": "REQ-SEQ-010",
       "title": "decode_request_type accepts exactly the three 0x8x safety-tagged opcodes",
-      "text": "rcp::sequencer::is_valid_request_type and decode_request_type shall accept RequestTypeOpcode::CompoundSafety (0x8F), CompoundWaitSafety (0x8B), and TriggeredSafety (0x8E) as valid opcodes, round-tripping their parameter bytes exactly as the eight pre-existing opcodes do, and shall reject every other MSB-set byte value as SequencerErrc::unknown_request_type.",
+      "text": "rcp::request::is_valid_request_type and decode_request_type shall accept RequestTypeOpcode::CompoundSafety (0x8F), CompoundWaitSafety (0x8B), and TriggeredSafety (0x8E) as valid opcodes, round-tripping their parameter bytes exactly as the eight pre-existing opcodes do, and shall reject every other MSB-set byte value as RequestErrc::unknown_request_type.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3491,7 +3619,7 @@
     {
       "id": "REQ-SEQ-011",
       "title": "Safety-tagged opcodes share their base opcode's priority category",
-      "text": "rcp::sequencer::is_safety_variant shall return true for exactly CompoundSafety/CompoundWaitSafety/TriggeredSafety and false for every other RequestTypeOpcode; rcp::sequencer::category_of shall map each safety-tagged opcode to the same RequestCategory as its corresponding base opcode (Compound, CompoundWait, Triggered).",
+      "text": "rcp::request::is_safety_variant shall return true for exactly CompoundSafety/CompoundWaitSafety/TriggeredSafety and false for every other RequestTypeOpcode; rcp::request::category_of shall map each safety-tagged opcode to the same RequestCategory as its corresponding base opcode (Compound, CompoundWait, Triggered).",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -3499,7 +3627,7 @@
     {
       "id": "REQ-SEQ-012",
       "title": "request_record_for derives RequestRecord::is_safety from the opcode",
-      "text": "rcp::sequencer::request_record_for shall set the returned RequestRecord's is_safety field to is_safety_variant(*type) when type has a value, to false when type is std::nullopt (the standard request kind), and the resulting record shall be excluded from cancellation by RequestLedger::cancel_all(non_safestate_only=true) if and only if is_safety is true.",
+      "text": "rcp::request::request_record_for shall set the returned RequestRecord's is_safety field to is_safety_variant(*type) when type has a value, to false when type is std::nullopt (the standard request kind), and the resulting record shall be excluded from cancellation by RequestLedger::cancel_all(non_safestate_only=true) if and only if is_safety is true.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"

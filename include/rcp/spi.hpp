@@ -27,7 +27,7 @@
 // text from that document is reproduced here. The concrete channel-config
 // encoding and trigger-signal id scheme chosen in this file are this
 // implementation's own, same as the equivalent disclaimers in
-// rcp/wire.hpp, rcp/regmap.hpp, rcp/endpoint.hpp, and rcp/gpio.hpp.
+// rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp, and rcp/gpio.hpp.
 #pragma once
 
 #include <rcp/endpoint.hpp>

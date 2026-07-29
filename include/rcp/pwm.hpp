@@ -34,7 +34,7 @@
 // unit (left as an opaque implementation-defined tick count, same as
 // rcp/regmap.hpp's own field-width disclaimers) and trigger-signal id
 // scheme chosen in this file are this implementation's own, same as the
-// equivalent disclaimers in rcp/wire.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
+// equivalent disclaimers in rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
 // and rcp/gpio.hpp.
 #pragma once
 

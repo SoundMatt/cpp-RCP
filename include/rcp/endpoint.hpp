@@ -32,7 +32,7 @@
 //     transfer-complete/per-CS assert/de-assert signals can both be built on
 //     the same primitive without duplicating the bookkeeping
 //
-// This header has no dependency on rcp/wire.hpp's AcfMessageInfo directly —
+// This header has no dependency on rcp/acf.hpp's AcfMessageInfo directly —
 // it operates on the already-decoded evt[2:0] value a caller extracts from
 // AcfMessageInfo::evt_op, keeping this scaffolding usable independent of any
 // particular wire encoding decision.
@@ -41,7 +41,7 @@
 // an internal structured extraction of the specification named above; no
 // text from that document is reproduced here. The concrete encodings chosen
 // in this file are this implementation's own, same as the equivalent
-// disclaimers in rcp/wire.hpp, rcp/lifecycle.hpp, rcp/regmap.hpp, and
+// disclaimers in rcp/avtp.hpp, rcp/lifecycle.hpp, rcp/regmap.hpp, and
 // rcp/discovery.hpp.
 #pragma once
 

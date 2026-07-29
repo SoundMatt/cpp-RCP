@@ -11,30 +11,65 @@
 // fusa:req REQ-UDP-011
 // fusa:req REQ-UDP-012
 
-// Pure-C++ UDP transport for the RCP protocol.
+// Native IEEE 1722-over-UDP/IP transport for the OPEN Alliance TC18 Remote
+// Control Protocol Specification v0.5.1_RC — carries real AVTPDU (NTSCF/
+// TSCF, rcp/avtp.hpp) frames wrapping ACF_ABB/ACF_GBB messages (rcp/acf.hpp)
+// as raw UDP datagram payloads.
 //
 // On POSIX (Linux, macOS): full implementation using BSD sockets.
 // On Windows: stub that returns std::errc::function_not_supported.
 //
-// Frame format is defined in rcp/legacy_wire.hpp — the pre-replacement
-// 16-byte Zone/Command/Response/Status frame, not the TC18 AVTPDU/ACF codec
-// now in rcp/wire.hpp. This transport is rebuilt to carry real AVTPDU
-// frames at v2.13.0 (ROADMAP.md); until then it deliberately keeps using
-// the old frame format so it keeps building and working against the
-// still-current Zone/Command model.
+// ROADMAP.md milestone 57, "Native Transport Rebuild — UDP/IP (Annex J),
+// v2.13.0": this header REPLACES this file's pre-replacement content in
+// full, per the Satellite Package Disposition table's entry for `udp.hpp`
+// — the bespoke `R`/`C`-magic 16-byte Zone/Command/Response/Status frame
+// this file used to carry (rcp/legacy_wire.hpp) is discarded outright, not
+// adapted, since it *is* the old wire format this whole roadmap replaces
+// (the roadmap's own words for this milestone). Unlike rcp/mock.hpp's split
+// at v2.12.0, no legacy shim file was created here: grepping the tree found
+// no consumer of the old udp::ZoneServer/udp::Controller/udp::Registry API
+// beyond this file's own (now-deleted) test and rcp/tsn.hpp's doc comment
+// — and rcp/tsn.hpp itself only ever depended on the generic rcp::Controller
+// interface plus a raw socket fd, never on udp:: types directly, so it needed
+// no change here. rcp/legacy_wire.hpp is deleted in the same change as this
+// file for the same reason.
+//
+// This module does not build on rcp.hpp's Zone/Command/Controller/Registry
+// model — per rcp.hpp's own header comment, nothing new should. Instead it
+// addresses the way rcp/avtp.hpp and rcp/acf.hpp already do: a StreamId per
+// endpoint plus a byte_bus_id/transaction_num pair per request, with request/
+// response correlation performed via the echo rule rcp/acf.hpp's
+// make_response() documents rather than a locally invented 32-bit request
+// id. Server's request handler is deliberately shaped to match
+// rcp::mock::Server::dispatch's signature (v2.12.0) so an in-process
+// simulator can be wired up as this transport's handler directly, without
+// this header needing to depend on rcp/mock.hpp itself.
+//
+// IEEE 1722's own Annex J describes carrying AVTPDUs over UDP/IP instead of
+// raw Ethernet, for links where native AVTP framing (destination MAC +
+// EtherType 0x22F0) is not available. This implementation's own reading of
+// that behavior — consistent with rcp/avtp.hpp's own header comment that its
+// NTSCF/TSCF framing is transport-agnostic by design — is that the AVTPDU
+// bytes rcp/avtp.hpp and rcp/acf.hpp already produce are carried unmodified
+// as the UDP payload; no additional encapsulation header is layered on top
+// here, and IP/UDP addressing substitutes for the Ethernet destination
+// address a native AVTP link would otherwise use. Full bit-for-bit
+// conformance against other TC18/Annex-J implementations is not claimed,
+// same as the equivalent disclaimers in rcp/avtp.hpp, rcp/acf.hpp, and
+// rcp/discovery.hpp.
 #pragma once
 
-#include "rcp.hpp"
-#include "legacy_wire.hpp"
+#include "acf.hpp"
+#include "avtp.hpp"
+#include "rcp.hpp" // for rcp::Context only — see this header's own scope note above
 
-#include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -51,18 +86,108 @@
 namespace rcp {
 namespace udp {
 
+// A UDP datagram is capped at 65507 payload bytes (65535 minus the IPv4 and
+// UDP headers) regardless of AVTPDU/ACF content — the same ceiling
+// rcp/legacy_wire.hpp's MaxPayload used to size against.
+constexpr size_t kMaxDatagram = 65507;
+
 #if defined(RCP_UDP_POSIX)
 
-// ── ZoneServer ────────────────────────────────────────────────────────────────
+// ── Frame ─────────────────────────────────────────────────────────────────────
+// Frame is one encapsulated AVTPDU: an NTSCF or TSCF header (rcp/avtp.hpp)
+// wrapping one ACF_ABB or ACF_GBB message (rcp/acf.hpp, selected by
+// info.acf_msg_type). encode_frame/decode_frame compose those two headers'
+// existing codecs rather than re-deriving any bit layout, and are pure
+// functions — no socket I/O — so they can be exercised directly in tests
+// without a real UDP round trip.
+struct Frame {
+    bool            use_tscf        = false; // false = NTSCF, true = TSCF
+    avtp::StreamId  stream_id{};
+    uint16_t        sequence_num    = 0;
+    bool            timestamp_valid = false; // TSCF "tv" bit; ignored under NTSCF
+    uint32_t        avtp_timestamp  = 0;     // TSCF-only; ignored under NTSCF
 
-// ZoneServer listens on a UDP port, handles Command frames, and publishes
-// Status to all registered subscribers.
-class ZoneServer {
+    acf::AcfMessageInfo   info{};
+    uint64_t              message_timestamp = 0; // honored only when info.acf_msg_type == kAcfMsgTypeGbb
+    std::vector<uint8_t>  payload;
+};
+
+inline std::vector<uint8_t> encode_frame(const Frame& f) {
+    std::vector<uint8_t> acf_msg = (f.info.acf_msg_type == acf::kAcfMsgTypeGbb)
+        ? acf::encode_acf_gbb(f.info, f.message_timestamp, f.payload)
+        : acf::encode_acf_abb(f.info, f.payload);
+
+    std::vector<uint8_t> out;
+    if (f.use_tscf) {
+        avtp::TscfHeader hdr;
+        hdr.stream_id           = f.stream_id;
+        hdr.sequence_num        = f.sequence_num;
+        hdr.control_data_length = static_cast<uint16_t>(acf_msg.size());
+        hdr.timestamp_valid     = f.timestamp_valid;
+        hdr.avtp_timestamp      = f.avtp_timestamp;
+        out = avtp::encode_tscf_header(hdr);
+    } else {
+        avtp::NtscfHeader hdr;
+        hdr.stream_id           = f.stream_id;
+        hdr.sequence_num        = f.sequence_num;
+        hdr.control_data_length = static_cast<uint16_t>(acf_msg.size());
+        out = avtp::encode_ntscf_header(hdr);
+    }
+    out.insert(out.end(), acf_msg.begin(), acf_msg.end());
+    return out;
+}
+
+inline std::error_code decode_frame(const uint8_t* b, size_t len, Frame& out) {
+    if (len < 1) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+
+    size_t acf_off;
+    out.use_tscf = (b[0] == avtp::kSubtypeTscf);
+    if (out.use_tscf) {
+        avtp::TscfHeader hdr;
+        if (auto ec = avtp::decode_tscf_header(b, len, hdr)) return ec;
+        out.stream_id       = hdr.stream_id;
+        out.sequence_num    = hdr.sequence_num;
+        out.timestamp_valid = hdr.timestamp_valid;
+        out.avtp_timestamp  = hdr.avtp_timestamp;
+        acf_off = avtp::kTscfHeaderLen;
+    } else {
+        avtp::NtscfHeader hdr;
+        if (auto ec = avtp::decode_ntscf_header(b, len, hdr)) return ec;
+        out.stream_id       = hdr.stream_id;
+        out.sequence_num    = hdr.sequence_num;
+        out.timestamp_valid = false;
+        out.avtp_timestamp  = 0;
+        acf_off = avtp::kNtscfHeaderLen;
+    }
+
+    if (len < acf_off + 1) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    if (b[acf_off] == acf::kAcfMsgTypeGbb) {
+        return acf::decode_acf_gbb(b + acf_off, len - acf_off, out.info,
+                                    out.message_timestamp, out.payload);
+    }
+    out.message_timestamp = 0;
+    return acf::decode_acf_abb(b + acf_off, len - acf_off, out.info, out.payload);
+}
+
+// ── Server ────────────────────────────────────────────────────────────────────
+// Server binds a UDP socket, decodes each inbound datagram as a Frame, and
+// dispatches the carried ACF request to a caller-supplied Handler — shaped
+// to match rcp::mock::Server::dispatch's signature — then encodes and sends
+// the handler's response back to the sender under the same header kind
+// (NTSCF/TSCF) the request arrived under. Malformed datagrams (short buffer,
+// bad subtype, unrecognized ACF message type) are dropped silently, the same
+// "drop rather than partially process" choice rcp/discovery.hpp documents
+// for its own decode path.
+class Server {
 public:
-    using Handler = std::function<Response(const Command&)>;
+    using Handler = std::function<std::error_code(size_t client,
+                                                    const acf::AcfMessageInfo& req,
+                                                    const std::vector<uint8_t>& req_payload,
+                                                    acf::AcfMessageInfo& out_resp,
+                                                    std::vector<uint8_t>& out_resp_payload)>;
 
-    ZoneServer(Zone zone, const char* addr, uint16_t port)
-        : zone_(zone), fd_(-1) {
+    Server(avtp::StreamId stream_id, const char* addr, uint16_t port)
+        : stream_id_(stream_id), fd_(-1) {
         fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
         if (fd_ < 0) return;
         sockaddr_in sa{};
@@ -77,11 +202,10 @@ public:
             fd_ = -1;
             return;
         }
-        healthy_.store(true);
         serve_thread_ = std::thread([this]{ serve(); });
     }
 
-    ~ZoneServer() { close(); }
+    ~Server() { close(); }
 
     // addr_string returns "host:port" for this server's bound address.
     std::string addr_string() const {
@@ -107,19 +231,6 @@ public:
         handler_ = std::move(h);
     }
 
-    void set_healthy(bool v) { healthy_.store(v, std::memory_order_release); }
-
-    void publish(const std::vector<uint8_t>& payload) {
-        uint32_t seq = ++seq_;
-        Status st{zone_, seq, healthy_.load(), payload};
-        auto frame = legacy_wire::encode_status(st);
-        std::lock_guard<std::mutex> lk(mu_);
-        for (auto& kv : subscribers_) {
-            ::sendto(fd_, frame.data(), frame.size(), 0,
-                     reinterpret_cast<const sockaddr*>(&kv.second), sizeof(kv.second));
-        }
-    }
-
     void close() {
         if (!closed_.exchange(true)) {
             if (fd_ >= 0) {
@@ -134,15 +245,20 @@ public:
     bool ok() const noexcept { return fd_ >= 0; }
 
 private:
-    Zone   zone_;
-    int    fd_;
+    avtp::StreamId stream_id_;
+    int  fd_;
     std::atomic<bool>     closed_{false};
-    std::atomic<bool>     healthy_{false};
-    std::atomic<uint32_t> seq_{0};
+    std::atomic<uint16_t> seq_{0};
     std::mutex   mu_;
     Handler      handler_;
-    std::map<std::string, sockaddr_in> subscribers_;
     std::thread  serve_thread_;
+
+    // client_ids_ assigns each distinct sender address a stable, opaque
+    // size_t identity, first-seen order — the same role rcp/regmap.hpp's
+    // Ep0 root-client index plays for its own callers, just derived from
+    // the UDP sender address instead of an in-process connection index.
+    std::map<std::string, size_t> client_ids_;
+    size_t next_client_id_ = 0;
 
     static std::string addr_key(const sockaddr_in& sa) {
         char buf[INET_ADDRSTRLEN];
@@ -150,51 +266,71 @@ private:
         return std::string(buf) + ":" + std::to_string(ntohs(sa.sin_port));
     }
 
+    size_t client_id_for(const sockaddr_in& from) {
+        auto key = addr_key(from);
+        auto it  = client_ids_.find(key);
+        if (it != client_ids_.end()) return it->second;
+        size_t id = next_client_id_++;
+        client_ids_.emplace(key, id);
+        return id;
+    }
+
     void serve() {
-        std::vector<uint8_t> buf(legacy_wire::HeaderLen + legacy_wire::MaxPayload);
-        sockaddr_in client{};
-        socklen_t   clen = sizeof(client);
+        std::vector<uint8_t> buf(kMaxDatagram);
+        sockaddr_in from{};
+        socklen_t   flen = sizeof(from);
         while (!closed_.load()) {
             ssize_t n = ::recvfrom(fd_, buf.data(), buf.size(), 0,
-                                    reinterpret_cast<sockaddr*>(&client), &clen);
+                                    reinterpret_cast<sockaddr*>(&from), &flen);
             if (n <= 0) break;
-            if (static_cast<size_t>(n) < legacy_wire::HeaderLen) continue;
-            switch (buf[3]) {
-            case legacy_wire::TypeCommand: {
-                Command cmd;
-                if (legacy_wire::decode_command(buf.data(), static_cast<size_t>(n), cmd)) break;
-                Response resp;
-                {
-                    std::lock_guard<std::mutex> lk(mu_);
-                    if (handler_) resp = handler_(cmd);
-                    else          resp = Response{cmd.id, zone_, ResponseStatus::OK, {}};
+
+            Frame req;
+            if (decode_frame(buf.data(), static_cast<size_t>(n), req)) continue;
+
+            acf::AcfMessageInfo   out_info;
+            std::vector<uint8_t>  out_payload;
+            size_t client;
+            {
+                std::lock_guard<std::mutex> lk(mu_);
+                client = client_id_for(from);
+                if (handler_) {
+                    auto ec = handler_(client, req.info, req.payload, out_info, out_payload);
+                    (void)ec; // Handler always populates out_info even on failure,
+                              // same contract rcp::mock::Server::dispatch documents.
+                } else {
+                    out_info = acf::make_response(req.info, acf::ResponseKind::Acknowledge);
                 }
-                auto frame = legacy_wire::encode_response(resp);
-                ::sendto(fd_, frame.data(), frame.size(), 0,
-                         reinterpret_cast<sockaddr*>(&client), clen);
-                break;
             }
-            case legacy_wire::TypeSubscribe:
-                subscribers_[addr_key(client)] = client;
-                break;
-            case legacy_wire::TypeUnsubscribe:
-                subscribers_.erase(addr_key(client));
-                break;
-            default:
-                break;
-            }
+
+            Frame resp;
+            resp.use_tscf        = req.use_tscf;
+            resp.stream_id       = stream_id_;
+            resp.sequence_num    = static_cast<uint16_t>(++seq_);
+            resp.timestamp_valid = req.timestamp_valid;
+            resp.avtp_timestamp  = req.avtp_timestamp;
+            resp.info            = out_info;
+            resp.payload         = std::move(out_payload);
+
+            auto out_frame = encode_frame(resp);
+            ::sendto(fd_, out_frame.data(), out_frame.size(), 0,
+                     reinterpret_cast<sockaddr*>(&from), flen);
         }
     }
 };
 
-// ── Controller ────────────────────────────────────────────────────────────────
-
-// Controller connects to a ZoneServer via UDP and implements rcp::Controller.
-class Controller final : public rcp::Controller {
+// ── Client ────────────────────────────────────────────────────────────────────
+// Client connects to one Server address and sends AVTPDU-framed ACF requests,
+// correlating each response by the (byte_bus_id, transaction_num) pair
+// rcp/acf.hpp's make_response echoes back unchanged — there is no locally
+// invented request id the way rcp.hpp's old Command::id was, since the new
+// addressing model has no analog of it. Callers build `req` themselves (e.g.
+// via acf::make_standard_request or rcp/discovery.hpp's
+// make_discovery_request) so this transport stays a pure carrier, not a
+// second place request semantics are decided.
+class Client {
 public:
-    // Connect to serverHost:serverPort for zone.
-    Controller(Zone zone, const char* server_host, uint16_t server_port)
-        : zone_(zone), fd_(-1) {
+    Client(avtp::StreamId stream_id, const char* server_host, uint16_t server_port)
+        : stream_id_(stream_id), fd_(-1) {
         fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
         if (fd_ < 0) return;
 
@@ -211,41 +347,52 @@ public:
         read_thread_ = std::thread([this]{ read_loop(); });
     }
 
-    ~Controller() override { auto ec = close(); (void)ec; }
+    ~Client() { auto ec = close(); (void)ec; }
 
-    Zone zone() const noexcept override { return zone_; }
-
-    std::error_code send(const rcp::Context& ctx,
-                          const Command&      cmd,
-                          Response&           out) override {
+    // request sends one ACF request — ABB or GBB per req.info's own
+    // acf_msg_type, wrapped in the AVTPDU header rcp/avtp.hpp defines for
+    // whichever kind `use_tscf` selects — and blocks until the matching
+    // response arrives or `ctx` is done. message_timestamp is only sent
+    // (and only meaningful) when req.acf_msg_type is kAcfMsgTypeGbb.
+    std::error_code request(const rcp::Context& ctx,
+                             const acf::AcfMessageInfo& req,
+                             const std::vector<uint8_t>& req_payload,
+                             acf::AcfMessageInfo&        out_resp,
+                             std::vector<uint8_t>&       out_resp_payload,
+                             bool     use_tscf = false,
+                             uint32_t avtp_timestamp = 0,
+                             uint64_t message_timestamp = 0) {
         if (closed_.load()) return ErrClosed;
         if (ctx.done())     return ErrTimeout;
-        if (cmd.zone != zone_) return ErrZoneMismatch;
 
-        uint32_t id = ++next_id_;
-        Command safe = cmd;
-        if (!cmd.payload.empty()) safe.payload = cmd.payload;
-        safe.id = id;
+        Frame out;
+        out.use_tscf          = use_tscf;
+        out.stream_id         = stream_id_;
+        out.sequence_num      = static_cast<uint16_t>(++seq_);
+        out.timestamp_valid   = use_tscf;
+        out.avtp_timestamp    = avtp_timestamp;
+        out.info              = req;
+        out.message_timestamp = message_timestamp;
+        out.payload           = req_payload;
 
-        auto frame  = legacy_wire::encode_command(safe);
-        auto result = std::make_shared<std::promise<Response>>();
+        const uint16_t key = pending_key(req.byte_bus_id, req.transaction_num);
+        auto result = std::make_shared<std::promise<Frame>>();
         auto future = result->get_future();
         {
             std::lock_guard<std::mutex> lk(mu_);
-            pending_[id] = result;
+            pending_[key] = result;
         }
-
         auto cleanup = [&]{
             std::lock_guard<std::mutex> lk(mu_);
-            pending_.erase(id);
+            pending_.erase(key);
         };
 
-        if (::send(fd_, frame.data(), frame.size(), 0) < 0) {
+        auto frame_bytes = encode_frame(out);
+        if (::send(fd_, frame_bytes.data(), frame_bytes.size(), 0) < 0) {
             cleanup();
             return ErrClosed;
         }
 
-        // Wait for response or timeout.
         std::future_status st;
         if (ctx.deadline()) {
             st = future.wait_until(*ctx.deadline());
@@ -256,50 +403,14 @@ public:
         cleanup();
         if (st == std::future_status::timeout) return ErrTimeout;
         if (!future.valid()) return ErrClosed;
-        out = future.get();
+
+        Frame resp = future.get();
+        out_resp         = resp.info;
+        out_resp_payload = std::move(resp.payload);
         return {};
     }
 
-    std::error_code subscribe(const rcp::Context&             ctx,
-                               std::shared_ptr<StatusChannel>& out) override {
-        if (closed_.load()) return ErrClosed;
-
-        auto ch = std::make_shared<StatusChannel>(16);
-        {
-            std::lock_guard<std::mutex> lk(mu_);
-            subs_.push_back(ch);
-        }
-
-        // Send subscribe control frame.
-        auto frame = legacy_wire::encode_control(legacy_wire::TypeSubscribe, zone_);
-        ::send(fd_, frame.data(), frame.size(), 0);
-
-        std::thread([this, weak_ch = std::weak_ptr<StatusChannel>(ch), ctx]() mutable {
-            while (!ctx.done() && !closed_.load()) {
-                auto c = weak_ch.lock();
-                if (!c || c->is_closed()) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            // Send unsubscribe.
-            if (!closed_.load()) {
-                auto frame2 = legacy_wire::encode_control(legacy_wire::TypeUnsubscribe, zone_);
-                ::send(fd_, frame2.data(), frame2.size(), 0);
-            }
-            auto c = weak_ch.lock();
-            if (!c) return;
-            {
-                std::lock_guard<std::mutex> lk(mu_);
-                auto it = std::find(subs_.begin(), subs_.end(), c);
-                if (it != subs_.end()) subs_.erase(it);
-            }
-            c->close();
-        }).detach();
-
-        out = std::move(ch);
-        return {};
-    }
-
-    std::error_code close() override {
+    std::error_code close() {
         if (!closed_.exchange(true)) {
             if (fd_ >= 0) {
                 ::shutdown(fd_, SHUT_RDWR);
@@ -307,168 +418,88 @@ public:
             }
         }
         if (read_thread_.joinable()) read_thread_.join();
-        std::lock_guard<std::mutex> lk(mu_);
-        for (auto& s : subs_) s->close();
-        subs_.clear();
         return {};
     }
 
     bool ok() const noexcept { return fd_ >= 0; }
 
 private:
-    Zone  zone_;
-    int   fd_;
+    static uint16_t pending_key(avtp::ByteBusId bus_id, uint8_t transaction_num) noexcept {
+        return static_cast<uint16_t>((static_cast<uint16_t>(bus_id) << 8) | transaction_num);
+    }
+
+    avtp::StreamId stream_id_;
+    int  fd_;
     std::atomic<bool>     closed_{false};
-    std::atomic<uint32_t> next_id_{0};
+    std::atomic<uint16_t> seq_{0};
     std::mutex mu_;
-    std::map<uint32_t, std::shared_ptr<std::promise<Response>>> pending_;
-    std::vector<std::shared_ptr<StatusChannel>> subs_;
+    std::map<uint16_t, std::shared_ptr<std::promise<Frame>>> pending_;
     std::thread read_thread_;
 
     void read_loop() {
-        std::vector<uint8_t> buf(legacy_wire::HeaderLen + legacy_wire::MaxPayload);
+        std::vector<uint8_t> buf(kMaxDatagram);
         while (!closed_.load()) {
             ssize_t n = ::recv(fd_, buf.data(), buf.size(), 0);
             if (n <= 0) break;
-            if (static_cast<size_t>(n) < legacy_wire::HeaderLen) continue;
-            switch (buf[3]) {
-            case legacy_wire::TypeResponse: {
-                Response resp;
-                if (legacy_wire::decode_response(buf.data(), static_cast<size_t>(n), resp)) break;
-                std::lock_guard<std::mutex> lk(mu_);
-                auto it = pending_.find(resp.command_id);
-                if (it != pending_.end()) {
-                    it->second->set_value(std::move(resp));
-                }
-                break;
-            }
-            case legacy_wire::TypeStatus: {
-                Status st;
-                if (legacy_wire::decode_status(buf.data(), static_cast<size_t>(n), st)) break;
-                std::lock_guard<std::mutex> lk(mu_);
-                for (auto& s : subs_) s->push(st);
-                break;
-            }
-            default:
-                break;
+
+            Frame resp;
+            if (decode_frame(buf.data(), static_cast<size_t>(n), resp)) continue;
+
+            const uint16_t key = pending_key(resp.info.byte_bus_id, resp.info.transaction_num);
+            std::lock_guard<std::mutex> lk(mu_);
+            auto it = pending_.find(key);
+            if (it != pending_.end()) {
+                it->second->set_value(std::move(resp));
+                pending_.erase(it);
             }
         }
     }
 };
 
-// ── Registry ──────────────────────────────────────────────────────────────────
-
-class Registry final : public rcp::Registry {
-public:
-    std::error_code dial(Zone z, const char* host, uint16_t port) {
-        auto ctrl = std::make_shared<Controller>(z, host, port);
-        if (!ctrl->ok()) return make_error_code(Errc::not_found);
-        return register_ctrl(ctrl);
-    }
-
-    std::error_code register_ctrl(std::shared_ptr<rcp::Controller> ctrl) override {
-        std::unique_lock<std::shared_mutex> lk(mu_);
-        if (closed_) return ErrClosed;
-        if (ctrls_.count(ctrl->zone())) return ErrAlreadyExists;
-        ctrls_[ctrl->zone()] = ctrl;
-        return {};
-    }
-
-    std::error_code deregister(Zone z) override {
-        std::unique_lock<std::shared_mutex> lk(mu_);
-        auto it = ctrls_.find(z);
-        if (it == ctrls_.end()) return ErrNotFound;
-        auto ctrl = it->second;
-        ctrls_.erase(it);
-        lk.unlock();
-        return ctrl->close();
-    }
-
-    std::error_code lookup(Zone z, std::shared_ptr<rcp::Controller>& out) override {
-        std::shared_lock<std::shared_mutex> lk(mu_);
-        if (closed_) return ErrClosed;
-        auto it = ctrls_.find(z);
-        if (it == ctrls_.end()) return ErrNotFound;
-        out = it->second;
-        return {};
-    }
-
-    std::vector<std::shared_ptr<rcp::Controller>> controllers() override {
-        std::shared_lock<std::shared_mutex> lk(mu_);
-        std::vector<std::shared_ptr<rcp::Controller>> out;
-        out.reserve(ctrls_.size());
-        for (auto& kv : ctrls_) out.push_back(kv.second);
-        return out;
-    }
-
-    std::error_code close() override {
-        std::unique_lock<std::shared_mutex> lk(mu_);
-        if (closed_) return {};
-        closed_ = true;
-        auto local = std::move(ctrls_);
-        lk.unlock();
-        for (auto& kv : local) { auto ec = kv.second->close(); (void)ec; }
-        return {};
-    }
-
-private:
-    mutable std::shared_mutex mu_;
-    std::map<Zone, std::shared_ptr<rcp::Controller>> ctrls_;
-    bool closed_ = false;
-};
-
-inline std::unique_ptr<Registry> new_registry() {
-    return std::make_unique<Registry>();
-}
-
 #else // !RCP_UDP_POSIX (Windows stub)
 
-class ZoneServer {
+struct Frame {
+    bool                   use_tscf        = false;
+    avtp::StreamId         stream_id{};
+    uint16_t               sequence_num    = 0;
+    bool                   timestamp_valid = false;
+    uint32_t               avtp_timestamp  = 0;
+    acf::AcfMessageInfo    info{};
+    uint64_t               message_timestamp = 0;
+    std::vector<uint8_t>   payload;
+};
+
+inline std::vector<uint8_t> encode_frame(const Frame&) { return {}; }
+inline std::error_code decode_frame(const uint8_t*, size_t, Frame&) {
+    return std::make_error_code(std::errc::function_not_supported);
+}
+
+class Server {
 public:
-    ZoneServer(Zone, const char*, uint16_t) {}
+    using Handler = std::function<std::error_code(size_t, const acf::AcfMessageInfo&,
+                                                    const std::vector<uint8_t>&,
+                                                    acf::AcfMessageInfo&, std::vector<uint8_t>&)>;
+
+    Server(avtp::StreamId, const char*, uint16_t) {}
     std::string addr_string() const { return {}; }
     uint16_t    port()        const { return 0; }
-    void set_handler(std::function<Response(const Command&)>) {}
-    void set_healthy(bool) {}
-    void publish(const std::vector<uint8_t>&) {}
+    void set_handler(Handler) {}
     void close() {}
     bool ok() const noexcept { return false; }
 };
 
-class Controller final : public rcp::Controller {
+class Client {
 public:
-    Controller(Zone z, const char*, uint16_t) : zone_(z) {}
-    Zone zone() const noexcept override { return zone_; }
-    std::error_code send(const rcp::Context&, const Command&, Response&) override {
+    Client(avtp::StreamId, const char*, uint16_t) {}
+    std::error_code request(const rcp::Context&, const acf::AcfMessageInfo&,
+                             const std::vector<uint8_t>&,
+                             acf::AcfMessageInfo&, std::vector<uint8_t>&,
+                             bool = false, uint32_t = 0, uint64_t = 0) {
         return std::make_error_code(std::errc::function_not_supported);
     }
-    std::error_code subscribe(const rcp::Context&, std::shared_ptr<StatusChannel>&) override {
-        return std::make_error_code(std::errc::function_not_supported);
-    }
-    std::error_code close() override { return {}; }
+    std::error_code close() { return {}; }
     bool ok() const noexcept { return false; }
-private:
-    Zone zone_;
 };
-
-class Registry final : public rcp::Registry {
-public:
-    std::error_code register_ctrl(std::shared_ptr<rcp::Controller>) override {
-        return std::make_error_code(std::errc::function_not_supported);
-    }
-    std::error_code deregister(Zone) override {
-        return std::make_error_code(std::errc::function_not_supported);
-    }
-    std::error_code lookup(Zone, std::shared_ptr<rcp::Controller>&) override {
-        return std::make_error_code(std::errc::function_not_supported);
-    }
-    std::vector<std::shared_ptr<rcp::Controller>> controllers() override { return {}; }
-    std::error_code close() override { return {}; }
-};
-
-inline std::unique_ptr<Registry> new_registry() {
-    return std::make_unique<Registry>();
-}
 
 #endif // RCP_UDP_POSIX
 

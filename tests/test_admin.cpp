@@ -9,7 +9,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "rcp/admin.hpp"
-#include "rcp/mock.hpp"
+#include "rcp/legacy_mock.hpp"
 
 #include <atomic>
 #include <thread>
@@ -18,18 +18,18 @@
 using namespace rcp;
 
 TEST_CASE("admin: zones lists registered controllers", "[admin]") {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     admin::AdminServer srv(reg);
 
     auto zones = srv.zones();
-    REQUIRE(zones.size() == 5); // mock::Registry pre-populates all 5
+    REQUIRE(zones.size() == 5); // legacy_mock::Registry pre-populates all 5
     for (auto& zi : zones) {
         REQUIRE(zi.registered);
     }
 }
 
 TEST_CASE("admin: subscribe receives emitted events", "[admin]") {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     admin::AdminServer srv(reg);
 
     std::vector<admin::Event> received;
@@ -44,7 +44,7 @@ TEST_CASE("admin: subscribe receives emitted events", "[admin]") {
 }
 
 TEST_CASE("admin: metrics_text contains counter lines", "[admin]") {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     admin::AdminServer srv(reg);
 
     srv.record_counter("rcp.commands.total", "zone=\"FrontLeft\"", 10.0);
@@ -56,7 +56,7 @@ TEST_CASE("admin: metrics_text contains counter lines", "[admin]") {
 }
 
 TEST_CASE("admin: multiple subscribers all receive events", "[admin]") {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     admin::AdminServer srv(reg);
 
     int count_a = 0, count_b = 0;
@@ -70,7 +70,7 @@ TEST_CASE("admin: multiple subscribers all receive events", "[admin]") {
 }
 
 TEST_CASE("admin: event delivers correct type and zone", "[admin][REQ-ADMIN-008]") {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     admin::AdminServer srv(reg);
 
     admin::Event got{};
@@ -83,7 +83,7 @@ TEST_CASE("admin: event delivers correct type and zone", "[admin][REQ-ADMIN-008]
 
 TEST_CASE("admin: concurrent record_counter and emit are thread-safe",
           "[admin][REQ-ADMIN-004][REQ-ADMIN-005]") {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     admin::AdminServer srv(reg);
 
     std::atomic<int> events{0};

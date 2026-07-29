@@ -6,13 +6,17 @@ add_executable(test_mock test_mock.cpp)
 target_link_libraries(test_mock PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_mock COMMAND test_mock)
 
-add_executable(test_wire test_wire.cpp)
-target_link_libraries(test_wire PRIVATE rcp::rcp Catch2::Catch2WithMain)
-add_test(NAME rcp_wire COMMAND test_wire)
+add_executable(test_legacy_mock test_legacy_mock.cpp)
+target_link_libraries(test_legacy_mock PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_legacy_mock COMMAND test_legacy_mock)
 
-add_executable(test_legacy_wire test_legacy_wire.cpp)
-target_link_libraries(test_legacy_wire PRIVATE rcp::rcp Catch2::Catch2WithMain)
-add_test(NAME rcp_legacy_wire COMMAND test_legacy_wire)
+add_executable(test_avtp test_avtp.cpp)
+target_link_libraries(test_avtp PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_avtp COMMAND test_avtp)
+
+add_executable(test_acf test_acf.cpp)
+target_link_libraries(test_acf PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_acf COMMAND test_acf)
 
 add_executable(test_lifecycle test_lifecycle.cpp)
 target_link_libraries(test_lifecycle PRIVATE rcp::rcp Catch2::Catch2WithMain)
@@ -54,9 +58,9 @@ add_executable(test_pwm test_pwm.cpp)
 target_link_libraries(test_pwm PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_pwm COMMAND test_pwm)
 
-add_executable(test_sequencer test_sequencer.cpp)
-target_link_libraries(test_sequencer PRIVATE rcp::rcp Catch2::Catch2WithMain)
-add_test(NAME rcp_sequencer COMMAND test_sequencer)
+add_executable(test_request test_request.cpp)
+target_link_libraries(test_request PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_request COMMAND test_request)
 
 add_executable(test_e2e test_e2e.cpp)
 target_link_libraries(test_e2e PRIVATE rcp::rcp Catch2::Catch2WithMain)
@@ -189,7 +193,7 @@ add_test(NAME rcp_cli COMMAND test_cli)
 
 foreach(mod
     canbr ddsbr doipbr grpcbridge linbr mqttbr restbridge someipbr udsbr
-    tsn mdns powerstate tls)
+    tsn mdns powerstate tls udp)
   add_executable(test_${mod} test_${mod}.cpp)
   target_link_libraries(test_${mod} PRIVATE rcp::rcp Catch2::Catch2WithMain)
   add_test(NAME rcp_${mod} COMMAND test_${mod})

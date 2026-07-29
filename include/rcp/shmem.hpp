@@ -7,213 +7,163 @@
 // fusa:req REQ-SHMEM-007
 // fusa:req REQ-SHMEM-008
 
-// Zero-copy intra-host command delivery via shared in-process memory.
+// Zero-copy intra-host request delivery via shared in-process memory.
 //
-// shmem::Controller and shmem::ZoneServer communicate through buffered
-// in-process channels (queue + condition variable), avoiding serialisation
-// overhead when both sides run in the same process. This is the default
-// "shared memory" implementation for unit testing and single-process deployments.
+// ROADMAP.md milestone 58, "Auxiliary Transport & Cross-Cutting Rebind
+// (v2.14.0)": this header is ADAPTed, per the Satellite Package
+// Disposition table's entry for `shmem.hpp` — the "avoid serialisation
+// overhead for a co-located RC Client/RC Server" value proposition is
+// unaffected by the protocol replacement, so the concept survives; only
+// the request/response shapes it carries change. shmem::Channel and
+// shmem::Registry below play the same role rcp/udp.hpp's Server/Client and
+// Registry-shaped lookup play for a real socket transport, just for two
+// endpoints that happen to live in the same process: no bytes are ever
+// serialised to (or decoded from) an AVTPDU/ACF wire encoding, since both
+// sides already share the same acf::AcfMessageInfo/std::vector<uint8_t>
+// objects in memory.
 //
-// For true OS shared memory across processes (shm_open/mmap), define
-// RCP_SHMEM_POSIX. That path is Linux-only and is planned for v0.8.1+.
+// This header has no clock, thread, or socket of its own — Channel::
+// request() dispatches synchronously on the calling thread, same
+// "primitives driven by the embedding application" convention every Phase
+// 14/15 header has used since v2.9.0.
 #pragma once
 
-#include "rcp.hpp"
+#include "acf.hpp"
+#include "avtp.hpp"
+#include "rcp.hpp" // for rcp::ErrClosed/ErrNotFound/ErrAlreadyExists only — see this header's own scope note above
 
-#include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
-#include <thread>
 #include <vector>
 
 namespace rcp {
 namespace shmem {
 
-// ── ZoneServer ────────────────────────────────────────────────────────────────
+// ── Channel ───────────────────────────────────────────────────────────────────
 
-// ZoneServer is the zone-controller side of the in-process transport.
-// Create one per zone, then pair it with a Controller.
-class ZoneServer {
+// Channel is the in-process, zero-copy analog of rcp/udp.hpp's Server:
+// a caller-supplied Handler answers each request directly, in the same
+// process, with no wire encode/decode step in between. Handler is shaped
+// identically to udp::Server::Handler so the same handler (e.g.
+// rcp::mock::Server::dispatch) can be wired to either transport.
+class Channel {
 public:
-    using Handler = std::function<Response(const Command&)>;
+    using Handler = std::function<std::error_code(size_t client,
+                                                    const acf::AcfMessageInfo& req,
+                                                    const std::vector<uint8_t>& req_payload,
+                                                    acf::AcfMessageInfo& out_resp,
+                                                    std::vector<uint8_t>& out_resp_payload)>;
 
-    explicit ZoneServer(Zone zone) : zone_(zone) {}
+    explicit Channel(uint64_t stream_key) : stream_key_(stream_key) {}
 
-    Zone zone() const noexcept { return zone_; }
+    uint64_t stream_key() const noexcept { return stream_key_; }
 
     void set_handler(Handler h) {
         std::lock_guard<std::mutex> lk(mu_);
         handler_ = std::move(h);
     }
 
-    void set_healthy(bool v) { healthy_.store(v, std::memory_order_release); }
+    // request delivers `req`/`req_payload` straight to the registered
+    // Handler and returns its response, with no serialisation step between
+    // caller and handler. If no Handler is set, the default response is
+    // ResponseKind::Acknowledge — the same "answer something, don't hang"
+    // default rcp/udp.hpp's Server uses when unhandled.
+    std::error_code request(size_t client, const acf::AcfMessageInfo& req,
+                             const std::vector<uint8_t>& req_payload,
+                             acf::AcfMessageInfo&        out_resp,
+                             std::vector<uint8_t>&       out_resp_payload) {
+        if (closed_.load(std::memory_order_acquire)) return ErrClosed;
 
-    // publish sends a Status to all active subscribers.
-    void publish(const std::vector<uint8_t>& payload) {
-        uint32_t seq = ++seq_;
-        Status st{zone_, seq, healthy_.load(), payload};
         std::lock_guard<std::mutex> lk(mu_);
-        for (auto& s : subs_) s->push(st);
+        if (handler_) {
+            return handler_(client, req, req_payload, out_resp, out_resp_payload);
+        }
+        out_resp = acf::make_response(req, acf::ResponseKind::Acknowledge);
+        out_resp_payload.clear();
+        return {};
     }
 
-    // dispatch_one processes one pending command (called by Controller).
-    // Returns false if the server is closed.
-    bool dispatch_one(const Command& cmd, Response& out) {
-        if (closed_.load()) return false;
-        std::lock_guard<std::mutex> lk(mu_);
-        if (handler_) out = handler_(cmd);
-        else          out = Response{cmd.id, zone_, ResponseStatus::OK, {}};
-        return true;
-    }
+    // close is idempotent — safe to call more than once.
+    void close() { closed_.store(true, std::memory_order_release); }
 
-    // add_sub registers a subscriber channel.
-    void add_sub(std::shared_ptr<StatusChannel> ch) {
-        std::lock_guard<std::mutex> lk(mu_);
-        subs_.push_back(std::move(ch));
-    }
-
-    // remove_sub deregisters a subscriber channel.
-    void remove_sub(const std::shared_ptr<StatusChannel>& ch) {
-        std::lock_guard<std::mutex> lk(mu_);
-        auto it = std::find(subs_.begin(), subs_.end(), ch);
-        if (it != subs_.end()) subs_.erase(it);
-    }
-
-    void close() {
-        closed_.store(true, std::memory_order_release);
-        std::lock_guard<std::mutex> lk(mu_);
-        for (auto& s : subs_) s->close();
-        subs_.clear();
-    }
-
-    bool ok() const noexcept { return !closed_.load(); }
+    bool ok() const noexcept { return !closed_.load(std::memory_order_acquire); }
 
 private:
-    Zone  zone_;
-    Handler handler_;
-    std::atomic<bool>     closed_{false};
-    std::atomic<bool>     healthy_{true};
-    std::atomic<uint32_t> seq_{0};
-    std::mutex mu_;
-    std::vector<std::shared_ptr<StatusChannel>> subs_;
-};
-
-// ── Controller ────────────────────────────────────────────────────────────────
-
-class Controller final : public rcp::Controller {
-public:
-    explicit Controller(std::shared_ptr<ZoneServer> server)
-        : server_(std::move(server)) {}
-
-    Zone zone() const noexcept override { return server_->zone(); }
-
-    std::error_code send(const rcp::Context& ctx,
-                          const Command&      cmd,
-                          Response&           out) override {
-        if (closed_.load()) return ErrClosed;
-        if (ctx.done())     return ErrTimeout;
-        if (cmd.zone != server_->zone()) return ErrZoneMismatch;
-
-        // Copy payload (REQ-SHMEM-006: no aliasing).
-        Command safe = cmd;
-        if (!cmd.payload.empty()) safe.payload = cmd.payload;
-
-        if (!server_->dispatch_one(safe, out)) return ErrClosed;
-        return {};
-    }
-
-    std::error_code subscribe(const rcp::Context&             ctx,
-                               std::shared_ptr<StatusChannel>& out) override {
-        if (closed_.load()) return ErrClosed;
-        auto ch = std::make_shared<StatusChannel>(16);
-        server_->add_sub(ch);
-        std::thread([this, weak_ch = std::weak_ptr<StatusChannel>(ch), ctx]() mutable {
-            while (!ctx.done() && !closed_.load()) {
-                auto c = weak_ch.lock();
-                if (!c || c->is_closed()) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            auto c = weak_ch.lock();
-            if (!c) return;
-            server_->remove_sub(c);
-            c->close();
-        }).detach();
-        out = std::move(ch);
-        return {};
-    }
-
-    std::error_code close() override {
-        closed_.store(true, std::memory_order_release);
-        return {};
-    }
-
-private:
-    std::shared_ptr<ZoneServer> server_;
-    std::atomic<bool> closed_{false};
+    uint64_t           stream_key_;
+    std::atomic<bool>  closed_{false};
+    std::mutex         mu_;
+    Handler            handler_;
 };
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
-class Registry final : public rcp::Registry {
+// Registry looks up a Channel by its stream_key, the same opaque
+// uint64_t-keyed lookup role rcp/watchdog.hpp's Manager and
+// rcp/regmap.hpp's Ep0 already establish for this codebase (typically an
+// avtp::StreamId::to_u64()).
+class Registry {
 public:
-    std::error_code add_server(std::shared_ptr<ZoneServer> server) {
-        return register_ctrl(std::make_shared<Controller>(std::move(server)));
-    }
-
-    std::error_code register_ctrl(std::shared_ptr<rcp::Controller> ctrl) override {
+    std::error_code add_channel(std::shared_ptr<Channel> ch) {
         std::unique_lock<std::shared_mutex> lk(mu_);
         if (closed_) return ErrClosed;
-        if (ctrls_.count(ctrl->zone())) return ErrAlreadyExists;
-        ctrls_[ctrl->zone()] = std::move(ctrl);
+        if (channels_.count(ch->stream_key())) return ErrAlreadyExists;
+        channels_[ch->stream_key()] = std::move(ch);
         return {};
     }
 
-    std::error_code deregister(Zone z) override {
+    std::error_code deregister(uint64_t stream_key) {
         std::unique_lock<std::shared_mutex> lk(mu_);
-        auto it = ctrls_.find(z);
-        if (it == ctrls_.end()) return ErrNotFound;
-        auto ctrl = it->second;
-        ctrls_.erase(it);
+        auto it = channels_.find(stream_key);
+        if (it == channels_.end()) return ErrNotFound;
+        auto ch = it->second;
+        channels_.erase(it);
         lk.unlock();
-        return ctrl->close();
+        ch->close();
+        return {};
     }
 
-    std::error_code lookup(Zone z, std::shared_ptr<rcp::Controller>& out) override {
+    std::error_code lookup(uint64_t stream_key, std::shared_ptr<Channel>& out) {
         std::shared_lock<std::shared_mutex> lk(mu_);
         if (closed_) return ErrClosed;
-        auto it = ctrls_.find(z);
-        if (it == ctrls_.end()) return ErrNotFound;
+        auto it = channels_.find(stream_key);
+        if (it == channels_.end()) return ErrNotFound;
         out = it->second;
         return {};
     }
 
-    std::vector<std::shared_ptr<rcp::Controller>> controllers() override {
+    std::vector<std::shared_ptr<Channel>> channels() {
         std::shared_lock<std::shared_mutex> lk(mu_);
-        std::vector<std::shared_ptr<rcp::Controller>> out;
-        out.reserve(ctrls_.size());
-        for (auto& kv : ctrls_) out.push_back(kv.second);
+        std::vector<std::shared_ptr<Channel>> out;
+        out.reserve(channels_.size());
+        for (auto& kv : channels_) out.push_back(kv.second);
         return out;
     }
 
-    std::error_code close() override {
+    // close is idempotent — safe to call more than once.
+    std::error_code close() {
         std::unique_lock<std::shared_mutex> lk(mu_);
         if (closed_) return {};
         closed_ = true;
-        auto local = std::move(ctrls_);
+        auto local = std::move(channels_);
         lk.unlock();
-        for (auto& kv : local) { auto ec = kv.second->close(); (void)ec; }
+        for (auto& kv : local) kv.second->close();
         return {};
     }
 
 private:
-    mutable std::shared_mutex mu_;
-    std::map<Zone, std::shared_ptr<rcp::Controller>> ctrls_;
-    bool closed_ = false;
+    mutable std::shared_mutex                    mu_;
+    std::map<uint64_t, std::shared_ptr<Channel>>  channels_;
+    bool                                          closed_ = false;
 };
+
+inline std::shared_ptr<Channel> new_channel(uint64_t stream_key) {
+    return std::make_shared<Channel>(stream_key);
+}
 
 inline std::unique_ptr<Registry> new_registry() {
     return std::make_unique<Registry>();

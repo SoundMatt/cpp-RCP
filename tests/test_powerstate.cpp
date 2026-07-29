@@ -6,177 +6,277 @@
 // fusa:test REQ-PWR-006
 // fusa:test REQ-PWR-007
 // fusa:test REQ-PWR-008
+// fusa:test REQ-PWR-009
+// fusa:test REQ-PWR-010
+// fusa:test REQ-PWR-011
+// fusa:test REQ-PWR-012
+// fusa:test REQ-PWR-013
+// fusa:test REQ-PWR-014
 
-// Power-state Manager tests (SG-003, ISO 26262 ASIL-B).
-//
-// Verifies Sleep/Wake command emission and the Active/Sleeping/BusOff state
-// machine, including automatic recovery of BusOff zones by the background loop.
+// Tests for rcp/powerstate.hpp — the TC18 power-mode model, entry-refusal
+// conditions, and hot-start-from-Sleep handshake (ROADMAP.md milestone 53,
+// "Power Management Rebuild", v2.9.0, Phase 14).
+
 #include <catch2/catch_test_macros.hpp>
 
-#include "rcp/mock.hpp"
 #include "rcp/powerstate.hpp"
+#include "rcp/wakeup.hpp"
 
-#include <atomic>
-#include <chrono>
-#include <memory>
-#include <thread>
-#include <vector>
+using namespace rcp::powerstate;
 
-using namespace rcp;
-using namespace std::chrono_literals;
+// ── PowerMode / initial state ────────────────────────────────────────────────
 
-namespace {
-
-// AlwaysFail fails every send with a fixed error and counts attempts.
-class AlwaysFail final : public rcp::Controller {
-public:
-    AlwaysFail(Zone z, std::error_code ec) : zone_(z), ec_(ec) {}
-    Zone zone() const noexcept override { return zone_; }
-    std::error_code send(const Context&, const Command&, Response&) override {
-        sends.fetch_add(1, std::memory_order_relaxed);
-        return ec_;
-    }
-    std::error_code subscribe(const Context&, std::shared_ptr<StatusChannel>&) override {
-        return ec_;
-    }
-    std::error_code close() override { return {}; }
-    std::atomic<int> sends{0};
-private:
-    Zone zone_;
-    std::error_code ec_;
-};
-
-// FailThenOk fails the first `fail_count` sends, then succeeds.
-class FailThenOk final : public rcp::Controller {
-public:
-    FailThenOk(Zone z, int fail_count) : zone_(z), remaining_(fail_count) {}
-    Zone zone() const noexcept override { return zone_; }
-    std::error_code send(const Context&, const Command&, Response& out) override {
-        if (remaining_.fetch_sub(1, std::memory_order_acq_rel) > 0)
-            return ErrTimeout;
-        out = Response{0, zone_, ResponseStatus::OK, {}};
-        return {};
-    }
-    std::error_code subscribe(const Context&, std::shared_ptr<StatusChannel>&) override {
-        return {};
-    }
-    std::error_code close() override { return {}; }
-private:
-    Zone zone_;
-    std::atomic<int> remaining_;
-};
-
-template <typename Pred>
-bool wait_until(Pred p, std::chrono::milliseconds deadline = 5s) {
-    auto end = std::chrono::steady_clock::now() + deadline;
-    while (std::chrono::steady_clock::now() < end) {
-        if (p()) return true;
-        std::this_thread::sleep_for(2ms);
-    }
-    return p();
+TEST_CASE("A freshly constructed PowerManager starts in Normal", "[powerstate][REQ-PWR-001]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    PowerManager mgr(wep);
+    REQUIRE(mgr.mode() == PowerMode::Normal);
+    REQUIRE(to_string(PowerMode::Normal) == "normal");
+    REQUIRE(to_string(PowerMode::StandBy) == "standby");
+    REQUIRE(to_string(PowerMode::Sleep) == "sleep");
+    REQUIRE(to_string(PowerMode::Unpowered) == "unpowered");
 }
 
-} // namespace
+// ── enter_standby / enter_sleep: only defined from Normal ───────────────────
 
-TEST_CASE("powerstate: sleep sends CmdSleep and transitions Active->Sleeping",
-          "[powerstate][REQ-PWR-001][REQ-PWR-002]") {
-    std::atomic<int> last_type{-1};
-    auto ctrl = std::make_shared<mock::Controller>(
-        Zone::FrontLeft, [&](const Command& c) {
-            last_type.store(static_cast<int>(c.type));
-            return Response{c.id, Zone::FrontLeft, ResponseStatus::OK, {}};
-        });
-    auto mgr = powerstate::new_manager(powerstate::default_config(), {ctrl});
+TEST_CASE("enter_standby and enter_sleep succeed from Normal", "[powerstate][REQ-PWR-002]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    PowerManager mgr(wep);
+    REQUIRE_FALSE(mgr.enter_standby());
+    REQUIRE(mgr.mode() == PowerMode::StandBy);
 
-    REQUIRE_FALSE(mgr->sleep(Context{}, Zone::FrontLeft));
-    REQUIRE(last_type.load() == static_cast<int>(CommandType::Sleep)); // REQ-PWR-001
-    REQUIRE(mgr->state(Zone::FrontLeft) == powerstate::PowerState::Sleeping); // REQ-PWR-002
+    rcp::wakeup::WakeupEndpoint wep2;
+    PowerManager mgr2(wep2);
+    REQUIRE_FALSE(mgr2.enter_sleep());
+    REQUIRE(mgr2.mode() == PowerMode::Sleep);
 }
 
-TEST_CASE("powerstate: wake sends CmdWake and transitions Sleeping->Active",
-          "[powerstate][REQ-PWR-003][REQ-PWR-004]") {
-    std::atomic<int> last_type{-1};
-    auto ctrl = std::make_shared<mock::Controller>(
-        Zone::FrontLeft, [&](const Command& c) {
-            last_type.store(static_cast<int>(c.type));
-            return Response{c.id, Zone::FrontLeft, ResponseStatus::OK, {}};
-        });
-    auto mgr = powerstate::new_manager(powerstate::default_config(), {ctrl});
+TEST_CASE("enter_standby/enter_sleep are refused outside of Normal", "[powerstate][REQ-PWR-002]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    PowerManager mgr(wep);
+    REQUIRE_FALSE(mgr.enter_standby());
+    REQUIRE(mgr.mode() == PowerMode::StandBy);
 
-    REQUIRE_FALSE(mgr->sleep(Context{}, Zone::FrontLeft));
-    REQUIRE(mgr->state(Zone::FrontLeft) == powerstate::PowerState::Sleeping);
+    auto ec = mgr.enter_sleep();
+    REQUIRE(ec == make_error_code(PowerErrc::invalid_transition));
+    REQUIRE(mgr.mode() == PowerMode::StandBy); // unchanged
 
-    REQUIRE_FALSE(mgr->wake(Context{}, Zone::FrontLeft));
-    REQUIRE(last_type.load() == static_cast<int>(CommandType::Wake)); // REQ-PWR-003
-    REQUIRE(mgr->state(Zone::FrontLeft) == powerstate::PowerState::Active); // REQ-PWR-004
+    ec = mgr.enter_standby();
+    REQUIRE(ec == make_error_code(PowerErrc::invalid_transition));
 }
 
-TEST_CASE("powerstate: command failure yields BusOff", "[powerstate][REQ-PWR-005]") {
-    auto ctrl = std::make_shared<AlwaysFail>(Zone::Central, ErrTimeout);
-    powerstate::Config cfg;
-    cfg.recovery_interval = 1h; // effectively disable recovery for this test
-    auto mgr = powerstate::new_manager(cfg, {ctrl});
+// ── Entry refusal: unacknowledged wake-up event ──────────────────────────────
 
-    auto ec = mgr->sleep(Context{}, Zone::Central);
-    REQUIRE(ec); // the underlying send failed
-    REQUIRE(mgr->state(Zone::Central) == powerstate::PowerState::BusOff);
+TEST_CASE("Entry into StandBy/Sleep is refused while a wake-up event is unacknowledged",
+          "[powerstate][REQ-PWR-003]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    wep.record_wake_source_event(2); // arms wakeup_message_pending()
+    REQUIRE(wep.wakeup_message_pending());
+
+    PowerManager mgr(wep);
+    auto ec = mgr.enter_sleep();
+    REQUIRE(ec == make_error_code(PowerErrc::unacknowledged_wakeup_event));
+    REQUIRE(mgr.mode() == PowerMode::Normal);
+
+    // Once acknowledged, entry succeeds.
+    wep.acknowledge_wakeup();
+    REQUIRE_FALSE(mgr.enter_sleep());
+    REQUIRE(mgr.mode() == PowerMode::Sleep);
 }
 
-TEST_CASE("powerstate: recover_loop retries BusOff zones", "[powerstate][REQ-PWR-006]") {
-    // First send (the sleep) fails -> BusOff; the recovery loop's Wake succeeds.
-    auto ctrl = std::make_shared<FailThenOk>(Zone::RearLeft, /*fail_count=*/1);
-    powerstate::Config cfg;
-    cfg.recovery_interval = 10ms;
-    cfg.recovery_timeout  = 10ms;
-    auto mgr = powerstate::new_manager(cfg, {ctrl});
+// ── Entry refusal: non-idle endpoint ─────────────────────────────────────────
 
-    REQUIRE(mgr->sleep(Context{}, Zone::RearLeft)); // fails -> BusOff
-    REQUIRE(mgr->state(Zone::RearLeft) == powerstate::PowerState::BusOff);
+TEST_CASE("Entry into StandBy/Sleep is refused while the endpoints_idle hook reports false",
+          "[powerstate][REQ-PWR-004]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    bool idle = false;
+    PowerManager::Hooks hooks;
+    hooks.endpoints_idle = [&] { return idle; };
+    PowerManager mgr(wep, hooks);
 
-    // Background recovery should bring the zone back to Active.
-    REQUIRE(wait_until([&] {
-        return mgr->state(Zone::RearLeft) == powerstate::PowerState::Active;
-    }));
+    auto ec = mgr.enter_standby();
+    REQUIRE(ec == make_error_code(PowerErrc::endpoint_not_idle));
+    REQUIRE(mgr.mode() == PowerMode::Normal);
+
+    idle = true;
+    REQUIRE_FALSE(mgr.enter_standby());
+    REQUIRE(mgr.mode() == PowerMode::StandBy);
 }
 
-TEST_CASE("powerstate: state() is thread-safe", "[powerstate][REQ-PWR-007]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontRight);
-    auto mgr  = powerstate::new_manager(powerstate::default_config(), {ctrl});
+// ── Entry refusal: non-empty response/ack queue ──────────────────────────────
 
-    std::atomic<bool> stop{false};
-    std::vector<std::thread> readers;
-    for (int i = 0; i < 4; ++i) {
-        readers.emplace_back([&] {
-            while (!stop.load()) {
-                auto s = mgr->state(Zone::FrontRight);
-                REQUIRE((s == powerstate::PowerState::Active ||
-                         s == powerstate::PowerState::Sleeping ||
-                         s == powerstate::PowerState::BusOff));
-            }
-        });
-    }
-    for (int i = 0; i < 50; ++i) {
-        auto e1 = mgr->sleep(Context{}, Zone::FrontRight); (void)e1;
-        auto e2 = mgr->wake(Context{}, Zone::FrontRight);  (void)e2;
-    }
-    stop.store(true);
-    for (auto& t : readers) t.join();
+TEST_CASE("Entry into StandBy/Sleep is refused while the response_ack_queues_empty hook reports false",
+          "[powerstate][REQ-PWR-005]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    bool empty = false;
+    PowerManager::Hooks hooks;
+    hooks.response_ack_queues_empty = [&] { return empty; };
+    PowerManager mgr(wep, hooks);
+
+    auto ec = mgr.enter_sleep();
+    REQUIRE(ec == make_error_code(PowerErrc::response_ack_queue_not_empty));
+    REQUIRE(mgr.mode() == PowerMode::Normal);
+
+    empty = true;
+    REQUIRE_FALSE(mgr.enter_sleep());
+    REQUIRE(mgr.mode() == PowerMode::Sleep);
 }
 
-TEST_CASE("powerstate: close stops the recovery loop", "[powerstate][REQ-PWR-008]") {
-    auto ctrl = std::make_shared<AlwaysFail>(Zone::RearRight, ErrTimeout);
-    powerstate::Config cfg;
-    cfg.recovery_interval = 10ms;
-    cfg.recovery_timeout  = 10ms;
-    auto mgr = powerstate::new_manager(cfg, {ctrl});
+// ── StandBy: always a hot start, no handshake ────────────────────────────────
 
-    REQUIRE(mgr->sleep(Context{}, Zone::RearRight)); // -> BusOff, recovery starts retrying
-    REQUIRE(wait_until([&] { return ctrl->sends.load() >= 3; })); // loop is active
+TEST_CASE("resume_from_standby returns directly to Normal with no handshake",
+          "[powerstate][REQ-PWR-006]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    bool network_reenabled = false;
+    PowerManager::Hooks hooks;
+    hooks.reenable_network_interface = [&] { network_reenabled = true; };
+    PowerManager mgr(wep, hooks);
 
-    mgr->close();
-    std::this_thread::sleep_for(50ms);   // let any in-flight attempt settle
-    int after_close = ctrl->sends.load();
-    std::this_thread::sleep_for(100ms);  // several recovery_intervals
-    // No further send attempts once the loop has stopped (allow one in-flight).
-    REQUIRE(ctrl->sends.load() <= after_close + 1);
+    REQUIRE_FALSE(mgr.enter_standby());
+    REQUIRE(mgr.pending_start_kind() == StartKind::Hot);
+
+    REQUIRE_FALSE(mgr.resume_from_standby());
+    REQUIRE(mgr.mode() == PowerMode::Normal);
+    REQUIRE(mgr.wake_stage() == WakeStage::Idle);
+    REQUIRE_FALSE(network_reenabled); // hot start from StandBy never touches the handshake hooks
+}
+
+TEST_CASE("resume_from_standby is refused outside of StandBy", "[powerstate][REQ-PWR-006]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    PowerManager mgr(wep);
+    auto ec = mgr.resume_from_standby();
+    REQUIRE(ec == make_error_code(PowerErrc::invalid_transition));
+}
+
+// ── Sleep: hot-start-from-Sleep handshake (cold start overall) ──────────────
+
+TEST_CASE("begin_wake_from_sleep requires Sleep and runs network re-enablement",
+          "[powerstate][REQ-PWR-007]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    int reenable_calls = 0;
+    PowerManager::Hooks hooks;
+    hooks.reenable_network_interface = [&] { ++reenable_calls; };
+    PowerManager mgr(wep, hooks);
+
+    REQUIRE_FALSE(mgr.enter_sleep());
+    REQUIRE(mgr.pending_start_kind() == StartKind::Cold);
+
+    REQUIRE_FALSE(mgr.begin_wake_from_sleep());
+    REQUIRE(reenable_calls == 1);
+    REQUIRE(mgr.wake_stage() == WakeStage::HandshakeActive);
+    REQUIRE(mgr.mode() == PowerMode::Sleep); // still Sleep until acknowledged
+}
+
+TEST_CASE("Handshake steps are refused when not applicable", "[powerstate][REQ-PWR-008]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    PowerManager mgr(wep);
+
+    // Not asleep at all.
+    REQUIRE(mgr.begin_wake_from_sleep() == make_error_code(PowerErrc::not_asleep));
+    REQUIRE(mgr.note_wakeup_attempt_sent() == make_error_code(PowerErrc::not_asleep));
+    REQUIRE(mgr.acknowledge_wakeup() == make_error_code(PowerErrc::not_asleep));
+
+    // Asleep, but handshake not yet begun.
+    REQUIRE_FALSE(mgr.enter_sleep());
+    REQUIRE(mgr.note_wakeup_attempt_sent() == make_error_code(PowerErrc::not_asleep));
+    REQUIRE(mgr.acknowledge_wakeup() == make_error_code(PowerErrc::not_asleep));
+}
+
+TEST_CASE("note_wakeup_attempt_sent enforces the repeat limit", "[powerstate][REQ-PWR-009]") {
+    rcp::wakeup::WakeupEndpoint wep;
+
+    Config cfg;
+    cfg.wakeup_repeat_limit = 3;
+    PowerManager mgr(wep, {}, cfg);
+
+    REQUIRE_FALSE(mgr.enter_sleep());
+    wep.record_wake_source_event(0); // a wake-source pin fires while asleep, arming the handshake
+    REQUIRE_FALSE(mgr.begin_wake_from_sleep());
+
+    // Never acknowledged: wep keeps reporting wakeup_message_pending(), so
+    // every attempt counts against the limit.
+    REQUIRE_FALSE(mgr.note_wakeup_attempt_sent()); // 1
+    REQUIRE_FALSE(mgr.note_wakeup_attempt_sent()); // 2
+    REQUIRE_FALSE(mgr.note_wakeup_attempt_sent()); // 3
+    auto ec = mgr.note_wakeup_attempt_sent();       // 4 -> exceeds limit
+    REQUIRE(ec == make_error_code(PowerErrc::handshake_repeat_limit_exceeded));
+    REQUIRE(mgr.wake_stage() == WakeStage::Failed);
+    REQUIRE(mgr.mode() == PowerMode::Sleep); // still Sleep — no silent recovery
+}
+
+TEST_CASE("note_wakeup_attempt_sent is a no-op once the handshake is already echoed",
+          "[powerstate][REQ-PWR-009]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    PowerManager mgr(wep);
+    REQUIRE_FALSE(mgr.enter_sleep());
+    wep.record_wake_source_event(0);
+    REQUIRE_FALSE(mgr.begin_wake_from_sleep());
+
+    wep.acknowledge_wakeup(); // echoed out-of-band (e.g. by a concurrent driver call)
+    REQUIRE_FALSE(mgr.note_wakeup_attempt_sent());
+    REQUIRE(mgr.wake_stage() == WakeStage::HandshakeActive); // acknowledge_wakeup() itself completes the stage
+}
+
+TEST_CASE("acknowledge_wakeup completes the handshake, re-enables queues, and returns to Normal",
+          "[powerstate][REQ-PWR-010]") {
+    rcp::wakeup::WakeupEndpoint wep;
+
+    int reenable_network = 0;
+    int reenable_queues  = 0;
+    PowerManager::Hooks hooks;
+    hooks.reenable_network_interface   = [&] { ++reenable_network; };
+    hooks.reenable_response_ack_queues = [&] { ++reenable_queues; };
+    PowerManager mgr(wep, hooks);
+
+    REQUIRE_FALSE(mgr.enter_sleep());
+    wep.record_wake_source_event(0);
+    REQUIRE_FALSE(mgr.begin_wake_from_sleep());
+    REQUIRE(reenable_network == 1);
+    REQUIRE(reenable_queues == 0); // not yet — only after acknowledge
+
+    REQUIRE_FALSE(mgr.note_wakeup_attempt_sent());
+    REQUIRE_FALSE(mgr.acknowledge_wakeup());
+
+    REQUIRE(reenable_queues == 1);
+    REQUIRE_FALSE(wep.wakeup_message_pending());
+    REQUIRE(mgr.wake_stage() == WakeStage::Complete);
+    REQUIRE(mgr.mode() == PowerMode::Normal);
+}
+
+// ── Unpowered ─────────────────────────────────────────────────────────────────
+
+TEST_CASE("notify_power_removed forces Unpowered unconditionally", "[powerstate][REQ-PWR-011]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    wep.record_wake_source_event(0); // would normally block entry into a low-power mode
+
+    PowerManager mgr(wep);
+    mgr.notify_power_removed();
+    REQUIRE(mgr.mode() == PowerMode::Unpowered); // no refusal path for power loss
+}
+
+TEST_CASE("notify_power_restored returns to Normal from Unpowered", "[powerstate][REQ-PWR-012]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    PowerManager mgr(wep);
+    mgr.notify_power_removed();
+    REQUIRE(mgr.mode() == PowerMode::Unpowered);
+
+    mgr.notify_power_restored();
+    REQUIRE(mgr.mode() == PowerMode::Normal);
+    REQUIRE(mgr.wake_stage() == WakeStage::Idle);
+}
+
+// ── StartKind ─────────────────────────────────────────────────────────────────
+
+TEST_CASE("start_kind_on_exit reports Hot for StandBy and Cold for Sleep", "[powerstate][REQ-PWR-013]") {
+    REQUIRE(start_kind_on_exit(PowerMode::StandBy) == StartKind::Hot);
+    REQUIRE(start_kind_on_exit(PowerMode::Sleep) == StartKind::Cold);
+    REQUIRE(to_string(StartKind::Hot) == "hot");
+    REQUIRE(to_string(StartKind::Cold) == "cold");
+}
+
+// ── PowerErrc category sanity ────────────────────────────────────────────────
+
+TEST_CASE("PowerErrc reports a non-empty message in its own category", "[powerstate][REQ-PWR-014]") {
+    auto ec = make_error_code(PowerErrc::invalid_transition);
+    REQUIRE(ec.category() == power_category());
+    REQUIRE_FALSE(ec.message().empty());
 }

@@ -8,7 +8,7 @@
 // (wide enough to absorb OS/VM scheduler jitter on any shared, virtualized, or
 // sandboxed host, not only hosts with CI=1 set).
 #include <catch2/catch_test_macros.hpp>
-#include <rcp/mock.hpp>
+#include <rcp/legacy_mock.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -25,7 +25,7 @@ static int64_t ns(steady_clock::duration d) {
 static double us(int64_t n) { return static_cast<double>(n) / 1000.0; }
 
 TEST_CASE("Command latency P99 < 1ms over 30s workload", "[latency][safety]") {
-    auto ctrl = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     Command cmd;
     cmd.zone = Zone::FrontLeft;
 

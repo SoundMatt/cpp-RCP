@@ -4,6 +4,7 @@
 // fusa:req REQ-LIFECYCLE-004
 // fusa:req REQ-LIFECYCLE-005
 // fusa:req REQ-LIFECYCLE-006
+// fusa:req REQ-LIFECYCLE-007
 
 // RC Server lifecycle state machine — the 3-state HW_UNCONFIGURED /
 // HW_CONFIGURED / RCP_CONFIGURED progression an OPEN Alliance TC18 Remote
@@ -27,12 +28,22 @@
 // rules and locking policy chosen in this file are this implementation's
 // own encoding of that behavior — full bit-for-bit register-map
 // conformance against other TC18 implementations is a later-milestone
-// concern, same as rcp/wire.hpp's disclaimer for the wire codec.
+// concern, same as rcp/avtp.hpp's disclaimer for the wire codec.
+//
+// ROADMAP.md milestone 54, "Watchdog & Liveness Rebuild (v2.10.0)":
+// ServerLifecycle::subscribe_state_changed below is a small, explicitly-
+// scoped addition for that milestone — rcp/deadline.hpp's liveness monitor
+// needs an "EP0 lifecycle-state-changed" trigger signal to treat as
+// evidence of RC Server liveness (there being no Status-subscription
+// concept left to poll in the new model), and no such signal existed
+// anywhere in this header prior to v2.10.0. It is purely additive: every
+// pre-existing transition rule and locking policy above is unchanged.
 #pragma once
 
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 #include <system_error>
 
 namespace rcp {
@@ -99,6 +110,12 @@ inline std::error_code make_error_code(LifecycleErrc e) noexcept {
 // above this one.
 using PlausibilityCheck = std::function<bool()>;
 
+// StateChangedCallback is ROADMAP.md milestone 54's (v2.10.0)
+// lifecycle-state-changed trigger signal: fired with (previous, current)
+// exactly once for every ServerLifecycle-driven transition that actually
+// changes state() — see subscribe_state_changed below.
+using StateChangedCallback = std::function<void(ServerState previous, ServerState current)>;
+
 // ServerLifecycle owns the current ServerState and enforces:
 //   - forward-only, single-step transitions via advance() (extraction §3.2:
 //     a state-advance request always targets the next state in sequence;
@@ -133,13 +150,17 @@ public:
         if (state_ == ServerState::HwUnconfigured && target == ServerState::HwConfigured) {
             if (hw_cfg_check_ && !hw_cfg_check_())
                 return make_error_code(LifecycleErrc::hw_cfg_inconsistent);
+            ServerState previous = state_;
             state_ = ServerState::HwConfigured;
+            notify_state_changed(previous, state_);
             return {};
         }
         if (state_ == ServerState::HwConfigured && target == ServerState::RcpConfigured) {
             if (rcp_cfg_check_ && !rcp_cfg_check_())
                 return make_error_code(LifecycleErrc::rcp_cfg_inconsistent);
+            ServerState previous = state_;
             state_ = ServerState::RcpConfigured;
+            notify_state_changed(previous, state_);
             return {};
         }
         return make_error_code(LifecycleErrc::invalid_transition);
@@ -148,7 +169,11 @@ public:
     // deconfigure is the one sanctioned backward path: an explicit reset to
     // HW_UNCONFIGURED (e.g. on a hardware reset or an operator-triggered
     // reconfiguration), unlocking every register block again.
-    void deconfigure() noexcept { state_ = ServerState::HwUnconfigured; }
+    void deconfigure() noexcept {
+        ServerState previous = state_;
+        state_ = ServerState::HwUnconfigured;
+        notify_state_changed(previous, state_);
+    }
 
     // Register-locking queries (extraction §3.2's locking behavior, this
     // implementation's own realization of it — see class comment above).
@@ -159,10 +184,35 @@ public:
         return state_ == ServerState::RcpConfigured;
     }
 
+    // subscribe_state_changed registers a callback fired, in registration
+    // order, every time a call above actually changes state() (extraction
+    // §5.1's EP0 pseudo-endpoint is the natural place a client would learn
+    // of such a transition; this class only models the trigger signal
+    // itself, not any wire-level notification of it — that is the
+    // embedding application's/rcp/regmap.hpp's concern, same "primitive,
+    // not a scheduler or transport" split as every other header in this
+    // codebase). A call to advance()/deconfigure() that fails, or that
+    // targets the state already current (deconfigure() from
+    // HwUnconfigured), fires no callback — see notify_state_changed.
+    void subscribe_state_changed(StateChangedCallback cb) {
+        state_changed_callbacks_.push_back(std::move(cb));
+    }
+
 private:
     ServerState        state_ = ServerState::HwUnconfigured;
     PlausibilityCheck  hw_cfg_check_;
     PlausibilityCheck  rcp_cfg_check_;
+    std::vector<StateChangedCallback> state_changed_callbacks_;
+
+    // notify_state_changed fires every subscribed callback exactly when
+    // `previous` and `current` actually differ — a no-change call (e.g.
+    // deconfigure() from an already-HwUnconfigured state) is deliberately
+    // silent, since this signal exists to mean "state changed", not
+    // "a transition was attempted".
+    void notify_state_changed(ServerState previous, ServerState current) noexcept {
+        if (previous == current) return;
+        for (auto& cb : state_changed_callbacks_) cb(previous, current);
+    }
 };
 
 } // namespace lifecycle

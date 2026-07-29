@@ -51,7 +51,7 @@
 // text from that document is reproduced here. The concrete bit-timing
 // register field layout, the accepted single-AVTPDU XL payload bound, and
 // the acceptance-filter matching rule chosen in this file are this
-// implementation's own, same as the equivalent disclaimers in rcp/wire.hpp,
+// implementation's own, same as the equivalent disclaimers in rcp/avtp.hpp,
 // rcp/regmap.hpp, rcp/endpoint.hpp, and rcp/uart.hpp.
 #pragma once
 

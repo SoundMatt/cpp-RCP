@@ -17,9 +17,16 @@
 //       { "zone": "FrontLeft",  "priority": "Normal" },
 //       { "zone": "FrontRight", "priority": "Normal" }
 //   ]}
+//
+// Still built on rcp.hpp's pre-replacement Zone/Controller/Registry model
+// and rcp/legacy_mock.hpp's Controller (renamed from rcp/mock.hpp at
+// ROADMAP.md milestone 56, v2.12.0 — see rcp/legacy_mock.hpp's header
+// comment). Per the Satellite Package Disposition table's entry for
+// `config.hpp`, rebuilding this loader around a server/endpoint manifest
+// schema is a later milestone, not this one.
 #pragma once
 
-#include "mock.hpp"
+#include "legacy_mock.hpp"
 #include "rcp.hpp"
 
 #include <stdexcept>
@@ -112,7 +119,7 @@ inline Manifest parse_json(const std::string& json) {
 inline std::error_code load(const std::string& json, rcp::Registry& reg) {
     Manifest m = parse_json(json);
     for (auto& entry : m.zones) {
-        auto ctrl = std::make_shared<rcp::mock::Controller>(entry.zone);
+        auto ctrl = std::make_shared<rcp::legacy_mock::Controller>(entry.zone);
         auto ec   = reg.register_ctrl(ctrl);
         if (ec) return ec;
     }

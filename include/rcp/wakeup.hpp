@@ -13,10 +13,10 @@
 // XL), ISELED, MDIO, Wakeup Control (v2.7.0)": the point the roadmap calls
 // out explicitly for Wakeup control is that its SleepCMD request is a
 // single FIXED opcode byte (kSleepCmd below), not one of the mtv=0
-// RequestTypeOpcode kinds rcp/sequencer.hpp's decode_request_type decodes
+// RequestTypeOpcode kinds rcp/request.hpp's decode_request_type decodes
 // (v2.5.0/v2.6.0) — the two are unrelated request-shape mechanisms that
 // happen to both repurpose part of a message for a request-kind byte. This
-// header has no dependency on rcp/sequencer.hpp and does not call
+// header has no dependency on rcp/request.hpp and does not call
 // decode_request_type anywhere: decode_sleep_cmd below is Wakeup control's
 // own, separate decode path, and a future reader must not route SleepCMD
 // through the conditional-request taxonomy or vice versa.
@@ -31,7 +31,7 @@
 // text from that document is reproduced here. The concrete wake-source pin
 // count and handshake state machine chosen in this file are this
 // implementation's own, same as the equivalent disclaimers in
-// rcp/wire.hpp, rcp/regmap.hpp, rcp/endpoint.hpp, and rcp/sequencer.hpp.
+// rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp, and rcp/request.hpp.
 #pragma once
 
 #include <cstdint>

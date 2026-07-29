@@ -6,7 +6,7 @@
 // fusa:test REQ-PROXY-006
 #include <catch2/catch_test_macros.hpp>
 
-#include "rcp/mock.hpp"
+#include "rcp/legacy_mock.hpp"
 #include "rcp/proxy.hpp"
 
 #include <chrono>
@@ -14,7 +14,7 @@
 using namespace rcp;
 
 TEST_CASE("proxy: ProxyController forwards command within budget", "[proxy][REQ-PROXY-001]") {
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     proxy::ProxyController pc(inner); // default 50ms budget — not exceeded
 
     Command cmd;
@@ -26,7 +26,7 @@ TEST_CASE("proxy: ProxyController forwards command within budget", "[proxy][REQ-
 }
 
 TEST_CASE("proxy: zero latency budget makes the hop time out", "[proxy][REQ-PROXY-001]") {
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     proxy::Config cfg;
     cfg.latency_budget = std::chrono::milliseconds(0); // deadline = now → already due
     proxy::ProxyController pc(inner, cfg);
@@ -41,14 +41,14 @@ TEST_CASE("proxy: zero latency budget makes the hop time out", "[proxy][REQ-PROX
 }
 
 TEST_CASE("proxy: ProxyController zone matches upstream", "[proxy][REQ-PROXY-006]") {
-    auto inner = std::make_shared<mock::Controller>(Zone::RearRight);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::RearRight);
     proxy::ProxyController pc(inner);
     REQUIRE(pc.zone() == Zone::RearRight);
 }
 
 TEST_CASE("proxy: ProxyRegistry lookup and send", "[proxy][REQ-PROXY-002]") {
     auto reg = proxy::new_registry();
-    auto inner = std::make_shared<mock::Controller>(Zone::RearLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::RearLeft);
     REQUIRE_FALSE(reg->add_route(inner));
 
     std::shared_ptr<Controller> ctrl;
@@ -70,7 +70,7 @@ TEST_CASE("proxy: lookup unknown zone returns ErrNotFound", "[proxy][REQ-PROXY-0
 
 TEST_CASE("proxy: deregister closes the upstream controller", "[proxy][REQ-PROXY-003]") {
     auto reg   = proxy::new_registry();
-    auto inner = std::make_shared<mock::Controller>(Zone::RearLeft);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::RearLeft);
     REQUIRE_FALSE(reg->add_route(inner));
 
     REQUIRE_FALSE(reg->deregister(Zone::RearLeft));
@@ -86,7 +86,7 @@ TEST_CASE("proxy: deregister closes the upstream controller", "[proxy][REQ-PROXY
 
 TEST_CASE("proxy: ProxyRegistry close is idempotent", "[proxy][REQ-PROXY-005]") {
     auto reg   = proxy::new_registry();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontRight);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontRight);
     REQUIRE_FALSE(reg->add_route(inner));
     REQUIRE_FALSE(reg->close());
     REQUIRE_FALSE(reg->close()); // second close is a no-op, still no error
@@ -94,15 +94,15 @@ TEST_CASE("proxy: ProxyRegistry close is idempotent", "[proxy][REQ-PROXY-005]") 
 
 TEST_CASE("proxy: duplicate route returns ErrAlreadyExists", "[proxy]") {
     auto reg = proxy::new_registry();
-    auto a = std::make_shared<mock::Controller>(Zone::FrontLeft);
-    auto b = std::make_shared<mock::Controller>(Zone::FrontLeft);
+    auto a = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
+    auto b = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
     REQUIRE_FALSE(reg->add_route(a));
     REQUIRE(reg->add_route(b) == ErrAlreadyExists);
 }
 
 TEST_CASE("proxy: close closes all routes", "[proxy]") {
     auto reg = proxy::new_registry();
-    auto inner = std::make_shared<mock::Controller>(Zone::FrontRight);
+    auto inner = std::make_shared<legacy_mock::Controller>(Zone::FrontRight);
     REQUIRE_FALSE(reg->add_route(inner));
     REQUIRE_FALSE(reg->close());
 }

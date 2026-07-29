@@ -5,7 +5,7 @@
 // Or directly: ./tests/bench_mock [!benchmark]
 #include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <rcp/mock.hpp>
+#include <rcp/legacy_mock.hpp>
 
 #include <thread>
 #include <vector>
@@ -14,8 +14,8 @@ using namespace rcp;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-static std::shared_ptr<mock::Controller> make_ctrl(Zone z = Zone::FrontLeft) {
-    return std::make_shared<mock::Controller>(z);
+static std::shared_ptr<legacy_mock::Controller> make_ctrl(Zone z = Zone::FrontLeft) {
+    return std::make_shared<legacy_mock::Controller>(z);
 }
 
 // ── Sanity test (always runs in CTest) ───────────────────────────────────────
@@ -37,7 +37,7 @@ TEST_CASE("Benchmark: Send_RoundTrip", "[!benchmark]") {
     Response resp;
     auto ctx = Context::background();
 
-    BENCHMARK("mock::Controller::send round-trip") {
+    BENCHMARK("legacy_mock::Controller::send round-trip") {
         auto ec = ctrl->send(ctx, cmd, resp);
         return ec;
     };
@@ -51,7 +51,7 @@ TEST_CASE("Benchmark: Send_RoundTrip_WithPayload", "[!benchmark]") {
     Response resp;
     auto ctx = Context::background();
 
-    BENCHMARK("mock::Controller::send 64-byte payload") {
+    BENCHMARK("legacy_mock::Controller::send 64-byte payload") {
         auto ec = ctrl->send(ctx, cmd, resp);
         return ec;
     };
@@ -102,9 +102,9 @@ TEST_CASE("Benchmark: Publish_FanOut", "[!benchmark]") {
 }
 
 TEST_CASE("Benchmark: Registry_Lookup", "[!benchmark]") {
-    auto reg = mock::new_registry();
+    auto reg = legacy_mock::new_registry();
 
-    BENCHMARK("mock::Registry::lookup") {
+    BENCHMARK("legacy_mock::Registry::lookup") {
         std::shared_ptr<rcp::Controller> out;
         auto ec = reg->lookup(Zone::FrontLeft, out);
         return ec;
