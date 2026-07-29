@@ -1451,7 +1451,7 @@
     {
       "id": "REQ-LOAN-001",
       "title": "loan() returns zeroed buffer",
-      "text": "loan::Controller::loan(n) shall return a zeroed byte vector of exactly n bytes.",
+      "text": "loan::BufferPool::loan(n) shall return a zeroed byte vector of exactly n bytes.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1459,47 +1459,47 @@
     {
       "id": "REQ-LOAN-002",
       "title": "loan() returns ErrClosed when closed",
-      "text": "loan() shall return ErrClosed if the controller has been closed.",
+      "text": "loan() shall return ErrClosed once the pool has been closed.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-LOAN-003",
-      "title": "loan() returns error for negative size",
-      "text": "loan() shall return an error if size < 0.",
+      "title": "loan() returns an error for negative size",
+      "text": "loan() shall return std::errc::invalid_argument if size < 0.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-LOAN-004",
-      "title": "send_loaned() delegates to inner",
-      "text": "send_loaned() shall delegate command delivery to the inner controller.",
+      "title": "Released buffers become available for reuse",
+      "text": "A Loan's buffer, once released (destruction or explicit ret()), shall become available for a subsequent loan() call to draw from the pool rather than freshly allocating.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-LOAN-005",
-      "title": "Loan RAII releases buffer to pool",
-      "text": "When a Loan is destroyed without being sent, its destructor shall return the buffer to the pool.",
+      "title": "Released buffers are re-zeroed before reuse",
+      "text": "A buffer drawn from the pool via loan() shall be re-zeroed, even if a prior borrower left non-zero data in it, so no stale data leaks across reuse.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-LOAN-006",
-      "title": "zone() delegates to inner",
-      "text": "zone() shall return the inner controller's zone.",
+      "title": "close() is idempotent and safe with outstanding Loans alive",
+      "text": "BufferPool::close() shall be safe to call more than once, including while Loans obtained before the call are still alive.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TLS-001",
-      "title": "Mutual TLS authentication",
-      "text": "TLS transport shall require both client and server to present valid X.509 certificates.",
+      "title": "Mutual TLS authentication for the UDP/IP transport",
+      "text": "The secure channel option for rcp/udp.hpp's transport shall require both client and server to present valid X.509 certificates once a real (D)TLS backend is enabled.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1530,16 +1530,16 @@
     },
     {
       "id": "REQ-TLS-005",
-      "title": "Command frames encrypted",
-      "text": "All Command and Response frames shall be encrypted in transit.",
+      "title": "SecureClient never sends a request in the clear without a real backend",
+      "text": "Without RCP_TLS_OPENSSL, SecureClient::request shall return function_not_supported for every call rather than transmitting an unencrypted AVTPDU-framed request.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TLS-006",
-      "title": "Status frames encrypted",
-      "text": "All Status subscription frames shall be encrypted in transit.",
+      "title": "SecureServer never reports itself usable without a real backend",
+      "text": "Without RCP_TLS_OPENSSL, SecureServer::ok() shall report false, so an embedding cannot mistake the stub for a securely bound server.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1562,16 +1562,16 @@
     },
     {
       "id": "REQ-TLS-009",
-      "title": "close() terminates TLS session",
-      "text": "close() shall perform a clean TLS shutdown before closing the underlying socket.",
+      "title": "close() terminates the secure session cleanly",
+      "text": "SecureClient::close and SecureServer::close shall perform a clean shutdown and be safe to call more than once.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TLS-010",
-      "title": "Error propagation",
-      "text": "Any TLS handshake or I/O error shall be returned as a std::error_code to the caller.",
+      "title": "stream_id and Config are carried unchanged",
+      "text": "SecureClient and SecureServer shall expose the stream_id and Config they were constructed with, unchanged, for the embedding application to introspect.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1579,127 +1579,127 @@
     {
       "id": "REQ-SHMEM-001",
       "title": "In-process zero-copy delivery",
-      "text": "shmem::Controller::send() shall deliver commands to the ZoneServer without serialising to a byte buffer.",
+      "text": "shmem::Channel::request() shall deliver a request to the registered Handler directly, without serialising to a byte buffer.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-002",
-      "title": "Custom handler invoked",
-      "text": "If set_handler() has been called, the handler shall be invoked for each command; otherwise a default OK response is returned.",
+      "title": "Custom handler invoked, else default Acknowledge",
+      "text": "If set_handler() has been called, the handler shall be invoked for each request() call; otherwise Channel::request() shall answer ResponseKind::Acknowledge.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-003",
-      "title": "ErrZoneMismatch on wrong zone",
-      "text": "send() shall return ErrZoneMismatch if cmd.zone differs from the server's zone.",
+      "title": "ErrClosed after close()",
+      "text": "Channel::request() shall return ErrClosed once the Channel has been closed.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-004",
-      "title": "ErrClosed after close()",
-      "text": "send() shall return ErrClosed after the Controller or ZoneServer has been closed.",
+      "title": "Registry::lookup finds a channel registered via add_channel",
+      "text": "shmem::Registry::lookup() shall return the Channel for a stream_key registered via add_channel().",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-005",
-      "title": "publish() delivers to all subscribers",
-      "text": "ZoneServer::publish() shall push the Status to every active StatusChannel.",
+      "title": "Registry::close() closes all registered channels",
+      "text": "Registry::close() shall close every registered Channel and cause subsequent lookup() calls to return ErrClosed.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-006",
-      "title": "Payload copied before handler",
-      "text": "The controller shall copy the Command payload before passing it to the ZoneServer handler.",
+      "title": "Channel::request is thread-safe for concurrent callers",
+      "text": "Concurrent calls to Channel::request() from different threads shall not result in data races or lost/duplicated handler invocations.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-007",
-      "title": "Registry lookup finds registered server",
-      "text": "shmem::Registry::lookup() shall return the controller for a zone registered via add_server().",
+      "title": "Client id is forwarded to the handler unchanged",
+      "text": "The caller-supplied client id passed to Channel::request() shall be forwarded to the registered Handler unchanged.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-SHMEM-008",
-      "title": "Registry::close() releases all controllers",
-      "text": "Registry::close() shall close all registered controllers and cause subsequent lookup() to return ErrClosed.",
+      "title": "close() is idempotent",
+      "text": "Channel::close() and Registry::close() shall be safe to call more than once without crashing or blocking.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-001",
-      "title": "SO_PRIORITY set per command priority",
-      "text": "tsn::Controller::send() shall set the SO_PRIORITY socket option proportional to the command's rcp::Priority before sending.",
+      "title": "apply_priority sets SO_PRIORITY per RequestCategory",
+      "text": "tsn::apply_priority(fd, cfg, category) shall set the SO_PRIORITY socket option proportional to the request's rcp::request::RequestCategory before the next send on that socket, on platforms where RCP_TSN_SO_PRIORITY is defined; on other platforms it shall succeed as a no-op.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-002",
-      "title": "PCPMap maps Normal/High/Critical to PCP values",
-      "text": "The PCPMap struct shall provide separate PCP values for Priority::Normal, Priority::High, and Priority::Critical.",
+      "title": "PCPMap maps every RequestCategory to a PCP value",
+      "text": "The PCPMap struct shall provide a separate PCP value for each of the seven rcp::request::RequestCategory values.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-003",
-      "title": "Critical mapped to highest PCP",
-      "text": "Priority::Critical shall be mapped to PCP 7 by default.",
+      "title": "Cancellation mapped to the highest PCP",
+      "text": "RequestCategory::Cancellation (execution-priority rank 0) shall be mapped to PCP 7 by default.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-004",
-      "title": "High mapped to mid-range PCP",
-      "text": "Priority::High shall be mapped to PCP 5 by default.",
+      "title": "Triggered mapped to a mid/high-range PCP",
+      "text": "RequestCategory::Triggered shall be mapped to PCP 6 by default.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-005",
-      "title": "Normal mapped to low PCP",
-      "text": "Priority::Normal shall be mapped to PCP 2 by default.",
+      "title": "Standard mapped to the lowest PCP",
+      "text": "RequestCategory::Standard (the mandatory baseline kind, execution-priority rank 6) shall be mapped to PCP 1 by default, and the default PCPMap shall preserve the full seven-category execution-priority ordering.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-TSN-006",
-      "title": "subscribe() delegates to inner",
-      "text": "subscribe() shall delegate directly to the inner controller without modifying socket priority.",
+      "title": "apply_priority rejects an invalid socket fd",
+      "text": "apply_priority shall return std::errc::invalid_argument for a negative fd, on every platform.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-MDNS-001",
-      "title": "Discoverer interface for zone discovery",
-      "text": "mdns::Discoverer shall define the abstract interface for mDNS-based zone controller discovery.",
+      "title": "Discoverer interface for udp::Server host:port discovery",
+      "text": "mdns::Discoverer shall define the abstract interface for mDNS-based discovery of udp::Server instances reachable at a host:port, for the UDP/IP transport variant only.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-MDNS-002",
-      "title": "start() fires Added event for each discovered zone",
-      "text": "Discoverer::start() shall invoke the callback with EventType::Added for each discovered ZoneInfo.",
+      "title": "start() fires Added event for each discovered server",
+      "text": "Discoverer::start() shall invoke the callback with EventType::Added for each discovered ServerInfo.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1714,16 +1714,16 @@
     },
     {
       "id": "REQ-MDNS-004",
-      "title": "StaticDiscoverer emits configured zones",
-      "text": "StaticDiscoverer::start() shall emit all configured ZoneInfo entries synchronously before returning.",
+      "title": "StaticDiscoverer emits configured servers",
+      "text": "StaticDiscoverer::start() shall emit all configured ServerInfo entries synchronously before returning.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-MDNS-005",
-      "title": "ZoneInfo carries host, port, and zone",
-      "text": "ZoneInfo shall carry the Zone, host string, port number, and service instance name.",
+      "title": "ServerInfo carries stream_key, host, and port",
+      "text": "ServerInfo shall carry the opaque stream_key (typically avtp::StreamId::to_u64()), host string, port number, and service instance name.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1731,15 +1731,15 @@
     {
       "id": "REQ-MDNS-006",
       "title": "instance_name follows _rcp._udp.local convention",
-      "text": "make_instance_name() shall produce names of the form '<zone>.<host>._rcp._udp.local'.",
+      "text": "make_instance_name() shall produce names of the form '<hex-stream-key>.<host>._rcp._udp.local', distinct for every distinct stream_id.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-MDNS-007",
-      "title": "Announcer interface for zone registration",
-      "text": "mdns::Announcer shall define the abstract interface for announcing zone controllers via the local mDNS responder.",
+      "title": "Announcer interface for udp::Server registration",
+      "text": "mdns::Announcer shall define the abstract interface for announcing a udp::Server via the local mDNS responder.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1747,7 +1747,7 @@
     {
       "id": "REQ-MDNS-008",
       "title": "withdraw() removes mDNS record",
-      "text": "Announcer::withdraw(z) shall remove the mDNS record for the given zone.",
+      "text": "Announcer::withdraw(stream_key) shall remove the mDNS record for the given stream_key.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2106,16 +2106,16 @@
     },
     {
       "id": "REQ-OBS-001",
-      "title": "ObservingController records a span per send",
-      "text": "ObservingController::send() shall record one Span for every call to the underlying controller.",
+      "title": "ObservingClient records a span per request",
+      "text": "ObservingClient::request() shall record one Span for every call to the wrapped RequestFn.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-OBS-002",
-      "title": "Span captures zone and command type",
-      "text": "The Span recorded by ObservingController shall include the Command zone and CommandType.",
+      "title": "Span captures byte_bus_id and acf_msg_type",
+      "text": "The Span recorded by ObservingClient shall include the request's byte_bus_id and acf_msg_type.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2123,7 +2123,7 @@
     {
       "id": "REQ-OBS-003",
       "title": "Span duration is non-negative",
-      "text": "The duration() of every recorded Span shall be \u2265 0 microseconds.",
+      "text": "The duration() of every recorded Span shall be >= 0 microseconds.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2131,7 +2131,7 @@
     {
       "id": "REQ-OBS-004",
       "title": "Span captures error code",
-      "text": "The Span result field shall reflect the error_code returned by the inner controller.",
+      "text": "The Span result field shall reflect the error_code returned by the wrapped RequestFn.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2154,16 +2154,16 @@
     },
     {
       "id": "REQ-OBS-007",
-      "title": "ObservingController increments rcp.commands.total counter",
-      "text": "ObservingController::send() shall call record_counter('rcp.commands.total') once per send.",
+      "title": "ObservingClient increments rcp.requests.total counter",
+      "text": "ObservingClient::request() shall call record_counter('rcp.requests.total') once per call.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-OBS-008",
-      "title": "ObservingController increments error counter on failure",
-      "text": "When send() returns a non-zero error_code, ObservingController shall also call record_counter('rcp.commands.errors').",
+      "title": "ObservingClient increments error counter on failure",
+      "text": "When request() returns a non-zero error_code, ObservingClient shall also call record_counter('rcp.requests.errors').",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2234,24 +2234,24 @@
     },
     {
       "id": "REQ-REC-001",
-      "title": "RecordingController captures command and response",
-      "text": "RecordingController::send() shall append one Entry to the Record containing the Command, Response, and error_code for every send call.",
+      "title": "RecordingClient captures request and response",
+      "text": "RecordingClient::request() shall append one Entry to the Record containing the request AcfMessageInfo/payload, the response AcfMessageInfo/payload, and the resulting error_code, for every call.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-REC-002",
-      "title": "Record::size() reflects number of sent commands",
-      "text": "Record::size() shall equal the total number of completed send() calls through the RecordingController.",
+      "title": "Record::size() reflects number of completed request() calls",
+      "text": "Record::size() shall equal the total number of completed request() calls through the RecordingClient.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-REC-003",
-      "title": "Record::write_binary creates a non-empty file",
-      "text": "Record::write_binary() shall create a file at the specified path, write all captured entries, and return no error.",
+      "title": "Record::write_binary/read_binary round-trip entries losslessly",
+      "text": "Record::write_binary() shall serialise every captured Entry to a file, and Record::read_binary() shall recover the timestamp, request/response AcfMessageInfo fields, and request/response payloads unchanged.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2259,7 +2259,7 @@
     {
       "id": "REQ-REC-004",
       "title": "Playback::run_all replays all entries",
-      "text": "Playback::run_all() shall send one command for every entry in the Record to the target controller.",
+      "text": "Playback::run_all() shall replay one request for every entry in the Record against the target RequestFn.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2275,15 +2275,15 @@
     {
       "id": "REQ-REC-006",
       "title": "Entry timestamp_ns is monotonically increasing",
-      "text": "The timestamp_ns fields of consecutive entries in a Record shall be non-decreasing.",
+      "text": "The timestamp_ns fields of consecutive entries appended to a Record shall be non-decreasing.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-REC-007",
-      "title": "RecordingController forwards send result unchanged",
-      "text": "RecordingController::send() shall return the same error_code as the inner controller.",
+      "title": "RecordingClient forwards the inner error_code unchanged",
+      "text": "RecordingClient::request() shall return the same error_code as the wrapped RequestFn.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"

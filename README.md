@@ -64,19 +64,19 @@ reference.
 | `<rcp/proxy.hpp>` | Transparent zone proxy for cascaded zonal topologies |
 | `<rcp/zonegroup.hpp>` | Atomic multi-zone command broadcast with typed zone group sets |
 | `<rcp/dyndata.hpp>` | Runtime schema registry and dynamic payload encoding |
-| `<rcp/loan.hpp>` | `LoaningController` — zero-copy payload loaning via a pre-allocated pool |
-| `<rcp/record.hpp>` | Binary record and replay of RCP traffic |
-| `<rcp/observe.hpp>` | OpenTelemetry-style observability: spans, gauges, counters |
-| `<rcp/mdns.hpp>` | mDNS/DNS-SD zone controller discovery (RFC 6762/6763) |
+| `<rcp/loan.hpp>` | `loan::BufferPool` — zero-copy payload loaning via a pre-allocated pool, for AVTPDU/ACF request-building (ROADMAP.md v2.14.0) |
+| `<rcp/record.hpp>` | Binary record and replay of RC-Client-level request/response traffic (ROADMAP.md v2.14.0) |
+| `<rcp/observe.hpp>` | OpenTelemetry-style observability: spans and counters around a client-side send-equivalent call (ROADMAP.md v2.14.0) |
+| `<rcp/mdns.hpp>` | mDNS/DNS-SD host:port discovery (RFC 6762/6763), scoped to the UDP/IP transport variant (ROADMAP.md v2.14.0) |
 
 ### Transports
 
 | Header | Description |
 |---|---|
 | `<rcp/udp.hpp>` | Native IEEE 1722-over-UDP/IP transport (Annex J): `Server`/`Client` carry AVTPDU (NTSCF/TSCF) + ACF_ABB/ACF_GBB frames over UDP sockets (ROADMAP.md v2.13.0) |
-| `<rcp/tls.hpp>` | Mutual TLS transport for zone controller communication |
-| `<rcp/shmem.hpp>` | Zero-copy intra-host command delivery via shared in-process memory |
-| `<rcp/tsn.hpp>` | IEEE 802.1Qbv-aware UDP transport adapter for hard real-time Ethernet |
+| `<rcp/tls.hpp>` | Secure-channel option for the UDP/IP transport variant (DTLS/application-layer, `SecureClient`/`SecureServer`); the specification's own preferred link security is MACsec (802.1AE) at layer 2, which this package does not address (ROADMAP.md v2.14.0) |
+| `<rcp/shmem.hpp>` | Zero-copy in-process request `Channel`/`Registry`, keyed by opaque stream_key (ROADMAP.md v2.14.0) |
+| `<rcp/tsn.hpp>` | IEEE 802.1p PCP-priority hint (`apply_priority`) keyed off `rcp::request::RequestCategory`'s execution-priority ordering; prefer genuine IEEE 1722 stream reservation where available (ROADMAP.md v2.14.0) |
 | `<rcp/avtp.hpp>` | TC18 wire codec, framing half — IEEE 1722 AVTPDU (NTSCF/TSCF) header framing (ROADMAP.md v2.0.0) |
 | `<rcp/acf.hpp>` | TC18 wire codec, message half — ACF_ABB/ACF_GBB message format (ROADMAP.md v2.0.0) |
 | `<rcp/sim.hpp>` | Timing-realistic RC Server simulator for SiL/HIL testing — wraps `<rcp/mock.hpp>` with latency/jitter and Fault/Recover controls, watchdog wired via `<rcp/watchdog.hpp>` (ROADMAP.md v2.12.0) |
