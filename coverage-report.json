@@ -16,9 +16,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/adapt.hpp",
-      "linePct": 84.68468468468468,
-      "linesHit": 94,
-      "linesTotal": 111
+      "linePct": 96.51162790697674,
+      "linesHit": 83,
+      "linesTotal": 86
     },
     {
       "branchPct": 0.0,
@@ -79,18 +79,18 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/capi_impl.hpp",
-      "linePct": 97.67441860465117,
-      "linesHit": 42,
-      "linesTotal": 43
+      "linePct": 100.0,
+      "linesHit": 49,
+      "linesTotal": 49
     },
     {
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/cli.hpp",
-      "linePct": 80.8259587020649,
-      "linesHit": 274,
-      "linesTotal": 339
+      "linePct": 83.01369863013699,
+      "linesHit": 303,
+      "linesTotal": 365
     },
     {
       "branchPct": 0.0,
@@ -331,8 +331,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/prioqueue.hpp",
-      "linePct": 91.04477611940298,
-      "linesHit": 61,
+      "linePct": 86.56716417910448,
+      "linesHit": 58,
       "linesTotal": 67
     },
     {
@@ -367,8 +367,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/rcp.hpp",
-      "linePct": 76.08695652173913,
-      "linesHit": 35,
+      "linePct": 73.91304347826087,
+      "linesHit": 34,
       "linesTotal": 46
     },
     {
@@ -555,6 +555,15 @@
       "branchPct": 0.0,
       "branchesHit": 0,
       "branchesTotal": 0,
+      "filename": "/usr/include/c++/12/bit",
+      "linePct": 90.0,
+      "linesHit": 18,
+      "linesTotal": 20
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/alloc_traits.h",
       "linePct": 85.71428571428571,
       "linesHit": 24,
@@ -601,9 +610,9 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/basic_string.h",
-      "linePct": 65.0,
-      "linesHit": 52,
-      "linesTotal": 80
+      "linePct": 66.66666666666667,
+      "linesHit": 56,
+      "linesTotal": 84
     },
     {
       "branchPct": 0.0,
@@ -790,8 +799,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/predefined_ops.h",
-      "linePct": 68.33333333333333,
-      "linesHit": 41,
+      "linePct": 60.0,
+      "linesHit": 36,
       "linesTotal": 60
     },
     {
@@ -943,8 +952,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/shared_ptr.h",
-      "linePct": 85.71428571428571,
-      "linesHit": 36,
+      "linePct": 92.85714285714286,
+      "linesHit": 39,
       "linesTotal": 42
     },
     {
@@ -952,8 +961,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/shared_ptr_base.h",
-      "linePct": 94.38775510204081,
-      "linesHit": 185,
+      "linePct": 93.87755102040816,
+      "linesHit": 184,
       "linesTotal": 196
     },
     {
@@ -1033,8 +1042,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_heap.h",
-      "linePct": 58.333333333333336,
-      "linesHit": 35,
+      "linePct": 23.333333333333332,
+      "linesHit": 14,
       "linesTotal": 60
     },
     {
@@ -1069,8 +1078,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_map.h",
-      "linePct": 84.21052631578948,
-      "linesHit": 64,
+      "linePct": 82.89473684210526,
+      "linesHit": 63,
       "linesTotal": 76
     },
     {
@@ -1123,8 +1132,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_tree.h",
-      "linePct": 84.68085106382979,
-      "linesHit": 398,
+      "linePct": 80.0,
+      "linesHit": 376,
       "linesTotal": 470
     },
     {
@@ -1216,6 +1225,15 @@
       "linePct": 0.0,
       "linesHit": 0,
       "linesTotal": 34
+    },
+    {
+      "branchPct": 0.0,
+      "branchesHit": 0,
+      "branchesTotal": 0,
+      "filename": "/usr/include/c++/12/charconv",
+      "linePct": 78.87323943661971,
+      "linesHit": 56,
+      "linesTotal": 71
     },
     {
       "branchPct": 0.0,
@@ -1339,8 +1357,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/optional",
-      "linePct": 98.86363636363636,
-      "linesHit": 87,
+      "linePct": 94.31818181818181,
+      "linesHit": 83,
       "linesTotal": 88
     },
     {
@@ -1375,8 +1393,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/system_error",
-      "linePct": 80.0,
-      "linesHit": 32,
+      "linePct": 92.5,
+      "linesHit": 37,
       "linesTotal": 40
     },
     {
@@ -1434,15 +1452,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-07-29T02:20:33Z",
-  "linePct": 70.02658160552897,
+  "generatedAt": "2026-07-29T03:27:43Z",
+  "linePct": 69.8327548122436,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 6586,
+    "hitLines": 6639,
     "totalBranches": 0,
-    "totalLines": 9405
+    "totalLines": 9507
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0
