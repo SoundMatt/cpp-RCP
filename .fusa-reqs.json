@@ -2699,7 +2699,7 @@
     {
       "id": "REQ-CAPI-003",
       "title": "rcp_ctrl_init succeeds with adequate buffer",
-      "text": "rcp_ctrl_init() shall return RCP_OK and populate the output handle when supplied a buffer of at least rcp_ctrl_sizeof() bytes.",
+      "text": "rcp_ctrl_init() shall return RCP_OK and populate the output handle when supplied a non-null rcp_request_fn_t and a buffer of at least rcp_ctrl_sizeof() bytes.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2723,7 +2723,7 @@
     {
       "id": "REQ-CAPI-006",
       "title": "rcp_send returns RCP_OK on success",
-      "text": "rcp_send() shall return RCP_OK and populate rcp_response_t when the inner controller succeeds within the timeout.",
+      "text": "rcp_send() shall return RCP_OK and populate rcp_response_t when ctrl's bound rcp_request_fn_t succeeds and reports no more response bytes than resp->payload_cap allowed.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2731,7 +2731,7 @@
     {
       "id": "REQ-CAPI-007",
       "title": "rcp_send with null ctrl returns RCP_ERR_INVALID",
-      "text": "rcp_send() shall return RCP_ERR_INVALID when ctrl, cmd, or resp is NULL.",
+      "text": "rcp_send() shall return RCP_ERR_INVALID when ctrl, req, or resp is NULL.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2743,6 +2743,14 @@
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-CAPI-009",
+      "title": "rcp_send rejects a callback that overruns the response payload capacity",
+      "text": "rcp_send() shall return RCP_ERR_INVALID when the bound rcp_request_fn_t reports resp->payload_len greater than resp->payload_cap.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
     },
     {
       "id": "REQ-CLI-001",
@@ -2803,7 +2811,7 @@
     {
       "id": "REQ-RELAY-004",
       "title": "Adapt() wraps a Controller as a relay::Caller (\u00a710.3)",
-      "text": "rcp::Adapt(std::shared_ptr<Controller>) shall return a non-null relay::Caller whose protocol() is RCP and whose call(), send(), subscribe(), and close() delegate to the wrapped controller.",
+      "text": "rcp::Adapt(RequestFn) shall return a non-null relay::Caller whose protocol() is RCP and whose call()/send() delegate to the wrapped RequestFn, resolving the target server+endpoint from relay::Message.id; subscribe() shall report std::errc::function_not_supported, and close() shall succeed unconditionally.",
       "standard": "relay",
       "level": "QM",
       "asil": "QM"
@@ -2811,7 +2819,7 @@
     {
       "id": "REQ-RELAY-005",
       "title": "RELAY core bindings and RCP message mapping (\u00a718.2, \u00a714, \u00a715.7.5)",
-      "text": "rcp::Context shall alias relay::Context and rcp::StatusChannel shall alias relay::Channel<Status>; SubscriberOptions shall default channel_depth=64 and expose topic_name; status_to_message() shall match the rcp-status golden vector.",
+      "text": "rcp::Context shall alias relay::Context and rcp::StatusChannel shall alias relay::Channel<Status>; SubscriberOptions shall default channel_depth=64 and expose topic_name; endpoint_id_to_relay_id()/relay_id_to_endpoint_id() shall round-trip a (stream_key, byte_bus_id) pair through relay::Message.id, and message_to_request()/response_to_message() shall correctly decode/encode the op, evt_op, and response_kind fields.",
       "standard": "relay",
       "level": "QM",
       "asil": "QM"
@@ -2819,7 +2827,7 @@
     {
       "id": "REQ-CLI-005",
       "title": "CLI send --format json streaming NDJSON sink (RELAY \u00a711.2)",
-      "text": "The `send --format json` subcommand shall read relay.Message values as NDJSON on stdin (one per line) and publish each via message_to_command to the matching zone controller until EOF; malformed or undeliverable lines shall be reported and skipped without aborting the stream. `send` without `--format json` shall return exit code 2.",
+      "text": "The `send --format json` subcommand shall read relay.Message values as NDJSON on stdin (one per line) and publish each via message_to_request to the matching rcp::mock::Server endpoint until EOF; malformed or undeliverable lines shall be reported and skipped without aborting the stream. `send` without `--format json` shall return exit code 2.",
       "standard": "relay",
       "level": "QM",
       "asil": "QM"

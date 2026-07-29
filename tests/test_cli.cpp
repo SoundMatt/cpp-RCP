@@ -9,6 +9,14 @@
 // Drives rcp::cli::run() directly (no subprocess) and checks the emitted JSON
 // against the required fields of RELAY spec/schemas/cli-*.json, plus the §11.3
 // exit codes.
+//
+// ROADMAP.md milestone 60 (v2.16.0): the `send` coverage below is rewritten
+// against the new `--server <stream_key> --endpoint <byte_bus_id> --op
+// read|write` protocol-flags form and the mock::Server-backed streaming
+// sink — see rcp/cli.hpp's own header comment. `version`/`capabilities`/
+// `status` coverage is unchanged in shape, per this milestone's own scope
+// note, with `capabilities`'s transports/features assertions refreshed to
+// the v2.16.0 field values.
 #include <catch2/catch_test_macros.hpp>
 
 #include <rcp/cli.hpp>
@@ -120,6 +128,23 @@ TEST_CASE("cli: capabilities has all required fields and kind", "[cli][conforman
     REQUIRE(s.find("\"status\"") != std::string::npos);
 }
 
+TEST_CASE("cli: capabilities transports/features reflect the v2.16.0 rebuild",
+          "[cli][conformance]") {
+    int code = 0;
+    auto s = capture({"capabilities"}, code);
+    REQUIRE(code == rcp::cli::kOk);
+    // Transports: the native UDP/IP (v2.13.0), shmem (v2.14.0), and the
+    // in-process mock::Server (v2.12.0) demo backend `send` dispatches to.
+    REQUIRE(s.find("\"udp\"") != std::string::npos);
+    REQUIRE(s.find("\"shmem\"") != std::string::npos);
+    REQUIRE(s.find("\"mock\"") != std::string::npos);
+    // Features: a sample of the endpoint set from v2.3.0/v2.4.0/v2.7.0.
+    REQUIRE(s.find("\"gpio\"") != std::string::npos);
+    REQUIRE(s.find("\"spi\"") != std::string::npos);
+    REQUIRE(s.find("\"can\"") != std::string::npos);
+    REQUIRE(s.find("\"loaning\"") != std::string::npos);
+}
+
 // ── §12.3 status ──────────────────────────────────────────────────────────────
 
 TEST_CASE("cli: status --format json has all required fields", "[cli][conformance]") {
@@ -145,11 +170,14 @@ TEST_CASE("cli: send is declared in capabilities", "[cli][conformance][REQ-CLI-0
 }
 
 TEST_CASE("cli: send --format json publishes each NDJSON message", "[cli][conformance][REQ-CLI-005]") {
-    // Three well-formed relay.Message lines addressed to standard zones.
+    // Three well-formed relay.Message lines addressed to the mock GPIO/SPI
+    // endpoints (byte_bus_id 1 and 2) via the v2.16.0 "<16 hex>:<decimal>" id.
+    // SPI (endpoint 2) accepts any payload length, unlike GPIO's fixed
+    // 4-byte bitmask, so short payloads are addressed there.
     const std::string nd =
-        "{\"protocol\":5,\"id\":\"FrontLeft\",\"payload\":\"AQ==\",\"meta\":{\"rcp.command_type\":\"1\"}}\n"
-        "{\"protocol\":5,\"id\":\"RearRight\",\"seq\":7}\n"
-        "{\"protocol\":5,\"id\":\"Central\",\"meta\":{\"rcp.priority\":\"2\"}}\n";
+        "{\"protocol\":5,\"id\":\"0000000000000000:2\",\"payload\":\"AQ==\",\"meta\":{\"rcp.op\":\"write\"}}\n"
+        "{\"protocol\":5,\"id\":\"0000000000000000:2\",\"seq\":7}\n"
+        "{\"protocol\":5,\"id\":\"0000000000000000:1\",\"meta\":{\"rcp.op\":\"read\"}}\n";
     int code = 0;
     auto out = capture_in({"send", "--format", "json"}, nd, code);
     REQUIRE(code == rcp::cli::kOk);
@@ -160,9 +188,10 @@ TEST_CASE("cli: send skips malformed and undeliverable lines without aborting",
           "[cli][conformance][REQ-CLI-005]") {
     const std::string nd =
         "not json\n"
-        "{\"id\":\"FrontLeft\"}\n"          // deliverable
-        "{\"id\":\"Nonexistent\"}\n"        // unknown zone -> skipped
-        "\n";                               // blank -> skipped
+        "{\"id\":\"0000000000000000:1\"}\n"     // deliverable (GPIO)
+        "{\"id\":\"0000000000000000:99\"}\n"    // unregistered endpoint -> skipped
+        "{\"id\":\"not-a-valid-id\"}\n"          // unparseable id -> skipped
+        "\n";                                     // blank -> skipped
     int code = 0;
     std::string errout;
     auto out = capture_in({"send", "--format", "json"}, nd, code, &errout);
@@ -178,60 +207,85 @@ TEST_CASE("cli: send without --format json returns invalid-args (2)",
     REQUIRE(code == rcp::cli::kInvalidArgs);
 }
 
-TEST_CASE("cli: send base64 payload decodes into the published command",
+TEST_CASE("cli: send base64 payload decodes into the published request",
           "[cli][conformance][REQ-CLI-005]") {
-    // "AQID" -> bytes {1,2,3}; empty stream variant just checks clean EOF handling.
+    // "AQID" -> bytes {1,2,3}; SPI (endpoint 2) accepts any payload length.
     int code = 0;
     auto out = capture_in({"send", "--format", "json"},
-                          "{\"id\":\"FrontLeft\",\"payload\":\"AQID\"}\n", code);
+                          "{\"id\":\"0000000000000000:2\",\"payload\":\"AQID\","
+                          "\"meta\":{\"rcp.op\":\"write\"}}\n",
+                          code);
     REQUIRE(code == rcp::cli::kOk);
     REQUIRE(out.find("published 1 message(s)") != std::string::npos);
 }
 
-// ── §11.2 protocol-flags send: --zone/--type/--payload (RCP row) ──────────────
+// ── §11.2 protocol-flags send: --server/--endpoint/--op (RCP row) ─────────────
 
-TEST_CASE("cli: send --zone --type dispatches a single command (text)",
+TEST_CASE("cli: send --server --endpoint --op read dispatches a single request (text)",
           "[cli][conformance][REQ-CLI-005]") {
     int code = 0;
-    auto s = capture({"send", "--zone", "FrontLeft", "--type", "set"}, code);
+    auto s = capture({"send", "--server", "0", "--endpoint", "1", "--op", "read"}, code);
     REQUIRE(code == rcp::cli::kOk);
-    REQUIRE(s.find("FrontLeft") != std::string::npos);
+    REQUIRE(s.find("0000000000000000:1") != std::string::npos);
 }
 
-TEST_CASE("cli: send --zone --type --payload dispatches with a decoded hex payload (json)",
+TEST_CASE("cli: send --server --endpoint --op write --payload dispatches (json)",
           "[cli][conformance][REQ-CLI-005]") {
     int code = 0;
-    auto s = capture({"send", "--zone", "RearRight", "--type", "get",
+    auto s = capture({"send", "--server", "0x2A", "--endpoint", "2", "--op", "write",
                       "--payload", "0102", "--format", "json"}, code);
     REQUIRE(code == rcp::cli::kOk);
     REQUIRE(s.find("\"sent\":true") != std::string::npos);
-    REQUIRE(s.find("\"zone\":\"RearRight\"") != std::string::npos);
+    REQUIRE(s.find("\"id\":\"000000000000002a:2\"") != std::string::npos);
 }
 
-TEST_CASE("cli: send missing --type returns invalid-args (2)",
+TEST_CASE("cli: send missing --op returns invalid-args (2)",
           "[cli][conformance][REQ-CLI-005]") {
     int code = 0;
-    capture({"send", "--zone", "FrontLeft"}, code);
+    capture({"send", "--server", "0", "--endpoint", "1"}, code);
     REQUIRE(code == rcp::cli::kInvalidArgs);
 }
 
-TEST_CASE("cli: send with an unrecognised --type returns invalid-args (2)",
+TEST_CASE("cli: send with an unrecognised --op returns invalid-args (2)",
           "[cli][conformance][REQ-CLI-005]") {
     int code = 0;
-    capture({"send", "--zone", "FrontLeft", "--type", "bogus"}, code);
+    capture({"send", "--server", "0", "--endpoint", "1", "--op", "bogus"}, code);
     REQUIRE(code == rcp::cli::kInvalidArgs);
 }
 
 TEST_CASE("cli: send with malformed --payload hex returns invalid-args (2)",
           "[cli][conformance][REQ-CLI-005]") {
     int code = 0;
-    capture({"send", "--zone", "FrontLeft", "--type", "set", "--payload", "zz"}, code);
+    capture({"send", "--server", "0", "--endpoint", "1", "--op", "write",
+             "--payload", "zz"}, code);
     REQUIRE(code == rcp::cli::kInvalidArgs);
 }
 
-TEST_CASE("cli: send to an unknown zone returns a protocol error (1)",
+TEST_CASE("cli: send with an out-of-range --evt-op returns invalid-args (2)",
           "[cli][conformance][REQ-CLI-005]") {
     int code = 0;
-    capture({"send", "--zone", "Nonexistent", "--type", "set"}, code);
+    capture({"send", "--server", "0", "--endpoint", "1", "--op", "read",
+             "--evt-op", "8"}, code);
+    REQUIRE(code == rcp::cli::kInvalidArgs);
+}
+
+TEST_CASE("cli: send to an unregistered endpoint returns a protocol error (1)",
+          "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    capture({"send", "--server", "0", "--endpoint", "99", "--op", "read"}, code);
     REQUIRE(code == rcp::cli::kError);
+}
+
+TEST_CASE("cli: send with an invalid --server value returns invalid-args (2)",
+          "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    capture({"send", "--server", "not-a-number", "--endpoint", "1", "--op", "read"}, code);
+    REQUIRE(code == rcp::cli::kInvalidArgs);
+}
+
+TEST_CASE("cli: send with an invalid --endpoint value returns invalid-args (2)",
+          "[cli][conformance][REQ-CLI-005]") {
+    int code = 0;
+    capture({"send", "--server", "0", "--endpoint", "300", "--op", "read"}, code);
+    REQUIRE(code == rcp::cli::kInvalidArgs);
 }

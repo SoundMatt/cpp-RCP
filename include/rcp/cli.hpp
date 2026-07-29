@@ -15,20 +15,33 @@
 //
 // Binary name: `cpp-rcp` (§13.2). Build with -DRELAY_BUILD_CLI=ON.
 //
-// Still built on rcp.hpp's pre-replacement Zone/Command/Controller model
-// and rcp/legacy_mock.hpp's Registry backing send_one/send_stream's
-// in-process demo transport (renamed from rcp/mock.hpp at ROADMAP.md
-// milestone 56, v2.12.0 — see rcp/legacy_mock.hpp's header comment). Per
-// the Satellite Package Disposition table's entry for `cli.hpp`, rebinding
-// `send`'s addressing to the new server/endpoint model is v2.16.0 scope.
+// ROADMAP.md milestone 60, "C ABI & CLI Rebuild (v2.16.0)": this header (and
+// cli/main.cpp, which needs no change) is ADAPTed in place, per the
+// Satellite Package Disposition table's entry for `cli.hpp` — the
+// `version`/`capabilities`/`status` triad carries forward unchanged in
+// shape, per this milestone's own scope note. `send`'s addressing is
+// rebound from `--zone <name>` to `--server <stream_key> --endpoint
+// <byte_bus_id>` (a server+endpoint identifier, the same pair every
+// Phase 14/15 header has keyed on since v2.10.0), and its in-process demo
+// backend moves from rcp/legacy_mock.hpp's Zone-keyed Registry to
+// rcp::mock::Server (v2.12.0), the new RC Server simulator, addressed by
+// byte_bus_id the same way rcp/mock.hpp's own representative endpoint set
+// already is. `capabilities_json()`'s `transports`/`features` fields are
+// refreshed to reflect the transports (v2.13.0/v2.14.0) and endpoint set
+// (v2.3.0/v2.4.0/v2.7.0) that now exist; `optional_interfaces` drops
+// `LoaningController`, which Adapt() (rcp/adapt.hpp) no longer wraps since
+// it moved from a shared_ptr<Controller> to a plain RequestFn callable at
+// this same milestone.
 #pragma once
 
 #include <relay/relay.hpp>
+#include <rcp/acf.hpp>
 #include <rcp/adapt.hpp>
-#include <rcp/legacy_mock.hpp>
+#include <rcp/avtp.hpp>
+#include <rcp/mock.hpp>
 #include <rcp/version.hpp>
 
-#include <cctype>
+#include <charconv>
 #include <cstdint>
 #include <istream>
 #include <map>
@@ -90,10 +103,11 @@ inline std::string capabilities_json() {
         + "\"version\":\"" + std::string(kVersion) + "\","
         + "\"spec_version\":\"" + spec + "\","
         + "\"commands\":[\"version\",\"capabilities\",\"status\",\"send\"],"
-        + "\"transports\":[\"mock\",\"sim\",\"shmem\"],"
-        + "\"features\":[\"loaning\"],"
+        + "\"transports\":[\"udp\",\"shmem\",\"mock\"],"
+        + "\"features\":[\"gpio\",\"spi\",\"i2c\",\"uart\",\"adc\",\"pwm\",\"lin\",\"can\","
+          "\"iseled\",\"mdio\",\"wakeup\",\"loaning\"],"
         + "\"interfaces\":[\"Node\",\"Caller\"],"
-        + "\"optional_interfaces\":[\"LoaningController\"],"
+        + "\"optional_interfaces\":[],"
         + "\"adapt\":true"
         + "}";
 }
@@ -125,8 +139,10 @@ inline std::string usage() {
         "  version            Print tool and spec version\n"
         "  capabilities       Print the RELAY capabilities document (JSON)\n"
         "  status             Print self-assessed health\n"
-        "  send --zone <name> --type <cmdtype> [--payload <hex>] [--format text|json]\n"
-        "                     Dispatch a single command to a zone controller (RELAY §11.2)\n"
+        "  send --server <stream_key> --endpoint <byte_bus_id> --op read|write\n"
+        "       [--evt-op <0-7>] [--payload <hex>] [--format text|json]\n"
+        "                     Dispatch a single request to an RC Server endpoint\n"
+        "                     (RELAY §11.2); addressed by stream_key + byte_bus_id\n"
         "  send --format json Read relay.Message NDJSON on stdin and publish each\n"
         "                     (RELAY §11.2 streaming sink / crossbar spoke)\n");
 }
@@ -134,7 +150,7 @@ inline std::string usage() {
 // ── §11.2 streaming JSON sink (crossbar spoke) ───────────────────────────────
 //
 // A minimal JSON reader, sufficient for one relay.Message per NDJSON line. Only
-// the fields rcp::message_to_command() consumes are surfaced (id, payload, seq,
+// the fields rcp::message_to_request() consumes are surfaced (id, payload, seq,
 // meta); other fields (protocol, version, timestamp) are accepted and ignored.
 
 // b64_decode decodes standard base64 (padding optional). Returns false on a
@@ -182,22 +198,27 @@ inline bool hex_decode(const std::string& in, std::vector<std::uint8_t>& out) {
     return true;
 }
 
-// cmd_type_from_string parses a §11.2 `send --type` flag value (a case-
-// insensitive CommandType name) into a CommandType. Returns false for an
-// unrecognised name.
-inline bool cmd_type_from_string(const std::string& s, CommandType& out) {
-    std::string lower;
-    lower.reserve(s.size());
-    for (char c : s) lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-    if (lower == "noop")     { out = CommandType::Noop;     return true; }
-    if (lower == "set")      { out = CommandType::Set;      return true; }
-    if (lower == "get")      { out = CommandType::Get;      return true; }
-    if (lower == "reset")    { out = CommandType::Reset;    return true; }
-    if (lower == "watchdog") { out = CommandType::Watchdog; return true; }
-    if (lower == "sleep")    { out = CommandType::Sleep;    return true; }
-    if (lower == "wake")     { out = CommandType::Wake;     return true; }
-    if (lower == "update")   { out = CommandType::Update;   return true; }
-    return false;
+// parse_u64 parses a decimal or "0x"-prefixed hexadecimal uint64_t. Returns
+// false on an empty string or any trailing non-numeric character.
+inline bool parse_u64(const std::string& s, std::uint64_t& out) {
+    if (s.empty()) return false;
+    int base = 10;
+    const char* begin = s.data();
+    const char* end   = s.data() + s.size();
+    if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        base = 16;
+        begin += 2;
+    }
+    auto [p, ec] = std::from_chars(begin, end, out, base);
+    return ec == std::errc{} && p == end;
+}
+
+// parse_byte_bus_id parses a decimal or "0x"-prefixed hex value in [0,255].
+inline bool parse_byte_bus_id(const std::string& s, avtp::ByteBusId& out) {
+    std::uint64_t v = 0;
+    if (!parse_u64(s, v) || v > 0xFF) return false;
+    out = static_cast<avtp::ByteBusId>(v);
+    return true;
 }
 
 // JVal is a minimal parsed JSON value.
@@ -350,22 +371,40 @@ inline bool message_from_json(const std::string& line, relay::Message& msg) {
     return true;
 }
 
+// dispatch_endpoint routes one ACF standard request to `srv`'s single
+// representative endpoint set (rcp::mock::Server, v2.12.0) by byte_bus_id —
+// the same routing rcp::mock::Server::dispatch itself performs; a
+// not-registered byte_bus_id is reported the same way an unregistered zone
+// used to be under the pre-v2.16.0 CLI.
+inline std::error_code dispatch_endpoint(mock::Server& srv, const acf::AcfMessageInfo& req,
+                                          const std::vector<std::uint8_t>& payload,
+                                          acf::AcfMessageInfo& out_resp,
+                                          std::vector<std::uint8_t>& out_resp_payload) {
+    return srv.dispatch(/*client=*/0, req, payload, out_resp, out_resp_payload);
+}
+
 // send_one implements the §11.2 protocol-flags form of `send` for RCP:
-// `--zone <name> --type <cmdtype> [--payload <hex>]`. It dispatches a single
-// Command to the matching in-process mock zone controller — the same mock
+// `--server <stream_key> --endpoint <byte_bus_id> --op read|write
+// [--evt-op <0-7>] [--payload <hex>]`. It dispatches a single standard
+// request to the in-process mock::Server demo backend — the same mock
 // backend send_stream uses, since cpp-rcp's CLI has no external transport of
 // its own — and reports the result. Exit: 0 sent, 1 error, 2 invalid args.
 inline int send_one(const std::vector<std::string>& args, bool json,
                     std::ostream& out, std::ostream& err) {
-    std::string zone_flag, type_flag, payload_flag;
-    bool have_zone = false, have_type = false, have_payload = false;
+    std::string server_flag, endpoint_flag, op_flag, evt_op_flag, payload_flag;
+    bool have_server = false, have_endpoint = false, have_op = false, have_payload = false;
     for (std::size_t i = 1; i < args.size(); ++i) {
-        if (args[i] == "--zone" && i + 1 < args.size()) {
-            zone_flag = args[++i];
-            have_zone = true;
-        } else if (args[i] == "--type" && i + 1 < args.size()) {
-            type_flag = args[++i];
-            have_type = true;
+        if (args[i] == "--server" && i + 1 < args.size()) {
+            server_flag = args[++i];
+            have_server = true;
+        } else if (args[i] == "--endpoint" && i + 1 < args.size()) {
+            endpoint_flag = args[++i];
+            have_endpoint = true;
+        } else if (args[i] == "--op" && i + 1 < args.size()) {
+            op_flag = args[++i];
+            have_op = true;
+        } else if (args[i] == "--evt-op" && i + 1 < args.size()) {
+            evt_op_flag = args[++i];
         } else if (args[i] == "--payload" && i + 1 < args.size()) {
             payload_flag = args[++i];
             have_payload = true;
@@ -373,16 +412,37 @@ inline int send_one(const std::vector<std::string>& args, bool json,
             ++i; // already validated by format_is_json
         }
     }
-    if (!have_zone || !have_type) {
-        err << "usage: cpp-rcp send --zone <name> --type <cmdtype> "
-               "[--payload <hex>] [--format text|json]\n";
+    if (!have_server || !have_endpoint || !have_op) {
+        err << "usage: cpp-rcp send --server <stream_key> --endpoint <byte_bus_id> "
+               "--op read|write [--evt-op <0-7>] [--payload <hex>] [--format text|json]\n";
         return kInvalidArgs;
     }
 
-    CommandType type{};
-    if (!cmd_type_from_string(type_flag, type)) {
-        err << "error: invalid --type '" << type_flag << "'\n";
+    std::uint64_t stream_key = 0;
+    if (!parse_u64(server_flag, stream_key)) {
+        err << "error: invalid --server '" << server_flag << "'\n";
         return kInvalidArgs;
+    }
+    avtp::ByteBusId byte_bus_id = 0;
+    if (!parse_byte_bus_id(endpoint_flag, byte_bus_id)) {
+        err << "error: invalid --endpoint '" << endpoint_flag << "'\n";
+        return kInvalidArgs;
+    }
+    bool write_op;
+    if (op_flag == "read")       write_op = false;
+    else if (op_flag == "write") write_op = true;
+    else {
+        err << "error: invalid --op '" << op_flag << "' (want read|write)\n";
+        return kInvalidArgs;
+    }
+    std::uint8_t evt_op = 0;
+    if (!evt_op_flag.empty()) {
+        std::uint64_t v = 0;
+        if (!parse_u64(evt_op_flag, v) || v > 7) {
+            err << "error: invalid --evt-op '" << evt_op_flag << "' (want 0-7)\n";
+            return kInvalidArgs;
+        }
+        evt_op = static_cast<std::uint8_t>(v);
     }
     std::vector<std::uint8_t> payload;
     if (have_payload && !hex_decode(payload_flag, payload)) {
@@ -390,44 +450,42 @@ inline int send_one(const std::vector<std::string>& args, bool json,
         return kInvalidArgs;
     }
 
-    // A zone name that doesn't parse maps to Zone::Unknown, which is not a
-    // registered zone either — it fails the same lookup below as a genuinely
-    // unregistered zone, matching send_stream's existing not-found handling.
-    Zone zone = zone_from_relay_id(zone_flag);
+    acf::AcfMessageInfo req = acf::make_standard_request(byte_bus_id, /*transaction_num=*/0,
+                                                          write_op, /*read_size=*/0);
+    req.evt_op = evt_op;
 
-    Command cmd;
-    cmd.zone    = zone;
-    cmd.type    = type;
-    cmd.payload = payload;
+    mock::Server srv;
+    (void)srv.advance_to_rcp_configured();
 
-    legacy_mock::Registry reg;
-    std::shared_ptr<Controller> ctrl;
-    if (reg.lookup(zone, ctrl)) {
-        err << "send: zone '" << zone_flag << "' not found\n";
-        return kError;
-    }
-    Response resp;
-    if (ctrl->send(Context{}, cmd, resp)) {
-        err << "send: zone " << to_string(zone) << ": send failed\n";
+    acf::AcfMessageInfo resp;
+    std::vector<std::uint8_t> resp_payload;
+    auto ec = dispatch_endpoint(srv, req, payload, resp, resp_payload);
+    std::string addr = endpoint_id_to_relay_id(stream_key, byte_bus_id);
+    if (ec) {
+        err << "send: " << addr << ": send failed\n";
         return kError;
     }
 
     if (json) {
-        out << "{\"sent\":true,\"zone\":\"" << zone_to_relay_id(zone)
-            << "\",\"status\":\"" << to_string(resp.status) << "\"}\n";
+        out << "{\"sent\":true,\"id\":\"" << addr
+            << "\",\"response_kind\":" << static_cast<int>(acf::response_kind_of(resp)) << "}\n";
     } else {
-        out << "sent to " << zone_to_relay_id(zone) << " (" << to_string(resp.status) << ")\n";
+        out << "sent to " << addr << " (response_kind="
+            << static_cast<int>(acf::response_kind_of(resp)) << ")\n";
     }
     return kOk;
 }
 
 // send_stream implements `send --format json` (RELAY §11.2): read relay.Message
-// values as NDJSON on `in`, publish each via message_to_command → the matching
-// mock zone controller until EOF. Malformed/undeliverable lines are reported and
-// skipped (a single bad message must not tear down a crossbar route); only the
-// final count is written to `out`. Exit code is always kOk on clean EOF.
+// values as NDJSON on `in`, publish each via message_to_request → the shared
+// mock::Server demo backend until EOF. Malformed/undeliverable lines are
+// reported and skipped (a single bad message must not tear down a crossbar
+// route); only the final count is written to `out`. Exit code is always kOk
+// on clean EOF.
 inline int send_stream(std::istream& in, std::ostream& out, std::ostream& err) {
-    legacy_mock::Registry reg;
+    mock::Server srv;
+    (void)srv.advance_to_rcp_configured();
+
     std::string line;
     std::size_t sent = 0;
     while (std::getline(in, line)) {
@@ -442,15 +500,19 @@ inline int send_stream(std::istream& in, std::ostream& out, std::ostream& err) {
             err << "send: skipping malformed message\n";
             continue;
         }
-        Command cmd = message_to_command(msg);
-        std::shared_ptr<Controller> ctrl;
-        if (reg.lookup(cmd.zone, ctrl)) {
-            err << "send: zone " << to_string(cmd.zone) << " not found\n";
+        std::uint64_t stream_key = 0;
+        acf::AcfMessageInfo req;
+        std::vector<std::uint8_t> payload;
+        if (!message_to_request(msg, stream_key, req, payload)) {
+            err << "send: skipping message with unparseable id '" << msg.id << "'\n";
             continue;
         }
-        Response resp;
-        if (ctrl->send(Context{}, cmd, resp)) {
-            err << "send: zone " << to_string(cmd.zone) << ": send failed\n";
+        acf::AcfMessageInfo resp;
+        std::vector<std::uint8_t> resp_payload;
+        auto ec = dispatch_endpoint(srv, req, payload, resp, resp_payload);
+        if (ec) {
+            err << "send: " << endpoint_id_to_relay_id(stream_key, req.byte_bus_id)
+                << ": send failed\n";
             continue;
         }
         ++sent;
@@ -494,19 +556,20 @@ inline int run(const std::vector<std::string>& args, std::istream& in,
 
         bool has_protocol_flags = false;
         for (std::size_t i = 1; i < args.size(); ++i) {
-            if (args[i] == "--zone" || args[i] == "--type" || args[i] == "--payload") {
+            if (args[i] == "--server" || args[i] == "--endpoint" || args[i] == "--op" ||
+                args[i] == "--evt-op" || args[i] == "--payload") {
                 has_protocol_flags = true;
                 break;
             }
         }
         if (has_protocol_flags) {
-            // §11.2 protocol-flags form: --zone <name> --type <cmdtype> [--payload <hex>].
+            // §11.2 protocol-flags form: --server/--endpoint/--op[/--evt-op/--payload].
             return send_one(args, json, out, err);
         }
         if (!json) {
             err << "usage: cpp-rcp send --format json  (NDJSON relay.Message on stdin)\n"
-                   "   or: cpp-rcp send --zone <name> --type <cmdtype> [--payload <hex>] "
-                   "[--format text|json]\n";
+                   "   or: cpp-rcp send --server <stream_key> --endpoint <byte_bus_id> "
+                   "--op read|write [--evt-op <0-7>] [--payload <hex>] [--format text|json]\n";
             return kInvalidArgs;
         }
         // §11.2 streaming JSON sink form (crossbar spoke).

@@ -1275,6 +1275,91 @@ pre-replacement coverage, traced in `.fusa-reqs.json`.
 - Depends on: at least the basic endpoint types (v2.3.0/v2.4.0) to have
   something for `send` to address
 
+**Done (v2.16.0):** `capi.h`/`capi_impl.hpp` are REPLACEd in full, per the
+Satellite Package Disposition table's entry for this pair — the old
+`rcp_zone_t`/`rcp_command_t`/`rcp_response_t`/`rcp_priority_t` types are
+discarded outright, not adapted, since a from-scratch C ABI has no analog
+of `Zone`/`Priority` to adapt from. The new surface addresses a request via
+a caller-chosen `rcp_stream_key_t` plus an `rcp_byte_bus_id_t` (the same
+pair every Phase 14/15 header has keyed on since v2.10.0); `rcp_acf_info_t`
+mirrors `rcp::acf::AcfMessageInfo`'s shared-header fields (`rcp/acf.hpp`,
+v2.0.0) one-for-one instead of the removed `cmd_type`/`priority` pair. An
+`rcp_ctrl_h` now binds one caller-supplied `rcp_request_fn_t` C function
+pointer (plus opaque userdata) to one endpoint — the C-linkage analog of
+the "client-side send-equivalent call" shape `rcp/record.hpp`'s and
+`rcp/observe.hpp`'s own `RequestFn` already standardize on (v2.14.0) — so
+the same callback can be backed by `rcp::mock::Server::dispatch`
+(v2.12.0), `rcp::udp::Client::request` (v2.13.0), or real hardware,
+without `capi_impl.hpp` depending on any of them; `rcp_registry_s` becomes
+a small fixed-capacity (16-entry) table of such handles keyed by
+`(stream_key, byte_bus_id)` rather than growing on the heap, closing a gap
+the pre-replacement registry's `std::unordered_map`-backed storage left in
+its own "no heap allocation" claim. `rcp_response_t` gains a caller-
+supplied `payload_cap` alongside `payload`/`payload_len`, so a response
+payload is written into caller-owned memory rather than the pre-
+replacement stub's `payload = nullptr` no-op; `rcp_send()` rejects a
+callback that reports more bytes than `payload_cap` allowed
+(`REQ-CAPI-009`, new). `rcp_subscribe`/`rcp_status_cb_t` have no
+replacement, the same "no analog in the target specification's
+request/response shape" call every ADAPTed Phase 14/15 bridge already
+made for `Controller`'s status-telemetry push model. Grepping the tree for
+consumers of the pre-v2.16.0 `capi_impl.hpp` API beyond its own (now-
+rewritten) test found none, so no legacy-shim split file was needed here,
+matching `rcp/udp.hpp`'s v2.13.0 precedent.
+
+`cli.hpp` (and `cli/main.cpp`, unchanged) is ADAPTed in place: the
+`version`/`capabilities`/`status` triad carries forward unchanged in
+shape, as this milestone's own scope note called for. `send`'s protocol-
+flags form moves from `--zone <name> --type <cmdtype>` to `--server
+<stream_key> --endpoint <byte_bus_id> --op read|write [--evt-op <0-7>]`,
+and both the protocol-flags and streaming NDJSON forms now dispatch
+against `rcp::mock::Server` (v2.12.0) — the new RC Server simulator —
+instead of `rcp/legacy_mock.hpp`'s Zone-keyed `Registry`, addressed by
+`byte_bus_id` the same way that simulator's own representative endpoint
+set already is. `capabilities_json()`'s `transports` becomes
+`["udp","shmem","mock"]` (v2.13.0/v2.14.0/v2.12.0) and `features` becomes
+the full v2.3.0/v2.4.0/v2.7.0 endpoint set plus `"loaning"`;
+`optional_interfaces` drops `"LoaningController"`, which `Adapt()` no
+longer wraps now that it takes a plain callable instead of a
+`shared_ptr<Controller>`.
+
+`rcp/adapt.hpp`'s `Adapt()` now takes a `RequestFn` — shaped identically
+to `rcp/record.hpp`'s and `rcp/observe.hpp`'s own `RequestFn` (v2.14.0) —
+rather than a `shared_ptr<Controller>`, the same "primitives, not a
+wrapped chokepoint" choice every ADAPTed Phase 14/15 header already made;
+there is no unified client-side `send()` chokepoint left to wrap.
+`zone_to_relay_id`/`zone_from_relay_id`'s PascalCase-zone scheme in
+`relay::Message.id` is replaced by `endpoint_id_to_relay_id`/
+`relay_id_to_endpoint_id`, encoding a `(stream_key, byte_bus_id)` pair as
+`"<16 lowercase hex digits>:<decimal>"` — this implementation's own
+encoding, not something the RELAY spec mandates a shape for.
+`status_to_message`/`message_to_command`/`response_to_message` are
+replaced by `message_to_request`/`response_to_message`, mapping
+`relay::Message.meta`'s `"rcp.op"`/`"rcp.evt_op"` keys onto
+`acf::AcfMessageInfo`'s `op`/`evt_op` fields instead of the removed
+`CommandType`/`Priority` pair. `subscribe()` now always reports
+`std::errc::function_not_supported` — the same call `rcp/mqttbr.hpp`'s
+(and its six ADAPTed siblings') dropped `subscribe()`/`StatusChannel`
+method already made at v2.15.0, since the pre-replacement Status push
+model this milestone retires has no analog in the target specification's
+request/response shape; `close()` still succeeds unconditionally, same as
+those seven bridges. `relay/relay.hpp` itself is unchanged, per this
+milestone's own scope note.
+
+`rcp.hpp` and `rcp/legacy_mock.hpp` are untouched: `rcp/config.hpp` is the
+one remaining dependent of `rcp.hpp`'s pre-replacement Zone/Command/
+Controller model and `legacy_mock.hpp`'s Registry, so neither file could
+be deleted at this milestone; `rcp/config.hpp`'s own rebind is not part of
+this milestone's stated scope and remains open. Grepping the tree for
+consumers of `cli.hpp`'s/`adapt.hpp`'s pre-v2.16.0 APIs beyond their own
+(now-rewritten) tests found none, so no legacy-shim split file was needed
+for either. `version.hpp`/`CMakeLists.txt` are bumped to 2.16.0. Coverage
+lives in `tests/test_capi.cpp` (`REQ-CAPI-001..009`, `009` new),
+`tests/test_cli.cpp` (`REQ-CLI-001..005`), and `tests/test_relay.cpp`
+(`REQ-RELAY-001..005`) — all rewritten in place under their existing
+prefix identity, the same convention every prior REPLACE/ADAPT milestone
+in Phase 13-15 followed — traced in `.fusa-reqs.json`.
+
 ---
 ### Phase 16 — Deprecation & Certification Refresh
 ---

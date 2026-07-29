@@ -6,205 +6,236 @@
 
 // RELAY application interface adapter for cpp-RCP (§10.3, §18.2).
 //
-// Adapt() wraps an rcp::Controller as a relay::Caller so application code can
-// use the protocol-agnostic relay::Node / relay::Caller interface and swap the
-// underlying protocol with a single constructor change.
+// Adapt() wraps a client-side send-equivalent call as a relay::Caller so
+// application code can use the protocol-agnostic relay::Node / relay::Caller
+// interface and swap the underlying protocol with a single constructor
+// change.
 //
 // Usage:
-//   auto ctrl = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
-//   auto caller = rcp::Adapt(ctrl);          // relay::Caller*
-//   auto [resp, ec] = caller->call(ctx, msg);
+//   auto fn = [&](const rcp::Context& ctx, const rcp::acf::AcfMessageInfo& req,
+//                 const std::vector<uint8_t>& payload,
+//                 rcp::acf::AcfMessageInfo& out, std::vector<uint8_t>& out_payload) {
+//       return my_server.dispatch(0, req, payload, out, out_payload);
+//   };
+//   auto caller = rcp::Adapt(fn);            // relay::Caller*
+//   relay::Message req;
+//   req.id = rcp::endpoint_id_to_relay_id(stream_key, byte_bus_id);
+//   auto [resp, ec] = caller->call(ctx, req);
 //
-// The example above uses rcp/legacy_mock.hpp's Controller (renamed from
-// rcp/mock.hpp at ROADMAP.md milestone 56, v2.12.0 — see its own header
-// comment) since this header itself is still built on rcp.hpp's
-// pre-replacement Zone/Command/Controller model; per the Satellite Package
-// Disposition table's entry for `adapt.hpp`, rebinding Adapt()/ToMessage/
-// FromMessage to the new request/response shapes is v2.16.0 scope.
+// ROADMAP.md milestone 60, "C ABI & CLI Rebuild (v2.16.0)": this header is
+// ADAPTed in place, per the Satellite Package Disposition table's entry for
+// `adapt.hpp` — Adapt()/ToMessage()/FromMessage() are rebound from
+// rcp.hpp's pre-replacement Zone/Command/Controller model to the ACF
+// request/response shape (rcp/acf.hpp, v2.0.0) established through v2.15.0.
+// relay::Message addressing moves from a PascalCase zone name in
+// relay::Message.id to a server+endpoint identifier there instead (see
+// endpoint_id_to_relay_id/relay_id_to_endpoint_id below); relay/relay.hpp
+// itself needs no change, per this milestone's own scope note. Adapt() now
+// takes a RequestFn — the same "client-side send-equivalent call" shape
+// rcp/record.hpp's and rcp/observe.hpp's own RequestFn already standardize
+// on (v2.14.0) — rather than a shared_ptr<Controller>, the same "primitives,
+// not a wrapped chokepoint" choice those two headers and every ADAPTed
+// Phase 14/15 bridge already made; there is no unified client-side send()
+// chokepoint left to wrap. subscribe() has no analog here and always
+// reports std::errc::function_not_supported, the same call
+// rcp/mqttbr.hpp's (and its six siblings') dropped subscribe()/
+// StatusChannel method already made at v2.15.0 — it belonged to
+// rcp::Controller's status-telemetry push model, which the target
+// specification's request/response shape has no equivalent of.
 #pragma once
 
-#include <rcp/rcp.hpp>
+#include <rcp/acf.hpp>
+#include <rcp/avtp.hpp>
+#include <rcp/rcp.hpp> // for rcp::Context only — see this header's own scope note above
 #include <relay/relay.hpp>
 
 #include <charconv>
 #include <chrono>
+#include <cstdint>
+#include <functional>
+#include <map>
 #include <memory>
 #include <string>
-#include <thread>
+#include <system_error>
+#include <utility>
+#include <vector>
 
 namespace rcp {
 
-// ── Zone ↔ relay::Message.ID helpers (§15.7.5) ───────────────────────────────
+// ── server+endpoint ↔ relay::Message.ID helpers (§15.7.5) ────────────────────
+// relay::Message carries a single string `id` field; a server+endpoint
+// address (stream_key, byte_bus_id — the pair every Phase 14/15 header has
+// keyed on since v2.10.0) is encoded into it as
+// "<stream_key as 16 lowercase hex digits>:<byte_bus_id as decimal>" — this
+// implementation's own encoding, not something the target specification or
+// the RELAY spec mandates a shape for.
 
-// zone_to_relay_id returns the RELAY-canonical PascalCase zone name (§4.2).
-inline std::string zone_to_relay_id(Zone z) {
-    switch (z) {
-    case Zone::FrontLeft:  return "FrontLeft";
-    case Zone::FrontRight: return "FrontRight";
-    case Zone::RearLeft:   return "RearLeft";
-    case Zone::RearRight:  return "RearRight";
-    case Zone::Central:    return "Central";
-    default:               return "Unknown";
+// endpoint_id_to_relay_id encodes (stream_key, byte_bus_id) into a
+// relay::Message.id string.
+inline std::string endpoint_id_to_relay_id(uint64_t stream_key, avtp::ByteBusId byte_bus_id) {
+    static const char* kHex = "0123456789abcdef";
+    std::string out(16, '0');
+    for (int i = 15; i >= 0; --i) {
+        out[static_cast<std::size_t>(i)] = kHex[stream_key & 0xF];
+        stream_key >>= 4;
     }
+    out += ':';
+    out += std::to_string(static_cast<unsigned>(byte_bus_id));
+    return out;
 }
 
-// zone_from_relay_id parses a PascalCase zone name from relay::Message.ID.
-inline Zone zone_from_relay_id(const std::string& id) {
-    if (id == "FrontLeft")  return Zone::FrontLeft;
-    if (id == "FrontRight") return Zone::FrontRight;
-    if (id == "RearLeft")   return Zone::RearLeft;
-    if (id == "RearRight")  return Zone::RearRight;
-    if (id == "Central")    return Zone::Central;
-    return Zone::Unknown;
+// relay_id_to_endpoint_id decodes a relay::Message.id string produced by
+// endpoint_id_to_relay_id back into (stream_key, byte_bus_id). Returns false
+// — leaving both outputs unspecified — for anything that doesn't match the
+// "<16 hex digits>:<decimal>" shape, including the pre-v2.16.0 PascalCase
+// zone-name form this replaces.
+inline bool relay_id_to_endpoint_id(const std::string& id, uint64_t& out_stream_key,
+                                     avtp::ByteBusId& out_byte_bus_id) {
+    auto colon = id.find(':');
+    if (colon == std::string::npos || colon != 16) return false;
+
+    uint64_t stream_key = 0;
+    auto [p1, ec1] = std::from_chars(id.data(), id.data() + colon, stream_key, 16);
+    if (ec1 != std::errc{} || p1 != id.data() + colon) return false;
+
+    unsigned bus_id = 0;
+    const char* rest_begin = id.data() + colon + 1;
+    const char* rest_end   = id.data() + id.size();
+    if (rest_begin == rest_end) return false;
+    auto [p2, ec2] = std::from_chars(rest_begin, rest_end, bus_id, 10);
+    if (ec2 != std::errc{} || p2 != rest_end || bus_id > 0xFF) return false;
+
+    out_stream_key  = stream_key;
+    out_byte_bus_id = static_cast<avtp::ByteBusId>(bus_id);
+    return true;
 }
 
-// priority_from_meta parses the "rcp.priority" meta key.
-inline Priority priority_from_meta(const std::map<std::string, std::string>& meta) {
-    auto it = meta.find("rcp.priority");
-    if (it == meta.end()) return Priority::Normal;
-    if (it->second == "high")     return Priority::High;
-    if (it->second == "critical") return Priority::Critical;
-    return Priority::Normal;
+// ── request/response field ↔ relay::Message.meta helpers ─────────────────────
+
+// op_from_meta parses the "rcp.op" meta key ("read"/"write"; default read).
+inline bool op_from_meta(const std::map<std::string, std::string>& meta) {
+    auto it = meta.find("rcp.op");
+    return it != meta.end() && it->second == "write";
 }
 
-// cmd_type_from_meta parses the "rcp.cmd_type" meta key.
-inline CommandType cmd_type_from_meta(const std::map<std::string, std::string>& meta) {
-    auto it = meta.find("rcp.cmd_type");
-    if (it == meta.end()) return CommandType::Noop;
-    const auto& s = it->second;
-    if (s == "set")      return CommandType::Set;
-    if (s == "get")      return CommandType::Get;
-    if (s == "reset")    return CommandType::Reset;
-    if (s == "watchdog") return CommandType::Watchdog;
-    if (s == "sleep")    return CommandType::Sleep;
-    if (s == "wake")     return CommandType::Wake;
-    return CommandType::Noop;
+// evt_op_from_meta parses the "rcp.evt_op" meta key (decimal 0-7; default 0)
+// — the endpoint-defined sub-opcode carried in AcfMessageInfo::evt_op.
+inline uint8_t evt_op_from_meta(const std::map<std::string, std::string>& meta) {
+    auto it = meta.find("rcp.evt_op");
+    if (it == meta.end()) return 0;
+    unsigned v = 0;
+    auto [p, ec] = std::from_chars(it->second.data(), it->second.data() + it->second.size(), v, 10);
+    if (ec != std::errc{} || p != it->second.data() + it->second.size() || v > 7) return 0;
+    return static_cast<uint8_t>(v);
 }
 
 // ── ToMessage / FromMessage (§15.7.5) ────────────────────────────────────────
 
-// status_to_message converts rcp::Status to relay::Message (subscribe direction).
-inline relay::Message status_to_message(const Status& s) {
-    relay::Message msg;
-    msg.protocol    = relay::Protocol::RCP;
-    msg.id          = zone_to_relay_id(s.zone);
-    msg.payload     = s.payload;
-    msg.seq         = s.seq;
-    msg.timestamp   = std::chrono::system_clock::now();
-    msg.meta["rcp.healthy"] = s.healthy ? "true" : "false";
-    return msg;
-}
-
-// response_to_message converts rcp::Response to relay::Message (call direction).
-inline relay::Message response_to_message(const Response& r) {
+// response_to_message converts an ACF response (rcp/acf.hpp) plus the
+// stream_key it arrived on into a relay::Message (call direction).
+inline relay::Message response_to_message(uint64_t stream_key, const acf::AcfMessageInfo& resp,
+                                           const std::vector<uint8_t>& payload) {
     relay::Message msg;
     msg.protocol  = relay::Protocol::RCP;
-    msg.id        = zone_to_relay_id(r.zone);
-    msg.payload   = r.payload;
+    msg.id        = endpoint_id_to_relay_id(stream_key, resp.byte_bus_id);
+    msg.payload   = payload;
     msg.timestamp = std::chrono::system_clock::now();
-    msg.meta["rcp.status"] = std::to_string(static_cast<int>(r.status));
+    msg.meta["rcp.response_kind"] = std::to_string(static_cast<int>(acf::response_kind_of(resp)));
+    msg.meta["rcp.err"]           = resp.err ? "true" : "false";
     return msg;
 }
 
-// message_to_command converts a relay::Message to rcp::Command (call direction).
-inline Command message_to_command(const relay::Message& msg) {
-    Command cmd;
-    cmd.zone     = zone_from_relay_id(msg.id);
-    cmd.priority = priority_from_meta(msg.meta);
-    cmd.type     = cmd_type_from_meta(msg.meta);
-    cmd.payload  = msg.payload;
-    return cmd;
+// message_to_request converts a relay::Message into an ACF standard request
+// (call/send direction). Returns false — leaving all outputs unspecified —
+// if msg.id does not decode as a server+endpoint identifier.
+inline bool message_to_request(const relay::Message& msg, uint64_t& out_stream_key,
+                                acf::AcfMessageInfo& out_info, std::vector<uint8_t>& out_payload) {
+    avtp::ByteBusId byte_bus_id = 0;
+    if (!relay_id_to_endpoint_id(msg.id, out_stream_key, byte_bus_id)) return false;
+    out_info             = acf::AcfMessageInfo{};
+    out_info.byte_bus_id = byte_bus_id;
+    out_info.op          = op_from_meta(msg.meta);
+    out_info.evt_op       = evt_op_from_meta(msg.meta);
+    out_payload           = msg.payload;
+    return true;
 }
 
-// ── RcpCallerAdapter — implements relay::Caller over rcp::Controller ──────────
+// ── RequestFn — the client-side send-equivalent call this header wraps ──────
+// Shaped identically to rcp/record.hpp's and rcp/observe.hpp's own RequestFn
+// (v2.14.0) — see this file's header comment for why.
+using RequestFn = std::function<std::error_code(const rcp::Context&,
+                                                  const acf::AcfMessageInfo&,
+                                                  const std::vector<uint8_t>&,
+                                                  acf::AcfMessageInfo&,
+                                                  std::vector<uint8_t>&)>;
+
+// ── RcpCallerAdapter — implements relay::Caller over a RequestFn ─────────────
 
 class RcpCallerAdapter final : public relay::Caller {
 public:
-    explicit RcpCallerAdapter(std::shared_ptr<Controller> ctrl)
-        : ctrl_(std::move(ctrl)) {}
+    explicit RcpCallerAdapter(RequestFn fn) : fn_(std::move(fn)) {}
 
     relay::Protocol protocol() const noexcept override {
         return relay::Protocol::RCP;
     }
 
-    // send maps relay::Message → rcp::Command, discards the response (§10.6).
+    // send maps relay::Message → ACF request, discards the response (§10.6).
     std::error_code send(relay::Context ctx, const relay::Message& msg) override {
-        if (!ctrl_) return make_error_code(Errc::not_found);
-        Command cmd = message_to_command(msg);
-        cmd.zone    = zone_from_relay_id(msg.id);
-        Response resp;
-        return ctrl_->send(ctx, cmd, resp);
+        if (!fn_) return std::make_error_code(std::errc::not_connected);
+        uint64_t stream_key = 0;
+        acf::AcfMessageInfo req;
+        std::vector<uint8_t> payload;
+        if (!message_to_request(msg, stream_key, req, payload))
+            return std::make_error_code(std::errc::invalid_argument);
+        acf::AcfMessageInfo out_info;
+        std::vector<uint8_t> out_payload;
+        return fn_(ctx, req, payload, out_info, out_payload);
     }
 
-    // call maps relay::Message → rcp::Command → relay::Message (§10.2).
+    // call maps relay::Message → ACF request → relay::Message (§10.2).
     std::pair<relay::Message, std::error_code>
-        call(relay::Context ctx, const relay::Message& req) override {
-        if (!ctrl_) return {{}, make_error_code(Errc::not_found)};
-        Command cmd = message_to_command(req);
-        Response resp;
-        auto ec = ctrl_->send(ctx, cmd, resp);
+        call(relay::Context ctx, const relay::Message& req_msg) override {
+        if (!fn_) return {{}, std::make_error_code(std::errc::not_connected)};
+        uint64_t stream_key = 0;
+        acf::AcfMessageInfo req;
+        std::vector<uint8_t> payload;
+        if (!message_to_request(req_msg, stream_key, req, payload))
+            return {{}, std::make_error_code(std::errc::invalid_argument)};
+        acf::AcfMessageInfo out_info;
+        std::vector<uint8_t> out_payload;
+        auto ec = fn_(ctx, req, payload, out_info, out_payload);
         if (ec) return {{}, ec};
-        return {response_to_message(resp), {}};
+        return {response_to_message(stream_key, out_info, out_payload), {}};
     }
 
-    // subscribe wraps rcp::Controller::subscribe, forwarding Status as relay::Message.
-    // Starts a background thread per §10.5 that reads from StatusChannel and pushes
-    // to the relay::Channel<Message>. Thread exits when the status channel closes.
+    // subscribe: no analog in the target specification's request/response
+    // shape — see this header's own comment above.
     std::pair<std::shared_ptr<relay::Channel<relay::Message>>, std::error_code>
-        subscribe(relay::SubscriberOptions opts = {}) override {
-        if (!ctrl_) return {nullptr, make_error_code(Errc::not_found)};
-
-        std::shared_ptr<StatusChannel> status_ch;
-        auto ec = ctrl_->subscribe(relay::Context::background(), status_ch);
-        if (ec) return {nullptr, ec};
-
-        auto out = std::make_shared<relay::Channel<relay::Message>>(opts.channel_depth);
-        auto bp  = opts.back_pressure;
-
-        std::thread([status_ch, out, bp]() mutable {
-            while (true) {
-                auto st = status_ch->recv();
-                if (!st) break;
-                auto msg = status_to_message(*st);
-                switch (bp) {
-                case relay::BackPressurePolicy::drop_newest:
-                    out->push(std::move(msg));
-                    break;
-                case relay::BackPressurePolicy::drop_oldest:
-                    if (!out->push(msg)) {
-                        out->try_recv();
-                        out->push(std::move(msg));
-                    }
-                    break;
-                case relay::BackPressurePolicy::block:
-                    while (!out->push(msg) && !out->is_closed()) {
-                        // spin until space available or channel closed
-                    }
-                    break;
-                }
-            }
-            out->close();
-        }).detach();
-
-        return {out, {}};
+        subscribe(relay::SubscriberOptions /*opts*/ = {}) override {
+        return {nullptr, std::make_error_code(std::errc::function_not_supported)};
     }
 
+    // close: a RequestFn owns no resource this adapter can release on its
+    // behalf — the same "still succeeds" choice rcp/mqttbr.hpp's (and its
+    // six siblings') close() already makes at v2.15.0.
     std::error_code close() noexcept override {
-        if (!ctrl_) return {};
-        return ctrl_->close();
+        return {};
     }
 
 private:
-    std::shared_ptr<Controller> ctrl_;
+    RequestFn fn_;
 };
 
 // ── Adapt() (§10.3) ──────────────────────────────────────────────────────────
 
-// Adapt wraps an rcp::Controller as a relay::Caller.
-// The returned relay::Caller also satisfies relay::Node.
-// Does NOT block or connect; wraps the given controller immediately.
-inline std::unique_ptr<relay::Caller> Adapt(std::shared_ptr<Controller> ctrl) {
-    return std::make_unique<RcpCallerAdapter>(std::move(ctrl));
+// Adapt wraps a RequestFn as a relay::Caller. The returned relay::Caller
+// also satisfies relay::Node. Does NOT block or connect; wraps `fn`
+// immediately. Each relay::Message passed to send()/call() carries its own
+// full server+endpoint address in Message.id (see endpoint_id_to_relay_id
+// above), so one adapter can address any number of distinct endpoints
+// through the same underlying RequestFn.
+inline std::unique_ptr<relay::Caller> Adapt(RequestFn fn) {
+    return std::make_unique<RcpCallerAdapter>(std::move(fn));
 }
 
 } // namespace rcp
