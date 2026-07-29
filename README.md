@@ -73,13 +73,12 @@ reference.
 
 | Header | Description |
 |---|---|
-| `<rcp/udp.hpp>` | Pure-C++ UDP transport for the RCP protocol (still framed via `<rcp/legacy_wire.hpp>` until v2.13.0) |
+| `<rcp/udp.hpp>` | Native IEEE 1722-over-UDP/IP transport (Annex J): `Server`/`Client` carry AVTPDU (NTSCF/TSCF) + ACF_ABB/ACF_GBB frames over UDP sockets (ROADMAP.md v2.13.0) |
 | `<rcp/tls.hpp>` | Mutual TLS transport for zone controller communication |
 | `<rcp/shmem.hpp>` | Zero-copy intra-host command delivery via shared in-process memory |
 | `<rcp/tsn.hpp>` | IEEE 802.1Qbv-aware UDP transport adapter for hard real-time Ethernet |
 | `<rcp/avtp.hpp>` | TC18 wire codec, framing half — IEEE 1722 AVTPDU (NTSCF/TSCF) header framing (ROADMAP.md v2.0.0) |
 | `<rcp/acf.hpp>` | TC18 wire codec, message half — ACF_ABB/ACF_GBB message format (ROADMAP.md v2.0.0) |
-| `<rcp/legacy_wire.hpp>` | Pre-replacement 16-byte frame codec, kept only for `<rcp/udp.hpp>`'s internal use until it is rebuilt at v2.13.0 |
 | `<rcp/sim.hpp>` | Timing-realistic RC Server simulator for SiL/HIL testing — wraps `<rcp/mock.hpp>` with latency/jitter and Fault/Recover controls, watchdog wired via `<rcp/watchdog.hpp>` (ROADMAP.md v2.12.0) |
 
 ## Build

@@ -1017,6 +1017,45 @@ disclaimers in `rcp/regmap.hpp`, `rcp/lifecycle.hpp`, `rcp/gpio.hpp`, and
   it *is* the old wire format this whole roadmap replaces
 - Depends on: Wire format core (v2.0.0)
 
+**Done (v2.13.0):** `rcp/udp.hpp` is replaced in full, per the Satellite
+Package Disposition table's entry for this file — the bespoke `R`/`C`-magic
+16-byte Zone/Command/Response/Status frame this file used to carry
+(`rcp/legacy_wire.hpp`) is discarded outright, not adapted, matching the
+roadmap's own call for this milestone. `udp::Frame`/`encode_frame`/
+`decode_frame` compose `rcp/avtp.hpp`'s NTSCF/TSCF header codec with
+`rcp/acf.hpp`'s ACF_ABB/ACF_GBB message codec into one AVTPDU, carried as
+the UDP datagram payload unmodified — this implementation's own reading of
+IEEE 1722 Annex J's UDP/IP encapsulation, consistent with `rcp/avtp.hpp`'s
+own header comment that its framing is transport-agnostic by design; no
+additional encapsulation header is layered on top. `udp::Server` binds a UDP
+socket, decodes each inbound datagram as a `Frame`, dispatches the carried
+ACF request to a caller-supplied `Handler` shaped to match
+`rcp::mock::Server::dispatch`'s signature (v2.12.0) so that simulator can be
+wired up as this transport's handler directly, and answers the sender under
+the same NTSCF/TSCF header kind the request arrived under; distinct sender
+addresses are assigned stable, distinct opaque client ids, first-seen order.
+`udp::Client` connects to one server address and correlates each response by
+the `(byte_bus_id, transaction_num)` echo rule `rcp/acf.hpp`'s
+`make_response` documents, rather than a locally invented request id — the
+new addressing model has no analog of the old `Command::id`. Neither class
+builds on `rcp.hpp`'s `Zone`/`Command`/`Controller`/`Registry` model, per
+that file's own header comment that nothing new should; `udp::Registry`'s
+old Zone-keyed controller-collection role has no replacement here since
+addressing moved to stream/byte_bus_id. Grepping the tree for consumers of
+the old `udp::ZoneServer`/`udp::Controller`/`udp::Registry` API before this
+change found none beyond this file's own (now-deleted) test and
+`rcp/tsn.hpp`'s doc comment — `rcp/tsn.hpp` itself only ever depended on the
+generic `rcp::Controller` interface plus a raw socket fd, never on `udp::`
+types directly — so no legacy-shim split file was needed here, unlike
+`rcp/mock.hpp`'s at v2.12.0; `rcp/legacy_wire.hpp` is deleted outright in the
+same change. New coverage lives in `tests/test_udp.cpp` (`REQ-UDP-001..012`,
+entirely rewritten under the same file/prefix identity as the discarded
+pre-replacement coverage, the same convention `tests/test_sim.cpp`'s
+`REQ-SIM-001..007` rewrite followed at v2.12.0), traced in `.fusa-reqs.json`.
+Full bit-for-bit conformance against other TC18/Annex-J implementations is
+not claimed, same as the equivalent disclaimers in `rcp/avtp.hpp`,
+`rcp/acf.hpp`, and `rcp/discovery.hpp`.
+
 ### 58. Auxiliary Transport & Cross-Cutting Rebind (v2.14.0)
 
 - `mdns.hpp`: narrow its scope to the UDP/IP transport variant specifically
