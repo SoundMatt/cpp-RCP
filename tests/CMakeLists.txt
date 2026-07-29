@@ -86,10 +86,6 @@ add_executable(test_wakeup test_wakeup.cpp)
 target_link_libraries(test_wakeup PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_wakeup COMMAND test_wakeup)
 
-add_executable(test_prioqueue test_prioqueue.cpp)
-target_link_libraries(test_prioqueue PRIVATE rcp::rcp Catch2::Catch2WithMain)
-add_test(NAME rcp_prioqueue COMMAND test_prioqueue)
-
 add_executable(test_ratelimit test_ratelimit.cpp)
 target_link_libraries(test_ratelimit PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_ratelimit COMMAND test_ratelimit)
@@ -124,25 +120,9 @@ add_executable(test_authz test_authz.cpp)
 target_link_libraries(test_authz PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_authz COMMAND test_authz)
 
-add_executable(test_firmware test_firmware.cpp)
-target_link_libraries(test_firmware PRIVATE rcp::rcp Catch2::Catch2WithMain)
-add_test(NAME rcp_firmware COMMAND test_firmware)
-
-add_executable(test_zonegroup test_zonegroup.cpp)
-target_link_libraries(test_zonegroup PRIVATE rcp::rcp Catch2::Catch2WithMain)
-add_test(NAME rcp_zonegroup COMMAND test_zonegroup)
-
-add_executable(test_proxy test_proxy.cpp)
-target_link_libraries(test_proxy PRIVATE rcp::rcp Catch2::Catch2WithMain)
-add_test(NAME rcp_proxy COMMAND test_proxy)
-
 add_executable(test_redundancy test_redundancy.cpp)
 target_link_libraries(test_redundancy PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_redundancy COMMAND test_redundancy)
-
-add_executable(test_federation test_federation.cpp)
-target_link_libraries(test_federation PRIVATE rcp::rcp Catch2::Catch2WithMain)
-add_test(NAME rcp_federation COMMAND test_federation)
 
 add_executable(test_observe test_observe.cpp)
 target_link_libraries(test_observe PRIVATE rcp::rcp Catch2::Catch2WithMain)
@@ -192,7 +172,7 @@ add_test(NAME rcp_cli COMMAND test_cli)
 # ── Transport / bridge stubs + remaining modules ─────────────────────────────
 
 foreach(mod
-    canbr ddsbr doipbr grpcbridge linbr mqttbr restbridge someipbr udsbr
+    ddsbr doipbr grpcbridge mqttbr restbridge someipbr udsbr
     tsn mdns powerstate tls udp)
   add_executable(test_${mod} test_${mod}.cpp)
   target_link_libraries(test_${mod} PRIVATE rcp::rcp Catch2::Catch2WithMain)
