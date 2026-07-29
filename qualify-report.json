@@ -1,87 +1,71 @@
 {
   "failed": 0,
-  "generatedAt": "2026-07-29T04:00:42Z",
-  "hash": "944554b93e302d0019f0176928d18405eb8ba472af5c2ba098f5b79c1281f20e",
+  "generatedAt": "2026-07-29T04:46:09Z",
+  "hash": "sha256:5d14f5312ca4fb15e90ee6753364fbfe17bbbe50bce4bfaec19f9b6a12d419fb",
   "kind": "qualification",
   "language": "cpp",
   "module": "github.com/SoundMatt/cpp-FuSa",
   "passed": 8,
   "results": [
     {
-      "case": {
-        "description": "Missing .fusa.json triggers FUSA001 finding",
-        "expectFinding": true,
-        "name": "FUSA001-positive",
-        "ruleId": "FUSA001"
-      },
-      "passed": true
+      "description": "Missing .fusa.json triggers FUSA001 finding",
+      "expectFinding": true,
+      "name": "FUSA001-positive",
+      "result": "PASS",
+      "ruleId": "FUSA001"
     },
     {
-      "case": {
-        "description": ".fusa.json present — no FUSA001 finding",
-        "expectFinding": false,
-        "name": "FUSA001-negative",
-        "ruleId": "FUSA001"
-      },
-      "passed": true
+      "description": ".fusa.json present — no FUSA001 finding",
+      "expectFinding": false,
+      "name": "FUSA001-negative",
+      "result": "PASS",
+      "ruleId": "FUSA001"
     },
     {
-      "case": {
-        "description": "No //fusa:req annotation triggers FUSA002",
-        "expectFinding": true,
-        "name": "FUSA002-positive",
-        "ruleId": "FUSA002"
-      },
-      "passed": true
+      "description": "No //fusa:req annotation triggers FUSA002",
+      "expectFinding": true,
+      "name": "FUSA002-positive",
+      "result": "PASS",
+      "ruleId": "FUSA002"
     },
     {
-      "case": {
-        "description": "//fusa:req annotation present — no FUSA002",
-        "expectFinding": false,
-        "name": "FUSA002-negative",
-        "ruleId": "FUSA002"
-      },
-      "passed": true
+      "description": "//fusa:req annotation present — no FUSA002",
+      "expectFinding": false,
+      "name": "FUSA002-negative",
+      "result": "PASS",
+      "ruleId": "FUSA002"
     },
     {
-      "case": {
-        "description": "version=0.0.0 (default config) triggers FUSA003",
-        "expectFinding": true,
-        "name": "FUSA003-positive",
-        "ruleId": "FUSA003"
-      },
-      "passed": true
+      "description": "version=0.0.0 (default config) triggers FUSA003",
+      "expectFinding": true,
+      "name": "FUSA003-positive",
+      "result": "PASS",
+      "ruleId": "FUSA003"
     },
     {
-      "case": {
-        "description": "Missing .fusa-evidence.json triggers FUSA004",
-        "expectFinding": true,
-        "name": "FUSA004-positive",
-        "ruleId": "FUSA004"
-      },
-      "passed": true
+      "description": "Missing .fusa-evidence.json triggers FUSA004",
+      "expectFinding": true,
+      "name": "FUSA004-positive",
+      "result": "PASS",
+      "ruleId": "FUSA004"
     },
     {
-      "case": {
-        "description": "Missing CHANGELOG.md triggers FUSA005",
-        "expectFinding": true,
-        "name": "FUSA005-positive",
-        "ruleId": "FUSA005"
-      },
-      "passed": true
+      "description": "Missing CHANGELOG.md triggers FUSA005",
+      "expectFinding": true,
+      "name": "FUSA005-positive",
+      "result": "PASS",
+      "ruleId": "FUSA005"
     },
     {
-      "case": {
-        "description": "CHANGELOG.md present — no FUSA005",
-        "expectFinding": false,
-        "name": "FUSA005-negative",
-        "ruleId": "FUSA005"
-      },
-      "passed": true
+      "description": "CHANGELOG.md present — no FUSA005",
+      "expectFinding": false,
+      "name": "FUSA005-negative",
+      "result": "PASS",
+      "ruleId": "FUSA005"
     }
   ],
   "schemaVersion": "1.15.0",
   "tool": "cpp-FuSa",
-  "toolVersion": "0.16.0",
+  "toolVersion": "0.17.0",
   "total": 8
 }

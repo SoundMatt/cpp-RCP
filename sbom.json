@@ -1,17 +1,17 @@
 {
   "components": [
     {
-      "hash": "",
+      "hash": "sha256:58be6332aee56b795e22f2327ba97d9f75d9467bf0fb4612532c127024fc1977",
       "name": "Catch2",
       "version": "3.6.0"
     }
   ],
   "format": "x-FuSa SBOM v1",
-  "generatedAt": "2026-07-29T04:00:27Z",
+  "generatedAt": "2026-07-29T04:45:54Z",
   "kind": "sbom",
   "language": "cpp",
   "module": "github.com/SoundMatt/cpp-FuSa",
   "schemaVersion": "1.15.0",
   "tool": "cpp-FuSa",
-  "toolVersion": "0.16.0"
+  "toolVersion": "0.17.0"
 }

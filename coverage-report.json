@@ -565,8 +565,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/char_traits.h",
-      "linePct": 19.565217391304348,
-      "linesHit": 9,
+      "linePct": 21.73913043478261,
+      "linesHit": 10,
       "linesTotal": 46
     },
     {
@@ -1380,13 +1380,13 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-07-29T04:00:28Z",
-  "linePct": 68.78459154305955,
+  "generatedAt": "2026-07-29T04:45:54Z",
+  "linePct": 68.79566083683861,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
-    "hitLines": 6214,
+    "hitLines": 6215,
     "totalBranches": 0,
     "totalLines": 9034
   },

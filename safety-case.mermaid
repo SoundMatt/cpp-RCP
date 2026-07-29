@@ -8,7 +8,7 @@ graph TD
   G6["goal: cpp-RCP itself is qualified as a verification t..."]
   St1{"strategy: Argument by direct inspection of generated evid..."}
   St2{"strategy: Argument over independent verification and qual..."}
-  Sn1[("solution: SAFETY_PLAN.md — documented development and e...")]
+  Sn1[("solution: docs/tool-safety-manual.md — documented devel...")]
   Sn2[("solution: .fusa.json — declares the standard/ASIL this ...")]
   Sn3[("solution: .fusa-reqs.json — requirement registry with r...")]
   Sn4[("solution: qualify-report.json — tool qualification case...")]
@@ -19,12 +19,12 @@ graph TD
   A1[/"assumption: The compiler toolchain used to build cpp-RCP is..."/]
   J1[/"justification: §1.6.1's FUSA-STUB001/002 heuristics are an au..."/]
   G1 -->|"supportedBy"| St1
-  St1 -->|"inContextOf"| G3
-  St1 -->|"inContextOf"| G5
+  St1 -->|"supportedBy"| G3
+  St1 -->|"supportedBy"| G5
   G1 -->|"supportedBy"| St2
-  St2 -->|"inContextOf"| G2
-  St2 -->|"inContextOf"| G4
-  St2 -->|"inContextOf"| G6
+  St2 -->|"supportedBy"| G2
+  St2 -->|"supportedBy"| G4
+  St2 -->|"supportedBy"| G6
   G2 -->|"supportedBy"| Sn1
   G2 -->|"supportedBy"| Sn2
   G4 -->|"supportedBy"| Sn3

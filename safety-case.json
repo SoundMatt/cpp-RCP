@@ -1,8 +1,8 @@
 {
   "completeness": {
-    "goalsWithEvidence": 0,
+    "goalsWithEvidence": 2,
     "totalGoals": 6,
-    "undeveloped": 3
+    "undeveloped": 4
   },
   "edges": [
     {
@@ -13,12 +13,12 @@
     {
       "from": "St1",
       "to": "G3",
-      "type": "inContextOf"
+      "type": "supportedBy"
     },
     {
       "from": "St1",
       "to": "G5",
-      "type": "inContextOf"
+      "type": "supportedBy"
     },
     {
       "from": "G1",
@@ -28,17 +28,17 @@
     {
       "from": "St2",
       "to": "G2",
-      "type": "inContextOf"
+      "type": "supportedBy"
     },
     {
       "from": "St2",
       "to": "G4",
-      "type": "inContextOf"
+      "type": "supportedBy"
     },
     {
       "from": "St2",
       "to": "G6",
-      "type": "inContextOf"
+      "type": "supportedBy"
     },
     {
       "from": "G2",
@@ -91,7 +91,7 @@
       "type": "inContextOf"
     }
   ],
-  "generatedAt": "2026-07-29T04:00:27Z",
+  "generatedAt": "2026-07-29T04:45:54Z",
   "kind": "safety-case",
   "language": "cpp",
   "nodes": [
@@ -103,7 +103,7 @@
     },
     {
       "id": "G2",
-      "status": "supported",
+      "status": "undeveloped",
       "text": "cpp-RCP's own development process satisfies iso26262's tool-confidence-level requirements (ISO 26262-8 Clause 11)",
       "type": "goal"
     },
@@ -142,9 +142,9 @@
       "type": "strategy"
     },
     {
-      "evidence": "SAFETY_PLAN.md",
+      "evidence": "docs/tool-safety-manual.md",
       "id": "Sn1",
-      "text": "SAFETY_PLAN.md — documented development and evidence-generation plan",
+      "text": "docs/tool-safety-manual.md — documented development process, scope, and evidence-generation plan",
       "type": "solution"
     },
     {
@@ -204,5 +204,5 @@
   "schemaVersion": "1.15.0",
   "standard": "iso26262",
   "tool": "cpp-FuSa",
-  "toolVersion": "0.16.0"
+  "toolVersion": "0.17.0"
 }
