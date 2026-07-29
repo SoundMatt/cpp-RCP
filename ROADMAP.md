@@ -1374,6 +1374,78 @@ landed and nothing else in the tree still depends on these headers:
 `canbr.hpp`, `linbr.hpp`, `federation.hpp`, `proxy.hpp`, `zonegroup.hpp`,
 `prioqueue.hpp`, `firmware.hpp`.
 
+**Done (v2.17.0):** All seven headers named in this milestone's scope —
+`include/rcp/canbr.hpp`, `linbr.hpp`, `federation.hpp`, `proxy.hpp`,
+`zonegroup.hpp`, `prioqueue.hpp`, `firmware.hpp` — are deleted outright,
+along with their dedicated test files (`tests/test_canbr.cpp`,
+`test_linbr.cpp`, `test_federation.cpp`, `test_proxy.cpp`,
+`test_zonegroup.cpp`, `test_prioqueue.cpp`, `test_firmware.cpp`), matching
+the DEPRECATE call and per-package justification already recorded in the
+Satellite Package Disposition table. Before deleting, grepping the tree for
+`#include` references to each of the seven confirmed zero remaining
+consumers outside the header/test pair being removed; `linbr.hpp` and
+`prioqueue.hpp` were each still named in passing inside doc comments in
+`rcp/lin.hpp`, `rcp/ratelimit.hpp`, and `rcp/tsn.hpp` (explaining, by name,
+what those ADAPTed packages replaced) and `rcp/legacy_mock.hpp` (a
+historical list of this file's old dependents) — none of these are
+`#include`s, so they were left as the same kind of point-in-time
+archaeological record every prior REPLACE/ADAPT milestone's own comments
+already are, rather than rewritten.
+
+`tests/CMakeLists.txt` is updated to match: `canbr`/`linbr` are pulled out
+of the shared bridge-stub `foreach` loop (the seven ADAPTed bridges sharing
+that loop — `ddsbr`/`doipbr`/`grpcbridge`/`mqttbr`/`restbridge`/
+`someipbr`/`udsbr` — are untouched), and the five standalone
+`add_executable`/`target_link_libraries`/`add_test` blocks for
+`federation`/`proxy`/`zonegroup`/`prioqueue`/`firmware` are deleted.
+
+One real coupling had to be resolved rather than just deleted around:
+`tests/test_config.cpp` pulled in `rcp/proxy.hpp` purely to get an
+`rcp::Registry` implementation that starts empty (`legacy_mock::Registry`
+always pre-populates all 5 zones, so it can't observe `config::load`
+registering a zone from a clean slate) — no `ProxyController` latency-budget
+behavior was ever under test there. Rather than drop the two `config::load`
+test cases (and their `REQ-CFG-*` coverage) or reach back into `proxy.hpp`,
+`test_config.cpp` now defines its own minimal `EmptyRegistry` test double
+locally and uses that instead; `rcp/config.hpp` itself, and the fact that
+its own rebind onto the new server/endpoint manifest schema remains a
+separate, still-open item per the Satellite Package Disposition table's
+`config.hpp` entry, are both otherwise untouched by this milestone.
+
+`.fusa-reqs.json` is pruned of the 44 requirement entries that back the
+deleted packages — `REQ-CANBR`/`REQ-LINBR` didn't end up being the real
+prefixes canbr.hpp/linbr.hpp used (they were `REQ-CAN-001..004` and
+`REQ-LIN-001..004`, distinct from the native CAN/LIN endpoints' own
+`REQ-CANEP-*`/`REQ-LINEP-*`), plus `REQ-PROXY-001..006`,
+`REQ-FED-001..008`, `REQ-ZG-001..006`, `REQ-PQ-001..008`, and
+`REQ-FW-001..008`. This was necessary within this milestone rather than
+deferred to #62: `cpfusa trace --req-coverage 100` (the same gate CI's
+`cpfusa-trace` job enforces) treats any requirement id present in
+`.fusa-reqs.json` with no corresponding `fusa:req`/`fusa:test` source
+annotation as an uncovered gap, and removing the seven headers' annotations
+without pruning their matching entries dropped measured coverage to 90.9%.
+No other safety artifact (`.fusa-hara.json`, `.fusa-problems.json`,
+`.fusa-iec62443.json`, `fmea.csv`/`fmea.json`) references any of these 44
+ids, so none of them needed a corresponding edit. This is a narrowly-scoped
+prune of exactly the entries this milestone's own deletions orphaned — it
+is not the full regeneration against a new v2.x requirement set that
+milestone #62 still owns, and does not touch the pre-replacement
+`REQ-ZONE-*`/`REQ-CMD-*`/`REQ-STATUS-*` groups #62's own scope text calls
+out for retirement.
+
+`version.hpp`/`CMakeLists.txt` are bumped to 2.17.0. Full local build
+(clang/gcc, C++17) and `ctest` (53/53 tests, down from 60 — the seven
+removed suites) pass; `cpfusa check`/`lint`/`cyber`/`trace --req-coverage
+100` all pass with 0 errors (only the same pre-existing warnings already
+present before this change); RELAY `conform --strict` against the built
+`cpp-rcp` CLI still passes unchanged, since this milestone touches no
+wire-format or CLI-surface code. Milestone #62 (Certification Refresh,
+v2.18.0) is next: it still owns the full `.fusa-*`/`fmea.*`/`HARA.md`/
+`TARA-ANALYSIS.md`/`CYBERSECURITY.md`/`tla/`/`AUDIT_PACK.md` regeneration
+against the complete v2.x requirement set, including retiring the older
+pre-replacement `REQ-ZONE-*`/`REQ-CMD-*`/`REQ-STATUS-*` groups that this
+milestone did not touch.
+
 ### 62. Certification Refresh (v2.18.0)
 
 - Regenerate `.fusa-reqs.json`, `.fusa-hara.json`, `HARA.md`, `TARA-ANALYSIS.md`,

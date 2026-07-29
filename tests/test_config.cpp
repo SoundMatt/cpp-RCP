@@ -8,12 +8,74 @@
 
 #include "rcp/config.hpp"
 #include "rcp/legacy_mock.hpp"
-#include "rcp/proxy.hpp"
 
+#include <map>
 #include <stdexcept>
 #include <string>
 
 using namespace rcp;
+
+namespace {
+
+// A minimal empty-starting rcp::Registry test double.
+//
+// legacy_mock::Registry always pre-populates all 5 zones (see its own
+// constructor), so it can't be used to observe "did config::load actually
+// register this zone" starting from a clean slate. Milestone 61's
+// deprecation sweep (ROADMAP.md, v2.17.0) removed rcp/proxy.hpp, which
+// these tests previously borrowed purely as a generic empty rcp::Registry
+// implementation — no proxy-specific behavior was ever under test here.
+// This local double replaces that borrowed dependency directly instead of
+// pulling proxy.hpp's concept back in; rcp/config.hpp itself is otherwise
+// unchanged, since its own rebind onto the new server/endpoint model
+// remains a separate, still-open item (see the Satellite Package
+// Disposition table's `config.hpp` entry).
+class EmptyRegistry final : public rcp::Registry {
+public:
+    std::error_code register_ctrl(std::shared_ptr<rcp::Controller> ctrl) override {
+        if (closed_) return ErrClosed;
+        if (ctrls_.count(ctrl->zone())) return ErrAlreadyExists;
+        ctrls_[ctrl->zone()] = std::move(ctrl);
+        return {};
+    }
+
+    std::error_code deregister(Zone z) override {
+        auto it = ctrls_.find(z);
+        if (it == ctrls_.end()) return ErrNotFound;
+        auto ctrl = it->second;
+        ctrls_.erase(it);
+        return ctrl->close();
+    }
+
+    std::error_code lookup(Zone z, std::shared_ptr<rcp::Controller>& out) override {
+        if (closed_) return ErrClosed;
+        auto it = ctrls_.find(z);
+        if (it == ctrls_.end()) return ErrNotFound;
+        out = it->second;
+        return {};
+    }
+
+    std::vector<std::shared_ptr<rcp::Controller>> controllers() override {
+        std::vector<std::shared_ptr<rcp::Controller>> out;
+        out.reserve(ctrls_.size());
+        for (auto& kv : ctrls_) out.push_back(kv.second);
+        return out;
+    }
+
+    std::error_code close() override {
+        if (closed_) return {};
+        closed_ = true;
+        auto local = std::move(ctrls_);
+        for (auto& kv : local) (void)kv.second->close();
+        return {};
+    }
+
+private:
+    std::map<Zone, std::shared_ptr<rcp::Controller>> ctrls_;
+    bool closed_ = false;
+};
+
+} // namespace
 
 TEST_CASE("config: parse_json two zones", "[config]") {
     const std::string json = R"({
@@ -43,11 +105,10 @@ TEST_CASE("config: load registers controllers", "[config]") {
         ]
     })";
 
-    legacy_mock::Registry reg;
-    // Remove pre-registered zones first (legacy_mock::Registry pre-populates all 5)
-    // We test that load succeeds when zones are not yet registered.
-    // Use a proxy registry which starts empty.
-    proxy::ProxyRegistry preg;
+    // legacy_mock::Registry pre-populates all 5 zones, so it can't show
+    // config::load actually registering a new one; use the empty test
+    // double instead (see the EmptyRegistry comment above).
+    EmptyRegistry preg;
     REQUIRE_FALSE(config::load(json, preg));
 
     std::shared_ptr<Controller> ctrl;
@@ -63,7 +124,7 @@ TEST_CASE("config: load duplicate zone returns ErrAlreadyExists", "[config]") {
         ]
     })";
 
-    proxy::ProxyRegistry preg;
+    EmptyRegistry preg;
     auto ec = config::load(json, preg);
     REQUIRE(ec == ErrAlreadyExists);
 }
