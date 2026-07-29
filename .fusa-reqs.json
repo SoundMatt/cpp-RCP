@@ -754,96 +754,96 @@
     },
     {
       "id": "REQ-UDP-001",
-      "title": "Header magic bytes 'RC'",
-      "text": "All wire frames shall begin with the two-byte sequence 0x52 ('R'), 0x43 ('C').",
+      "title": "Frame round-trips an NTSCF-framed ACF_ABB request",
+      "text": "rcp::udp::encode_frame/decode_frame shall round-trip a Frame carrying an NTSCF header (rcp::avtp::NtscfHeader) wrapping an ACF_ABB message (rcp::acf::AcfMessageInfo) unchanged: stream_id, sequence_num, the request's byte_bus_id/transaction_num/op, and its payload shall all be recoverable from the encoded bytes.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-002",
-      "title": "Protocol version field",
-      "text": "All wire frames shall carry the protocol version (currently 0x01) in byte 2.",
+      "title": "Frame round-trips a TSCF-framed request with avtp_timestamp",
+      "text": "rcp::udp::encode_frame/decode_frame shall round-trip a Frame carrying a TSCF header (rcp::avtp::TscfHeader), including its timestamp_valid flag and 32-bit avtp_timestamp, unchanged.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-003",
-      "title": "Message type field",
-      "text": "Byte 3 of every wire frame shall encode the message type: Command, Response, Status, Subscribe, or Unsubscribe.",
+      "title": "Frame round-trips an ACF_GBB message_timestamp",
+      "text": "rcp::udp::encode_frame/decode_frame shall round-trip a Frame whose AcfMessageInfo::acf_msg_type is kAcfMsgTypeGbb, including its mtv flag, 64-bit message_timestamp, and payload, unchanged.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-004",
-      "title": "Zone field",
-      "text": "Bytes 4 of every wire frame shall encode the target Zone as a uint8.",
+      "title": "decode_frame rejects a buffer shorter than the AVTPDU header",
+      "text": "rcp::udp::decode_frame shall return a non-zero std::error_code when given fewer bytes than the AVTPDU header (NTSCF or TSCF, selected by the subtype byte) requires.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-005",
-      "title": "CommandType field for commands",
-      "text": "Bytes 5\u20136 of Command frames shall encode the CommandType as a big-endian uint16.",
+      "title": "decode_frame rejects a buffer shorter than the ACF common header",
+      "text": "rcp::udp::decode_frame shall return a non-zero std::error_code when the AVTPDU header decodes successfully but fewer bytes than the 10-byte ACF common header (rcp::acf::kAcfCommonHeaderLen) remain.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-006",
-      "title": "Priority/Status field",
-      "text": "Byte 7 shall encode Priority for Command frames, ResponseStatus for Response frames, and Healthy flag for Status frames.",
+      "title": "decode_frame rejects an unrecognized ACF message type",
+      "text": "rcp::udp::decode_frame shall return a non-zero std::error_code when the byte immediately following a valid AVTPDU header is neither rcp::acf::kAcfMsgTypeAbb nor rcp::acf::kAcfMsgTypeGbb.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-007",
-      "title": "Command/response ID field",
-      "text": "Bytes 8\u201311 shall encode the Command or Response ID as a big-endian uint32.",
+      "title": "Server dispatches a decoded request through its handler and answers the sender",
+      "text": "rcp::udp::Server shall decode each inbound UDP datagram as a Frame, invoke its registered Handler with the decoded AcfMessageInfo and payload, and send the handler's response back to the originating sender address, framed under the same NTSCF/TSCF header kind the request arrived under.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-008",
-      "title": "Payload length field",
-      "text": "Bytes 12\u201315 shall encode the payload byte count as a big-endian uint32.",
+      "title": "Server answers Acknowledge by default when no handler is registered",
+      "text": "rcp::udp::Server shall respond to a decoded request with rcp::acf::ResponseKind::Acknowledge when no Handler has been set via set_handler.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-009",
-      "title": "Payload follows header",
-      "text": "The variable-length payload shall immediately follow the 16-byte header.",
+      "title": "Server assigns stable per-sender client ids",
+      "text": "rcp::udp::Server shall pass the same opaque client id to its Handler for every request originating from the same sender address, and a distinct id for a request from a different sender address.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-010",
-      "title": "Big-endian multi-byte fields",
-      "text": "All multi-byte fields in wire frames shall be encoded in big-endian (network) byte order.",
+      "title": "Client::request returns ErrTimeout when no response arrives",
+      "text": "rcp::udp::Client::request shall return rcp::ErrTimeout when the supplied rcp::Context's deadline elapses before a matching response frame is received.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-011",
-      "title": "Frame validation rejects bad magic",
-      "text": "The decoder shall return an error if frame bytes 0\u20131 are not 0x52, 0x43.",
+      "title": "Client::request correlates concurrent requests by byte_bus_id/transaction_num",
+      "text": "rcp::udp::Client::request shall match each inbound response frame to the pending request whose AcfMessageInfo::byte_bus_id and AcfMessageInfo::transaction_num it echoes, so that two outstanding requests with distinct (byte_bus_id, transaction_num) pairs each receive their own response.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
     },
     {
       "id": "REQ-UDP-012",
-      "title": "Frame validation rejects bad version",
-      "text": "The decoder shall return an error if the version byte does not equal the supported protocol version.",
+      "title": "Server and Client close() are idempotent and requests after close fail",
+      "text": "rcp::udp::Server::close and rcp::udp::Client::close shall be safe to call more than once without blocking indefinitely or crashing, and rcp::udp::Client::request shall return rcp::ErrClosed once the Client has been closed.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"

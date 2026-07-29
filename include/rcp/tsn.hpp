@@ -14,7 +14,13 @@
 // Full 802.1Qbv gate scheduling requires a TSN-capable NIC and kernel ≥ 4.15.
 // On standard hardware this provides best-effort priority mapping only.
 //
-// Wraps udp::Controller; add #include <rcp/udp.hpp> before this header.
+// Wraps any rcp::Controller (e.g. the pre-replacement rcp/legacy_mock.hpp's
+// Controller); it depends only on the socket fd passed in, not on any
+// concrete transport header. See ROADMAP.md's Satellite Package Disposition
+// table's entry for this file — a v2.14.0 rebind to the post-replacement
+// request model, once rcp/udp.hpp itself no longer implements this
+// pre-replacement Controller interface (v2.13.0) — for why this class still
+// targets the old model today.
 #pragma once
 
 #include "rcp.hpp"

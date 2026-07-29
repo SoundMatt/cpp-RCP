@@ -11,12 +11,14 @@
 //
 // ROADMAP.md milestone 44, "Wire Format Core (v2.0.0)": this header (plus
 // rcp/acf.hpp) replaces the old bespoke 16-byte frame this file used to
-// define (now preserved as-is, unrenamed in behavior, under
-// rcp/legacy_wire.hpp for rcp/udp.hpp's benefit until the transport itself
-// is rebuilt at v2.13.0). Originally landed as a single rcp/wire.hpp; split
-// into rcp/avtp.hpp (this file, AVTPDU header framing) and rcp/acf.hpp
-// (ACF_ABB/ACF_GBB message format) per RELAY spec §13.7.2's standard
-// module-name registry, which names these two concerns separately.
+// define (preserved as-is, unrenamed in behavior, under rcp/legacy_wire.hpp
+// for rcp/udp.hpp's benefit from v2.0.0 through v2.12.0, until rcp/udp.hpp
+// was itself rebuilt directly on this header and rcp/acf.hpp — and
+// rcp/legacy_wire.hpp deleted outright — at milestone 57, v2.13.0).
+// Originally landed as a single rcp/wire.hpp; split into rcp/avtp.hpp (this
+// file, AVTPDU header framing) and rcp/acf.hpp (ACF_ABB/ACF_GBB message
+// format) per RELAY spec §13.7.2's standard module-name registry, which
+// names these two concerns separately.
 //
 // Scope note: this module is a pure wire codec. It has no dependency on
 // rcp.hpp's Zone/Command/Controller/Registry model, and no dependency on any

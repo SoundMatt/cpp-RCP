@@ -18,10 +18,6 @@ add_executable(test_acf test_acf.cpp)
 target_link_libraries(test_acf PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_acf COMMAND test_acf)
 
-add_executable(test_legacy_wire test_legacy_wire.cpp)
-target_link_libraries(test_legacy_wire PRIVATE rcp::rcp Catch2::Catch2WithMain)
-add_test(NAME rcp_legacy_wire COMMAND test_legacy_wire)
-
 add_executable(test_lifecycle test_lifecycle.cpp)
 target_link_libraries(test_lifecycle PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_lifecycle COMMAND test_lifecycle)
@@ -197,7 +193,7 @@ add_test(NAME rcp_cli COMMAND test_cli)
 
 foreach(mod
     canbr ddsbr doipbr grpcbridge linbr mqttbr restbridge someipbr udsbr
-    tsn mdns powerstate tls)
+    tsn mdns powerstate tls udp)
   add_executable(test_${mod} test_${mod}.cpp)
   target_link_libraries(test_${mod} PRIVATE rcp::rcp Catch2::Catch2WithMain)
   add_test(NAME rcp_${mod} COMMAND test_${mod})
