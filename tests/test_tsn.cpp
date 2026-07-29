@@ -5,76 +5,85 @@
 // fusa:test REQ-TSN-005
 // fusa:test REQ-TSN-006
 
-// TSN / IEEE 802.1p priority-mapping tests.
+// TSN / IEEE 802.1p priority-mapping tests (ROADMAP.md milestone 58,
+// "Auxiliary Transport & Cross-Cutting Rebind", v2.14.0).
 //
-// The TSN wrapper maps rcp::Priority to an 802.1p PCP value and applies
-// SO_PRIORITY to the egress socket before delegating to the inner controller.
-// The setsockopt() call is platform-gated (Linux); these tests pin the
-// priority→PCP mapping and the pass-through behaviour, which are portable.
+// apply_priority() maps rcp::request::RequestCategory to an 802.1p PCP
+// value and applies SO_PRIORITY to the given socket fd. The setsockopt()
+// call itself is platform-gated (Linux); these tests pin the
+// category -> PCP mapping and the portable fd-validation behavior.
 #include <catch2/catch_test_macros.hpp>
 
-#include "rcp/legacy_mock.hpp"
 #include "rcp/tsn.hpp"
 
 using namespace rcp;
+using rcp::request::RequestCategory;
 
-TEST_CASE("tsn: PCPMap maps Normal/High/Critical to PCP values", "[tsn][REQ-TSN-002]") {
+TEST_CASE("tsn: PCPMap maps every RequestCategory to a distinct PCP value",
+          "[tsn][REQ-TSN-002]") {
     auto m = tsn::default_pcp_map();
-    REQUIRE(tsn::pcp_for(m, Priority::Normal)   == m.normal);
-    REQUIRE(tsn::pcp_for(m, Priority::High)     == m.high);
-    REQUIRE(tsn::pcp_for(m, Priority::Critical) == m.critical);
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Cancellation)  == m.cancellation);
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Triggered)     == m.triggered);
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Timed)         == m.timed);
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Compound)      == m.compound);
+    REQUIRE(tsn::pcp_for(m, RequestCategory::CompoundWait)  == m.compound_wait);
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Chained)       == m.chained);
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Standard)      == m.standard);
 }
 
-TEST_CASE("tsn: Critical maps to the highest PCP", "[tsn][REQ-TSN-003]") {
+TEST_CASE("tsn: Cancellation (highest execution priority) maps to the highest PCP",
+          "[tsn][REQ-TSN-003]") {
     auto m = tsn::default_pcp_map();
-    REQUIRE(tsn::pcp_for(m, Priority::Critical) == 7);
-    REQUIRE(tsn::pcp_for(m, Priority::Critical) > tsn::pcp_for(m, Priority::High));
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Cancellation) == 7);
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Cancellation) >
+            tsn::pcp_for(m, RequestCategory::Triggered));
 }
 
-TEST_CASE("tsn: High maps to a mid-range PCP", "[tsn][REQ-TSN-004]") {
+TEST_CASE("tsn: Triggered maps to a mid/high-range PCP", "[tsn][REQ-TSN-004]") {
     auto m = tsn::default_pcp_map();
-    auto high = tsn::pcp_for(m, Priority::High);
-    REQUIRE(high == 5);
-    REQUIRE(high > tsn::pcp_for(m, Priority::Normal));
-    REQUIRE(high < tsn::pcp_for(m, Priority::Critical));
+    auto triggered = tsn::pcp_for(m, RequestCategory::Triggered);
+    REQUIRE(triggered == 6);
+    REQUIRE(triggered < tsn::pcp_for(m, RequestCategory::Cancellation));
+    REQUIRE(triggered > tsn::pcp_for(m, RequestCategory::Standard));
 }
 
-TEST_CASE("tsn: Normal maps to a low PCP", "[tsn][REQ-TSN-005]") {
+TEST_CASE("tsn: Standard (the mandatory baseline kind) maps to the lowest PCP",
+          "[tsn][REQ-TSN-005]") {
     auto m = tsn::default_pcp_map();
-    REQUIRE(tsn::pcp_for(m, Priority::Normal) == 2);
-    REQUIRE(tsn::pcp_for(m, Priority::Normal) < tsn::pcp_for(m, Priority::High));
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Standard) == 1);
+    // Every priority-rank ordering the specification defines across the
+    // seven categories (extraction §3.14) is preserved in the PCP mapping:
+    // higher execution priority (lower rank) never yields a lower PCP.
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Standard) <
+            tsn::pcp_for(m, RequestCategory::Chained));
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Chained) <
+            tsn::pcp_for(m, RequestCategory::CompoundWait));
+    REQUIRE(tsn::pcp_for(m, RequestCategory::CompoundWait) <
+            tsn::pcp_for(m, RequestCategory::Compound));
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Compound) <
+            tsn::pcp_for(m, RequestCategory::Timed));
+    REQUIRE(tsn::pcp_for(m, RequestCategory::Timed) <
+            tsn::pcp_for(m, RequestCategory::Triggered));
 }
 
-TEST_CASE("tsn: send applies priority class then delegates to inner",
-          "[tsn][REQ-TSN-001]") {
-    // Capture the command type/priority the inner controller actually receives,
-    // proving the wrapper forwards after applying the (platform-gated) PCP.
-    Priority seen = Priority::Normal;
-    auto inner = std::make_shared<legacy_mock::Controller>(
-        Zone::FrontLeft, [&](const Command& c) {
-            seen = c.priority;
-            return Response{c.id, Zone::FrontLeft, ResponseStatus::OK, {}};
-        });
-    // fd = -1 → SO_PRIORITY is skipped, send still delegates.
-    auto ctrl = tsn::new_controller(inner, -1, tsn::default_tsn_config());
-
-    Command cmd;
-    cmd.zone     = Zone::FrontLeft;
-    cmd.type     = CommandType::Set;
-    cmd.priority = Priority::Critical;
-    Response resp;
-    REQUIRE_FALSE(ctrl->send(Context{}, cmd, resp));
-    REQUIRE(resp.status == ResponseStatus::OK);
-    REQUIRE(seen == Priority::Critical); // forwarded unchanged to the inner controller
+TEST_CASE("tsn: apply_priority succeeds (as a portable no-op where SO_PRIORITY "
+          "is unavailable) for a valid fd", "[tsn][REQ-TSN-001]") {
+    // fd = 0 is a valid descriptor value (stdin) so this exercises the real
+    // code path on every platform without needing an actual UDP socket;
+    // on non-Linux builds RCP_TSN_SO_PRIORITY is undefined and this is
+    // unconditionally a no-op success.
+    auto ec = tsn::apply_priority(0, tsn::default_tsn_config(), RequestCategory::Cancellation);
+#if defined(RCP_TSN_SO_PRIORITY)
+    // setsockopt on fd 0 (not a socket) fails on Linux -- apply_priority
+    // must propagate that failure rather than silently swallowing it.
+    REQUIRE(ec);
+#else
+    REQUIRE_FALSE(ec);
+#endif
 }
 
-TEST_CASE("tsn: subscribe delegates to inner", "[tsn][REQ-TSN-006]") {
-    auto inner = std::make_shared<legacy_mock::Controller>(Zone::Central);
-    auto ctrl  = tsn::new_controller(inner, -1, tsn::default_tsn_config());
-
-    std::shared_ptr<StatusChannel> ch;
-    REQUIRE_FALSE(ctrl->subscribe(Context{}, ch));
-    REQUIRE(ch != nullptr);
-    REQUIRE(ctrl->zone() == Zone::Central);
-    REQUIRE_FALSE(ctrl->close());
+TEST_CASE("tsn: apply_priority rejects a negative fd on every platform",
+          "[tsn][REQ-TSN-006]") {
+    auto ec = tsn::apply_priority(-1, tsn::default_tsn_config(), RequestCategory::Standard);
+    REQUIRE(ec == std::make_error_code(std::errc::invalid_argument));
 }

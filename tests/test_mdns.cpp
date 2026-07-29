@@ -7,121 +7,134 @@
 // fusa:test REQ-MDNS-007
 // fusa:test REQ-MDNS-008
 
-// mDNS / DNS-SD zone-discovery tests (RFC 6762 + RFC 6763).
-//
-// Exercises the StaticDiscoverer (the header-only Discoverer used for testing
-// and static config) and the Announcer interface via a recording test double.
+// Tests for rcp/mdns.hpp — host:port discovery for the UDP/IP transport
+// variant (ROADMAP.md milestone 58, "Auxiliary Transport & Cross-Cutting
+// Rebind", v2.14.0).
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "rcp/mdns.hpp"
 
-#include <map>
-#include <string>
 #include <vector>
 
 using namespace rcp;
+using namespace rcp::mdns;
 
 namespace {
-
-std::vector<mdns::ZoneInfo> sample_zones() {
-    return {
-        {Zone::FrontLeft,  "fl.local", 5000, "front-left.fl.local._rcp._udp.local"},
-        {Zone::FrontRight, "fr.local", 5001, "front-right.fr.local._rcp._udp.local"},
-        {Zone::Central,    "c.local",  5002, "central.c.local._rcp._udp.local"},
-    };
+avtp::StreamId make_stream_id(uint8_t mac_seed, uint16_t suffix) {
+    avtp::StreamId id;
+    for (auto& b : id.mac) b = mac_seed++;
+    id.suffix = suffix;
+    return id;
 }
-
-// TestAnnouncer records announce()/withdraw() calls for assertions.
-class TestAnnouncer final : public mdns::Announcer {
-public:
-    std::error_code announce(const mdns::ZoneInfo& info) override {
-        announced[info.zone] = info;
-        return {};
-    }
-    void withdraw(Zone z) override { announced.erase(z); }
-    std::map<Zone, mdns::ZoneInfo> announced;
-};
-
 } // namespace
 
-TEST_CASE("mdns: StaticDiscoverer is a Discoverer that emits on start",
+// ── Discoverer interface / StaticDiscoverer ──────────────────────────────────
+
+TEST_CASE("Discoverer is an abstract interface implemented by StaticDiscoverer",
           "[mdns][REQ-MDNS-001]") {
-    auto disc = mdns::new_static_discoverer(sample_zones());
-    mdns::Discoverer& as_iface = *disc; // satisfies the abstract interface
-
-    int count = 0;
-    auto ec = as_iface.start([&](const mdns::DiscoveryEvent&) { ++count; });
-    REQUIRE_FALSE(ec);
-    REQUIRE(count == 3);
+    std::unique_ptr<Discoverer> d = new_static_discoverer({});
+    REQUIRE(d != nullptr);
 }
 
-TEST_CASE("mdns: start fires an Added event for each discovered zone",
+TEST_CASE("StaticDiscoverer::start emits an Added event for each configured server",
           "[mdns][REQ-MDNS-002][REQ-MDNS-004]") {
-    auto disc = mdns::new_static_discoverer(sample_zones());
+    ServerInfo a{make_stream_id(0x02, 1).to_u64(), "10.0.0.1", 8000, "srv-a"};
+    ServerInfo b{make_stream_id(0x02, 2).to_u64(), "10.0.0.2", 8001, "srv-b"};
 
-    std::vector<Zone> added;
-    auto ec = disc->start([&](const mdns::DiscoveryEvent& ev) {
-        REQUIRE(ev.event == mdns::EventType::Added);
-        added.push_back(ev.info.zone);
-    });
-    REQUIRE_FALSE(ec);
+    auto d = new_static_discoverer({a, b});
 
-    // Exactly the configured zones, in order (REQ-MDNS-004).
-    REQUIRE(added == std::vector<Zone>{Zone::FrontLeft, Zone::FrontRight, Zone::Central});
+    std::vector<DiscoveryEvent> events;
+    REQUIRE_FALSE(d->start([&](const DiscoveryEvent& ev) { events.push_back(ev); }));
+
+    REQUIRE(events.size() == 2);
+    REQUIRE(events[0].event == EventType::Added);
+    REQUIRE(events[0].info.stream_key == a.stream_key);
+    REQUIRE(events[0].info.host == "10.0.0.1");
+    REQUIRE(events[0].info.port == 8000);
+    REQUIRE(events[1].info.stream_key == b.stream_key);
 }
 
-TEST_CASE("mdns: stop terminates discovery", "[mdns][REQ-MDNS-003]") {
-    auto disc = mdns::new_static_discoverer(sample_zones());
+TEST_CASE("StaticDiscoverer::stop halts emission of further events",
+          "[mdns][REQ-MDNS-003]") {
+    std::vector<ServerInfo> servers;
+    for (int i = 0; i < 5; ++i) {
+        servers.push_back({make_stream_id(0x02, static_cast<uint16_t>(i)).to_u64(),
+                            "10.0.0.1", 8000, "srv"});
+    }
+    auto d = new_static_discoverer(servers);
 
-    int count = 0;
-    // Calling stop() from within the callback halts emission after the first event.
-    auto ec = disc->start([&](const mdns::DiscoveryEvent&) {
-        ++count;
-        disc->stop();
+    int seen = 0;
+    d->start([&](const DiscoveryEvent&) {
+        ++seen;
+        if (seen == 2) d->stop();
     });
-    REQUIRE_FALSE(ec);
-    REQUIRE(count == 1); // discovery stopped despite three configured zones
+
+    REQUIRE(seen == 2); // stop() during the callback halts the remaining emissions
 }
 
-TEST_CASE("mdns: ZoneInfo carries host, port and zone", "[mdns][REQ-MDNS-005]") {
-    auto disc = mdns::new_static_discoverer(sample_zones());
+// ── ServerInfo shape ──────────────────────────────────────────────────────────
 
-    mdns::ZoneInfo first{};
-    bool got = false;
-    auto ec = disc->start([&](const mdns::DiscoveryEvent& ev) {
-        if (!got) { first = ev.info; got = true; }
-    });
-    REQUIRE_FALSE(ec);
+TEST_CASE("ServerInfo carries stream_key, host, port, and instance_name",
+          "[mdns][REQ-MDNS-005]") {
+    auto sid = make_stream_id(0x02, 0x99);
+    ServerInfo info;
+    info.stream_key    = sid.to_u64();
+    info.host           = "192.168.1.10";
+    info.port           = 12345;
+    info.instance_name  = make_instance_name(sid, "192.168.1.10");
 
-    REQUIRE(got);
-    REQUIRE(first.zone == Zone::FrontLeft);
-    REQUIRE(first.host == "fl.local");
-    REQUIRE(first.port == 5000);
+    REQUIRE(info.stream_key == sid.to_u64());
+    REQUIRE(info.host == "192.168.1.10");
+    REQUIRE(info.port == 12345);
+    REQUIRE_FALSE(info.instance_name.empty());
 }
 
-TEST_CASE("mdns: instance_name follows the _rcp._udp.local convention",
+// ── make_instance_name convention ────────────────────────────────────────────
+
+TEST_CASE("make_instance_name follows <hex-stream-key>.<host>._rcp._udp.local",
           "[mdns][REQ-MDNS-006]") {
-    auto name = mdns::make_instance_name(Zone::FrontLeft, "myhost");
-    REQUIRE(name == rcp::to_string(Zone::FrontLeft) + ".myhost._rcp._udp.local");
+    auto sid = make_stream_id(0x02, 0x1234);
+    auto name = make_instance_name(sid, "myhost");
+
     REQUIRE(name.find("._rcp._udp.local") != std::string::npos);
+    REQUIRE(name.find(".myhost.") != std::string::npos);
+
+    // Two distinct stream_ids must never collide on the same instance name.
+    auto other = make_instance_name(make_stream_id(0x03, 0x1234), "myhost");
+    REQUIRE(name != other);
 }
 
-TEST_CASE("mdns: Announcer registers a zone record", "[mdns][REQ-MDNS-007]") {
-    TestAnnouncer ann;
-    mdns::Announcer& iface = ann; // abstract registration interface
+// ── Announcer interface ───────────────────────────────────────────────────────
 
-    mdns::ZoneInfo info{Zone::RearLeft, "rl.local", 6000, "rear-left.rl.local._rcp._udp.local"};
-    REQUIRE_FALSE(iface.announce(info));
-    REQUIRE(ann.announced.count(Zone::RearLeft) == 1);
-    REQUIRE(ann.announced[Zone::RearLeft].port == 6000);
+namespace {
+class RecordingAnnouncer final : public Announcer {
+public:
+    std::error_code announce(const ServerInfo& info) override {
+        announced.push_back(info);
+        return {};
+    }
+    void withdraw(uint64_t stream_key) override { withdrawn.push_back(stream_key); }
+
+    std::vector<ServerInfo> announced;
+    std::vector<uint64_t>   withdrawn;
+};
+} // namespace
+
+TEST_CASE("Announcer interface is implementable and announce() registers a ServerInfo",
+          "[mdns][REQ-MDNS-007]") {
+    RecordingAnnouncer a;
+    ServerInfo info{make_stream_id(0x02, 1).to_u64(), "10.0.0.5", 9000, "srv"};
+    REQUIRE_FALSE(a.announce(info));
+    REQUIRE(a.announced.size() == 1);
+    REQUIRE(a.announced[0].stream_key == info.stream_key);
 }
 
-TEST_CASE("mdns: withdraw removes the mDNS record", "[mdns][REQ-MDNS-008]") {
-    TestAnnouncer ann;
-    mdns::ZoneInfo info{Zone::RearRight, "rr.local", 6001, "rr._rcp._udp.local"};
-    REQUIRE_FALSE(ann.announce(info));
-    REQUIRE(ann.announced.count(Zone::RearRight) == 1);
-
-    ann.withdraw(Zone::RearRight);
-    REQUIRE(ann.announced.count(Zone::RearRight) == 0);
+TEST_CASE("Announcer::withdraw removes the record for the given stream_key",
+          "[mdns][REQ-MDNS-008]") {
+    RecordingAnnouncer a;
+    auto key = make_stream_id(0x02, 1).to_u64();
+    a.withdraw(key);
+    REQUIRE(a.withdrawn.size() == 1);
+    REQUIRE(a.withdrawn[0] == key);
 }

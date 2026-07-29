@@ -5,28 +5,46 @@
 // fusa:req REQ-TSN-005
 // fusa:req REQ-TSN-006
 
-// IEEE 802.1Qbv-aware UDP transport adapter for hard real-time Ethernet.
+// IEEE 802.1Qbv-aware priority hint for the UDP/IP transport, keyed off the
+// specification's own execution-priority ordering across request kinds.
 //
-// Maps rcp::Priority values to IEEE 802.1p PCP (Priority Code Point) classes
-// and applies SO_PRIORITY on the UDP socket so the Linux traffic shaper routes
-// frames into the correct egress queue.
+// ROADMAP.md milestone 58, "Auxiliary Transport & Cross-Cutting Rebind
+// (v2.14.0)": this header is ADAPTed, per the Satellite Package
+// Disposition table's entry for `tsn.hpp` — this file's own pre-v2.14.0
+// header comment already flagged this exact rebind as pending. The old
+// 3-level rcp::Priority enum (rcp/prioqueue.hpp, DEPRECATEd outright per
+// the disposition table, no TC18 analog) is gone; PCPMap below instead maps
+// rcp::request::RequestCategory (v2.5.0) — the seven-way cancellation >
+// triggered > timed > compound > compound-wait > chained > standard
+// ordering extraction §3.14 already defines for simultaneously-due
+// requests — onto IEEE 802.1p PCP classes. apply_priority() is a free
+// function taking a raw socket fd, same as the pre-replacement Controller
+// wrapper's only real dependency (its own header comment already noted it
+// "depends only on the socket fd passed in, not on any concrete transport
+// header"); there is no unified client-side send() chokepoint yet to wrap
+// (that unification, if any, does not land until the CLI/capi/adapt
+// rebuilds at v2.16.0 — see rcp/authz.hpp's equivalent v2.11.0 note), so
+// this is a primitive an embedding calls directly before udp::Client::
+// request, the same "primitives driven by the embedding application"
+// pattern every Phase 14/15 header has used since v2.9.0.
 //
-// Full 802.1Qbv gate scheduling requires a TSN-capable NIC and kernel ≥ 4.15.
-// On standard hardware this provides best-effort priority mapping only.
-//
-// Wraps any rcp::Controller (e.g. the pre-replacement rcp/legacy_mock.hpp's
-// Controller); it depends only on the socket fd passed in, not on any
-// concrete transport header. See ROADMAP.md's Satellite Package Disposition
-// table's entry for this file — a v2.14.0 rebind to the post-replacement
-// request model, once rcp/udp.hpp itself no longer implements this
-// pre-replacement Controller interface (v2.13.0) — for why this class still
-// targets the old model today.
+// Full 802.1Qbv gate scheduling requires a TSN-capable NIC and kernel
+// >= 4.15; on standard hardware this provides best-effort priority mapping
+// only. Where genuine IEEE 1722 stream reservation (802.1Qat SRP) is
+// available on the platform/NIC, prefer it over this socket-level
+// SO_PRIORITY hint — SRP carries an admission-controlled bandwidth
+// reservation end to end, while SO_PRIORITY only ever influences local
+// egress queueing on this host; this header does not implement SRP itself,
+// same "primitive, not the full mechanism" scope as this file's other
+// pre-v2.14.0 disclaimers.
 #pragma once
 
-#include "rcp.hpp"
+#include "rcp.hpp" // for std::error_code convention only — see this header's own scope note above
+#include "request.hpp"
 
+#include <cerrno>
 #include <cstdint>
-#include <memory>
+#include <system_error>
 
 #if defined(__linux__)
 #  include <sys/socket.h>
@@ -37,22 +55,32 @@ namespace rcp {
 namespace tsn {
 
 // ── PCPMap ────────────────────────────────────────────────────────────────────
-
-// PCPMap maps each rcp::Priority to an IEEE 802.1p PCP value (0–7).
-// PCP 7 is the highest priority (used for Priority::Critical).
+// Maps each rcp::request::RequestCategory to an IEEE 802.1p PCP value
+// (0-7). Category rank 0 (Cancellation) is the highest execution priority
+// (extraction §3.14) and gets the highest default PCP; rank 6 (Standard,
+// the mandatory baseline kind) gets the lowest.
 struct PCPMap {
-    uint8_t normal   = 2; // PCP for Priority::Normal
-    uint8_t high     = 5; // PCP for Priority::High
-    uint8_t critical = 7; // PCP for Priority::Critical
+    uint8_t cancellation  = 7; // RequestCategory::Cancellation  (rank 0, highest)
+    uint8_t triggered     = 6; // RequestCategory::Triggered     (rank 1)
+    uint8_t timed         = 5; // RequestCategory::Timed         (rank 2)
+    uint8_t compound      = 4; // RequestCategory::Compound      (rank 3)
+    uint8_t compound_wait = 3; // RequestCategory::CompoundWait  (rank 4)
+    uint8_t chained       = 2; // RequestCategory::Chained       (rank 5)
+    uint8_t standard      = 1; // RequestCategory::Standard      (rank 6, lowest)
 };
 
 inline PCPMap default_pcp_map() { return PCPMap{}; }
 
-inline uint8_t pcp_for(const PCPMap& m, Priority p) noexcept {
-    switch (p) {
-    case Priority::High:     return m.high;
-    case Priority::Critical: return m.critical;
-    default:                 return m.normal;
+inline uint8_t pcp_for(const PCPMap& m, request::RequestCategory c) noexcept {
+    switch (c) {
+    case request::RequestCategory::Cancellation:  return m.cancellation;
+    case request::RequestCategory::Triggered:     return m.triggered;
+    case request::RequestCategory::Timed:         return m.timed;
+    case request::RequestCategory::Compound:      return m.compound;
+    case request::RequestCategory::CompoundWait:  return m.compound_wait;
+    case request::RequestCategory::Chained:       return m.chained;
+    case request::RequestCategory::Standard:
+    default:                                       return m.standard;
     }
 }
 
@@ -60,54 +88,36 @@ inline uint8_t pcp_for(const PCPMap& m, Priority p) noexcept {
 
 struct TSNConfig {
     PCPMap  pcp_map;
-    int     vlan_id    = 0;   // 0 = untagged
-    int     cycle_ns   = 0;   // 802.1Qbv gate cycle in nanoseconds (0 = disabled)
+    int     vlan_id  = 0; // 0 = untagged
+    int     cycle_ns = 0; // 802.1Qbv gate cycle in nanoseconds (0 = disabled)
 };
 
 inline TSNConfig default_tsn_config() { return TSNConfig{}; }
 
-// ── Controller wrapper ────────────────────────────────────────────────────────
-
-// Controller wraps any rcp::Controller and applies SO_PRIORITY to the kernel
-// socket before each send() so the egress qdisc places the frame in the correct
-// 802.1p traffic class.
-class Controller final : public rcp::Controller {
-public:
-    Controller(std::shared_ptr<rcp::Controller> inner,
-               int                              socket_fd,
-               TSNConfig                        cfg = {})
-        : inner_(std::move(inner)), fd_(socket_fd), cfg_(cfg) {}
-
-    Zone zone() const noexcept override { return inner_->zone(); }
-
-    std::error_code send(const rcp::Context& ctx,
-                          const Command&      cmd,
-                          Response&           out) override {
+// ── apply_priority ────────────────────────────────────────────────────────────
+// apply_priority sets SO_PRIORITY on `fd` to the PCP value `cfg.pcp_map`
+// assigns `category`, so the egress qdisc places the next datagram sent on
+// this socket into the correct 802.1p traffic class. A caller invokes this
+// once per outbound request, immediately before udp::Client::request, with
+// the RequestCategory that request's decoded (or about-to-be-encoded)
+// request_type opcode maps to via rcp::request::category_of.
+//
+// Outside RCP_TSN_SO_PRIORITY (non-Linux platforms, where this hint has no
+// portable socket-option equivalent) this is a no-op success rather than a
+// failure — the caller's send path is unaffected either way, same as the
+// pre-replacement Controller wrapper's own `#if defined(...)` gating.
+inline std::error_code apply_priority(int fd, const TSNConfig& cfg,
+                                       request::RequestCategory category) noexcept {
+    if (fd < 0) return std::make_error_code(std::errc::invalid_argument);
 #if defined(RCP_TSN_SO_PRIORITY)
-        int pcp = static_cast<int>(pcp_for(cfg_.pcp_map, cmd.priority));
-        if (fd_ >= 0)
-            ::setsockopt(fd_, SOL_SOCKET, SO_PRIORITY, &pcp, sizeof(pcp));
+    int pcp = static_cast<int>(pcp_for(cfg.pcp_map, category));
+    if (::setsockopt(fd, SOL_SOCKET, SO_PRIORITY, &pcp, sizeof(pcp)) < 0)
+        return std::error_code(errno, std::generic_category());
+#else
+    (void)cfg;
+    (void)category;
 #endif
-        return inner_->send(ctx, cmd, out);
-    }
-
-    std::error_code subscribe(const rcp::Context&             ctx,
-                               std::shared_ptr<StatusChannel>& out) override {
-        return inner_->subscribe(ctx, out);
-    }
-
-    std::error_code close() override { return inner_->close(); }
-
-private:
-    std::shared_ptr<rcp::Controller> inner_;
-    [[maybe_unused]] int fd_;
-    TSNConfig cfg_;
-};
-
-inline std::shared_ptr<Controller> new_controller(std::shared_ptr<rcp::Controller> inner,
-                                                    int socket_fd,
-                                                    TSNConfig cfg = {}) {
-    return std::make_shared<Controller>(std::move(inner), socket_fd, cfg);
+    return {};
 }
 
 } // namespace tsn

@@ -1089,6 +1089,82 @@ not claimed, same as the equivalent disclaimers in `rcp/avtp.hpp`,
 - Depends on: Wire format core (v2.0.0); UDP/IP transport (v2.13.0) for the
   `mdns`/`tls` items specifically
 
+**Done (v2.14.0):** All seven files are ADAPTed in place per the Satellite
+Package Disposition table's entries — each concept survives, rebound onto
+the new stream/`byte_bus_id` addressing model instead of the removed
+`Zone`/`Command`/`Controller`/`Registry` types. `rcp/rcp.hpp`'s own
+"nothing new should build on this" notice held throughout: none of the
+seven include it for anything beyond `rcp::Context`/the generic
+`ErrClosed`/`ErrNotFound`/`ErrAlreadyExists`/`ErrTimeout` error constants
+(also not part of that pre-replacement model) and, for `loan.hpp`, the
+already-generic `rcp::Loan` RAII buffer holder.
+
+`mdns.hpp`'s `Discoverer`/`StaticDiscoverer`/`Announcer` interfaces are
+unchanged in shape; `ZoneInfo` becomes `ServerInfo`, keyed by an opaque
+`stream_key` (typically `avtp::StreamId::to_u64()`) instead of `Zone`.
+`tls.hpp`'s `Config` (cert/key/ca/verify_peer) survives unchanged;
+`Controller`/`ZoneServer`/`Registry` are replaced by `SecureClient`/
+`SecureServer` wrapping `rcp/udp.hpp`'s `Server`/`Client` (v2.13.0), same
+OpenSSL-gated-real-backend/`function_not_supported`-stub split as before.
+The header now also states plainly, per this milestone's own instruction,
+that the specification's preferred link-security mechanism is MACsec
+(802.1AE) at layer 2 — this package addresses the UDP/IP path only and
+does not implement MACsec itself.
+
+`tsn.hpp`'s `PCPMap` now maps all seven `rcp::request::RequestCategory`
+values (v2.5.0) instead of the removed `Priority` enum's three, preserving
+the same cancellation > triggered > timed > compound > compound-wait >
+chained > standard execution-priority ordering `rcp/request.hpp`'s
+`priority_rank` already defines (extraction §3.14). The `Controller`
+wrapper is dropped for a standalone `apply_priority(fd, cfg, category)`
+free function — there is no unified client-side `send()` chokepoint left
+to wrap (that unification, if any, does not land until the CLI/capi/adapt
+rebuilds at v2.16.0, per `rcp/authz.hpp`'s equivalent v2.11.0 note) — and
+its header comment now notes that genuine IEEE 1722 stream reservation
+(802.1Qat SRP), where available, is preferable to this socket-level hint.
+
+`shmem.hpp`'s `ZoneServer`/`Controller` pair becomes `Channel`/`Registry`,
+keyed by `stream_key` the same way `rcp/watchdog.hpp`'s `Manager` already
+is; `Channel::request()` still dispatches to a caller-supplied handler
+in-process with no wire encode/decode step, the same zero-copy value
+proposition as before, now shaped to match `udp::Server::Handler`/
+`rcp::mock::Server::dispatch`'s signature.
+
+`loan.hpp`'s `loan::Controller` (which wrapped the now-gone
+`rcp::LoaningController`) becomes a standalone `BufferPool`, the same
+"primitive, not a wrapped chokepoint" choice `tsn.hpp` makes at this
+milestone — a caller draws a `rcp::Loan` from it immediately before
+building an AVTPDU/ACF-framed request. Buffers are re-zeroed on reuse
+(closing a small aliasing gap the pre-replacement pool didn't guarantee).
+
+`record.hpp` and `observe.hpp` both now wrap a `RequestFn` — a
+`std::function` shaped like `udp::Client::request`'s core signature (the
+"new client-side send-equivalent call" this milestone calls for) — rather
+than the removed `rcp::Controller`. `record::Entry` carries
+`acf::AcfMessageInfo`/payload pairs for both the request and response
+instead of `Command`/`Response`/`Status`; `Record::write_binary` now has a
+matching `read_binary`, encoding each message via `rcp::acf::encode_acf_abb`/
+`encode_acf_gbb` (the same codec the wire path itself uses) so the on-disk
+format round-trips losslessly rather than only being asserted non-empty.
+`observe::Span`/`Metric` swap `Zone`/`CommandType` for `byte_bus_id`/
+`acf_msg_type` and an opaque `stream_key`; the OTel-style span/counter
+approach itself (`MetricsSink`/`NoopSink`/`InMemorySink`) is unchanged.
+
+Grepping the tree for consumers of each file's pre-v2.14.0 API beyond its
+own (now-rewritten) test found none, so no legacy-shim split file was
+needed for any of the seven, same as `rcp/udp.hpp`'s v2.13.0 rebuild.
+New/rewritten coverage lives in `tests/test_mdns.cpp` (`REQ-MDNS-001..008`),
+`tests/test_tls.cpp` (`REQ-TLS-001..010`), `tests/test_tsn.cpp`
+(`REQ-TSN-001..006`), `tests/test_shmem.cpp` (`REQ-SHMEM-001..008`),
+`tests/test_loan.cpp` (`REQ-LOAN-001..006`), `tests/test_record.cpp`
+(`REQ-REC-001..008`), and `tests/test_observe.cpp` (`REQ-OBS-001..008`) —
+all entirely rewritten under the same file/prefix identity as the
+discarded pre-replacement coverage, the same convention `tests/test_udp.cpp`
+followed at v2.13.0 — traced in `.fusa-reqs.json`. Full bit-for-bit
+conformance against other TC18/Annex-J implementations is not claimed,
+same as the equivalent disclaimers in `rcp/avtp.hpp`, `rcp/acf.hpp`,
+`rcp/discovery.hpp`, and `rcp/udp.hpp`.
+
 ### 59. Application-Layer Protocol Bridge Rebind (v2.15.0)
 
 - Rebind `mqttbr.hpp`, `ddsbr.hpp`, `someipbr.hpp`, `restbridge.hpp`,
