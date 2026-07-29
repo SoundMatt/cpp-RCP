@@ -2,37 +2,41 @@
   "project": "cpp-RCP",
   "standard": "ISO 26262",
   "createdAt": "2026-06-16T00:00:00Z",
-  "updatedAt": "2026-06-16T00:00:00Z",
+  "updatedAt": "2026-07-28T00:00:00Z",
   "operationalSituations": [
     {
       "id": "OS-001",
-      "description": "Normal vehicle operation \u2014 all zone controllers reachable"
+      "description": "Normal operation — the RC Client and every discovered RC Server are reachable"
     },
     {
       "id": "OS-002",
-      "description": "Partial network fault \u2014 one or more zone controllers unreachable"
+      "description": "Partial network fault — one or more RC Servers unreachable or a request stream lost"
     },
     {
       "id": "OS-003",
-      "description": "Safety-critical manoeuvre \u2014 emergency braking or collision avoidance active"
+      "description": "Safety-critical manoeuvre — a request is in flight to a safety-relevant endpoint (e.g. a GPIO/CAN endpoint driving a braking-adjacent actuator)"
     },
     {
       "id": "OS-004",
-      "description": "HPC software fault \u2014 runaway process, crash, or OOM condition"
+      "description": "RC Client software fault — runaway process, crash, or OOM condition on the HPC"
     },
     {
       "id": "OS-005",
-      "description": "Elevated network latency \u2014 congestion, EMI, or hardware degradation"
+      "description": "Elevated network latency — congestion, EMI, or hardware degradation on the AVB/TSN segment"
     },
     {
       "id": "OS-006",
-      "description": "Adversarial access \u2014 attacker present on the zone Ethernet bus"
+      "description": "Adversarial access — attacker present on the Ethernet segment"
+    },
+    {
+      "id": "OS-007",
+      "description": "RC Server power-state transition — cold/hot start or a StandBy/Sleep to Normal wake sequence in progress"
     }
   ],
   "hazards": [
     {
       "id": "H-001",
-      "description": "Loss of command delivery to safety-critical zone (e.g. braking actuator)",
+      "description": "Loss of request delivery to a safety-critical endpoint (e.g. a braking-adjacent actuator)",
       "situations": [
         "OS-001",
         "OS-002",
@@ -50,7 +54,7 @@
     },
     {
       "id": "H-002",
-      "description": "Spurious command sent to wrong zone controller",
+      "description": "Request misaddressed to the wrong endpoint via a stale or corrupted stream_id/byte_bus_id pairing",
       "situations": [
         "OS-001"
       ],
@@ -66,7 +70,7 @@
     },
     {
       "id": "H-003",
-      "description": "Zone controller watchdog not kicked, leading to unintended reset",
+      "description": "Per-stream watchdog not kicked, leading to an unintended safe-state entry or endpoint reset",
       "situations": [
         "OS-001",
         "OS-003"
@@ -83,7 +87,7 @@
     },
     {
       "id": "H-004",
-      "description": "Replay of stale commands from a previous drive cycle",
+      "description": "Replay or out-of-order re-delivery of a stale request from a previous session",
       "situations": [
         "OS-001",
         "OS-006"
@@ -100,7 +104,7 @@
     },
     {
       "id": "H-005",
-      "description": "Zone controller falsely reported as alive when unresponsive",
+      "description": "RC Server falsely reported reachable/ready when actually unresponsive",
       "situations": [
         "OS-002",
         "OS-005"
@@ -117,7 +121,7 @@
     },
     {
       "id": "H-006",
-      "description": "Priority inversion \u2014 low-priority burst of commands starves a safety-critical CmdWatchdog",
+      "description": "Execution-priority inversion — a lower-priority request burst starves a safety-tagged or cancellation request",
       "situations": [
         "OS-001",
         "OS-003",
@@ -136,7 +140,7 @@
     },
     {
       "id": "H-007",
-      "description": "Rate limiter blocks watchdog kick during high command burst, causing spurious zone reset",
+      "description": "Rate limiter blocks a safety-relevant request during a high-traffic burst, causing a spurious watchdog trip",
       "situations": [
         "OS-001",
         "OS-005"
@@ -154,7 +158,7 @@
     },
     {
       "id": "H-008",
-      "description": "Unauthorized command injection via unsecured UDP transport on the zone Ethernet bus",
+      "description": "Unauthorized request injection or register-map modification via an unsecured transport, spoofed discovery response, or non-root EP0 write",
       "situations": [
         "OS-006"
       ],
@@ -170,10 +174,11 @@
     },
     {
       "id": "H-009",
-      "description": "Zone controller not properly woken from sleep, causing loss of actuation during safety manoeuvre",
+      "description": "RC Server not properly woken from StandBy/Sleep, causing loss of actuation during a safety manoeuvre",
       "situations": [
         "OS-002",
-        "OS-003"
+        "OS-003",
+        "OS-007"
       ],
       "risk": {
         "severity": "S3",
@@ -188,7 +193,7 @@
     },
     {
       "id": "H-010",
-      "description": "Fault injection state persists across vehicle power cycles, masking real faults in production",
+      "description": "Fault injection state persists across process/power cycles, masking real faults in production",
       "situations": [
         "OS-001",
         "OS-004"
@@ -202,47 +207,65 @@
       "safetyGoals": [
         "SG-009"
       ]
+    },
+    {
+      "id": "H-011",
+      "description": "Undetected payload corruption bypasses the E2E CRC check, or a stream configured to latch on CRC failure fails to enter or hold safe state",
+      "situations": [
+        "OS-001",
+        "OS-003",
+        "OS-005"
+      ],
+      "risk": {
+        "severity": "S3",
+        "exposure": "E3",
+        "controllability": "C2",
+        "asil": "ASIL-B"
+      },
+      "safetyGoals": [
+        "SG-011"
+      ]
     }
   ],
   "safetyGoals": [
     {
       "id": "SG-001",
-      "description": "Commands to safety-critical zones shall be delivered within the watchdog period or a fault shall be signalled.",
+      "description": "Requests to safety-critical endpoints shall be delivered within the configured watchdog period or a fault shall be signalled.",
       "asil": "ASIL-B"
     },
     {
       "id": "SG-002",
-      "description": "Commands shall only be processed by the zone they are addressed to; misrouted commands shall be rejected.",
+      "description": "Requests shall only be dispatched to the endpoint they are addressed to (stream_id + byte_bus_id); misaddressed requests shall be rejected.",
       "asil": "ASIL-B"
     },
     {
       "id": "SG-003",
-      "description": "The watchdog kick command (CmdWatchdog) shall always be deliverable at the configured priority.",
+      "description": "A per-stream watchdog kick shall be recorded for every accepted inbound request, regardless of request kind or safety tag.",
       "asil": "ASIL-B"
     },
     {
       "id": "SG-004",
-      "description": "Replayed or duplicated commands from prior sessions shall be detected and rejected.",
-      "asil": "ASIL-B"
-    },
-    {
-      "id": "SG-007",
-      "description": "A zone controller that stops publishing Status shall be detected as dead within the configured deadline.",
+      "description": "A request stream configured with rx_enforce_seq shall reject any sequence number that is not strictly greater than the last accepted one.",
       "asil": "ASIL-B"
     },
     {
       "id": "SG-005",
-      "description": "Priority::Critical commands shall never be delayed by Priority::Normal or Priority::High commands queued earlier.",
+      "description": "Cancellation and triggered requests shall never be delayed by a standard or compound request queued earlier on the same stream.",
       "asil": "ASIL-B"
     },
     {
       "id": "SG-006",
-      "description": "Transport authentication (mTLS or equivalent) shall be enforced on all external zone controller connections.",
+      "description": "Transport authentication (mTLS on the UDP/IP variant, or link-layer authentication on native Ethernet) and per-endpoint access policy shall be enforced on every external RC Server connection.",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "SG-007",
+      "description": "An RC Server that stops responding shall be detected as unreachable within the configured liveness deadline.",
       "asil": "ASIL-B"
     },
     {
       "id": "SG-008",
-      "description": "A zone controller shall only be declared operational after a successful Wake command response.",
+      "description": "An RC Server shall only be treated as operational after its lifecycle state machine reports RCP_CONFIGURED following a successful wake sequence.",
       "asil": "ASIL-B"
     },
     {
@@ -252,7 +275,12 @@
     },
     {
       "id": "SG-010",
-      "description": "Zone controller health state transitions shall be deterministically derivable from observable send() outcomes alone.",
+      "description": "A stream's watchdog/safe-state status shall be deterministically derivable from its own kick/overflow/latch history alone.",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "SG-011",
+      "description": "A request whose computed E2E CRC does not match its received trailer shall be rejected, and a stream configured with rx_enforce_e2e shall latch safe state on the first such failure until explicitly reset.",
       "asil": "ASIL-B"
     }
   ]

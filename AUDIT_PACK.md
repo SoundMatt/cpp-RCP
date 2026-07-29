@@ -1,8 +1,14 @@
-# Audit Pack — cpp-RCP Certification Evidence (Milestone 43)
+# Audit Pack — cpp-RCP Certification Evidence (Milestone 62)
 
-**Document version**: 1.0.0
-**Date**: 2026-06-16
+**Document version**: 2.0.0
+**Date**: 2026-07-28
 **Standards**: ISO 26262 (ASIL-B), IEC 61508 (SIL-2), ISO 21434, IEC 62443 SL-2
+
+This revision (ROADMAP.md milestone 62, "Certification Refresh", v2.18.0)
+supersedes the pre-replacement audit pack authored at milestone 43. All
+figures below (requirement count, coverage module list, CI gate
+thresholds) are re-derived against the full v2.x requirement set built up
+across Phase 13-16 (v2.0.0-v2.17.0).
 
 ---
 
@@ -14,7 +20,7 @@
 | TARA (Threat Analysis & Risk Assessment) | `TARA-ANALYSIS.md` | Complete |
 | Cybersecurity Architecture | `CYBERSECURITY.md` | Complete |
 | Formal Verification | `FORMAL_VERIFICATION.md` | Complete |
-| Safety Requirements | `.fusa-reqs.json` | 198 requirements |
+| Safety Requirements | `.fusa-reqs.json` | 417 requirements across 55 groups |
 | Safety Case | Generated via `cpfusa safety-case` | CI gate |
 | Release Badge | Generated via `cpfusa badge` | CI gate |
 
@@ -22,38 +28,46 @@
 
 ## 2. ASIL-D Gap Analysis (ISO 26262 §7)
 
-cpp-RCP targets **ASIL-B** for the zone communication subsystem.  The following
-table records deliberate derogations from ASIL-D:
+cpp-RCP targets **ASIL-B** for the RC Client/RC Server communication
+subsystem. The following table records deliberate derogations from
+ASIL-D:
 
 | ASIL-D Requirement | Derogation Rationale | ASIL-B Coverage |
 |--------------------|----------------------|-----------------|
-| Redundant communication paths | Not required at ECU boundary for ASIL-B | Single channel with E2E protection |
-| Formal proofs of absence of deadlock | TLA+ liveness proofs deferred to ASIL-C/D upgrade path | TLC exhaustive model check on bounded state space |
+| Redundant communication paths | Not required at ECU boundary for ASIL-B | Single channel with E2E CRC + sequence + watchdog protection |
+| Formal proofs of absence of deadlock | TLA+ liveness proofs deferred to ASIL-C/D upgrade path | TLC exhaustive model check on bounded state space (`tla/`) |
 | MISRA C++:2023 compliance | MISRA advisory rules selectively suppressed with justification | clang-tidy clean on safety-critical rules |
-| 100% MC/DC structural coverage | 80% branch coverage enforced in CI | 80% branch + path coverage reported by cpfusa coverage |
+| 100% MC/DC structural coverage | 80% branch coverage enforced in CI | 80% branch + path coverage reported by `cpfusa coverage` |
 
-ASIL decomposition: the zonal network is decomposed as ASIL-B(D) =
-ASIL-A + ASIL-B per ISO 26262-9 §5 (independent channel decomposition).
+ASIL decomposition: the RC Client/RC Server link is decomposed as
+ASIL-B(D) = ASIL-A + ASIL-B per ISO 26262-9 §5 (independent channel
+decomposition) — see `HARA.md`'s per-hazard decomposition rationale.
 
 ---
 
 ## 3. Structural Coverage Report
 
-Coverage is measured by the `cpfusa coverage` tool on the CI test suite.
+Coverage is measured by the `cpfusa coverage` tool on the CI test suite,
+against `coverage.info` collected from `ctest --test-dir build-cov`.
 
 | Module | Line | Branch | MC/DC |
 |--------|------|--------|-------|
-| rcp.hpp (core) | 98% | 94% | 78% |
-| e2e.hpp | 96% | 91% | 82% |
-| watchdog.hpp | 95% | 89% | 76% |
-| deadline.hpp | 94% | 87% | 74% |
-| authz.hpp | 97% | 93% | 80% |
-| firmware.hpp | 91% | 85% | 71% |
-| **Overall** | **95%** | **89%** | **77%** |
+| `e2e.hpp` | See `coverage-report.json` (regenerated at release) |
+| `watchdog.hpp` | See `coverage-report.json` (regenerated at release) |
+| `lifecycle.hpp` | See `coverage-report.json` (regenerated at release) |
+| `regmap.hpp` | See `coverage-report.json` (regenerated at release) |
+| `avtp.hpp` / `acf.hpp` | See `coverage-report.json` (regenerated at release) |
+| `authz.hpp` | See `coverage-report.json` (regenerated at release) |
+| **Overall** | See `coverage-report.json`'s `summary` block |
 
-Required threshold: 80% branch coverage.  All modules meet threshold.
-MC/DC coverage target of 80% is partially met; shortfall is tracked as
-open item for ASIL-C upgrade path.
+`coverage-report.json` is regenerated on every tagged release by
+`.github/workflows/release.yml` (`cpfusa coverage --profile coverage.info
+--dal DAL-B`) — it is not hand-maintained here to avoid this document
+drifting from the actual per-release measurement, the drift this revision
+itself was written to correct.
+
+Required threshold: 80% branch coverage. MC/DC coverage target of 80% is
+tracked as an open item for an ASIL-C upgrade path.
 
 ---
 
@@ -64,7 +78,7 @@ If cpp-RCP is used in an airborne system under DO-178C DAL-C:
 - Source code traceability to LLR: via `// fusa:req` annotations
 - Tool qualification: cpfusa is a Tool Qualification Level (TQL-5) analysis tool
 - Decision coverage: MC/DC required at DAL-C — see shortfall above
-- Structural coverage artifacts: generated by `cpfusa coverage --xml`
+- Structural coverage artifacts: generated by `cpfusa coverage`
 
 ---
 
@@ -74,33 +88,44 @@ All of the following gates must pass for a tagged release:
 
 | Gate | Tool | Threshold |
 |------|------|-----------|
-| Static analysis | `cpfusa check --strict` | Zero errors |
+| Static analysis | `cpfusa check` | Zero errors |
 | Lint | `cpfusa lint` | Zero violations |
 | MISRA/safety analysis | `cpfusa analyze` | Zero safety violations |
-| Cyber review | `cpfusa cyber --strict` | Zero cyber violations |
-| Requirement coverage | `cpfusa trace --req-coverage 80` | ≥ 80% covered |
-| Formal verification | `cpfusa verify` | Verified |
+| Cyber review | `cpfusa cyber` | Zero cyber violations |
+| Requirement coverage | `cpfusa trace --req-coverage 100` | 100% covered (RELAY §20.1) |
+| Formal verification | TLC on `tla/*.tla` | No error found |
 | ASIL qualification | `cpfusa qualify` | Qualified |
 | Vulnerability scan | `cpfusa vuln` | No critical/high CVEs |
 | Safety case | `cpfusa safety-case` | Complete |
-| ISO 26262 report | `cpfusa iso26262` | Compliant |
-| IEC 61508 report | `cpfusa iec61508` | Compliant |
-| DO-178C report | `cpfusa do178` | Notes/advisories only |
+| ISO 26262 report | `cpfusa iso26262` | Gap report generated (advisory) |
+| IEC 61508 report | `cpfusa iec61508` | Gap report generated (advisory) |
+| DO-178C report | `cpfusa do178` | Gap report generated (advisory) |
 | Coverage | `cpfusa coverage` | ≥ 80% branch |
 | SCI (Software Change Impact) | `cpfusa sci` | No unmitigated impacts |
 | Audit pack | `cpfusa audit-pack` | Generated |
 | Release badge | `cpfusa badge` | Green |
+
+The requirement-coverage threshold is 100% (`cpfusa trace --req-coverage
+100`, enforced in `ci.yml`'s `cpfusa-trace` job per RELAY §20.1), not the
+80% this document previously recorded — the gate was tightened at
+milestone 60 and this document had not been updated to match until now.
+The ISO 26262/IEC 61508/DO-178C gap reports are generated by
+`release.yml` with `|| true` — they record gaps against those standards'
+own certification targets without blocking a release, since the seven
+application-layer protocol bridges (`mqttbr.hpp`/`ddsbr.hpp`/etc.) remain
+unimplemented stubs by design (see `CYBERSECURITY.md` §1 and
+`TARA-ANALYSIS.md` §6).
 
 ---
 
 ## 6. Traceability Matrix
 
 Requirements → implementation tracing is maintained in `.fusa-reqs.json`
-(198 requirements across 24 groups).  Traceability is validated by
-`cpfusa trace --req-coverage 80` in CI.
+(417 requirements across 55 groups as of this milestone). Traceability is
+validated by `cpfusa trace --req-coverage 100` in CI.
 
-Implementation → test tracing: each `// fusa:req` annotation in a header maps
-to one or more test cases in `tests/`.
+Implementation → test tracing: each `// fusa:req` annotation in a header
+maps to one or more `// fusa:test` annotations and test cases in `tests/`.
 
 ---
 

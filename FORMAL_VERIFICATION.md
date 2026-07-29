@@ -1,60 +1,111 @@
-# Formal Verification — cpp-RCP (Milestone 41)
+# Formal Verification — cpp-RCP (Milestone 62)
 
 ## Overview
 
-TLA+ specifications are located in [`tla/`](tla/).  They cover three safety-
-critical subsystems identified in the HARA (see [`HARA.md`](HARA.md)):
+TLA+ specifications are located in [`tla/`](tla/). They cover the three
+independent primitives `rcp/e2e.hpp` and `rcp/watchdog.hpp` provide for the
+safety-critical subsystems identified in the HARA (see [`HARA.md`](HARA.md)),
+re-derived at the Certification Refresh milestone (v2.18.0) against the
+actual v2.6.0/v2.10.0 mechanism rather than the pre-replacement,
+Zone/Command-shaped model the previous revision of this document described.
 
 | Spec | Module | Safety Property |
 |------|--------|----------------|
-| `HealthStateMachine.tla` | Watchdog health state machine | SP1: No Healthy→Faulted direct transition |
-| `AntiReplayGuard.tla`    | E2E sequence-number replay guard | SP1: No double-acceptance; SP2: Old sequences rejected |
-| `WatchdogProtocol.tla`   | Watchdog heartbeat protocol | SP1: No Healthy→Faulted direct transition |
+| `RxSequenceGuard.tla`   | `e2e::RxSequenceGuard` monotonic sequence check | SP1: high-water mark never decreases; SP2: no stale acceptance |
+| `CrcSafeStateLatch.tla` | `e2e::RxStreamGuard` E2E CRC drop-vs-latch rule | SP1: no latch without `rx_enforce_e2e`; SP2: latch only cleared by an explicit reset |
+| `WatchdogSafeState.tla` | `e2e::RxWatchdog`/`watchdog::StreamWatchdog` timeout + safe-state latch | SP1: no latch without `rx_wd_safestate_enable`; SP2: latch only cleared by an explicit reset |
+
+`tla/AntiReplayGuard.tla`, `tla/HealthStateMachine.tla`, and
+`tla/WatchdogProtocol.tla` are retired as of this milestone: the first
+modelled the pre-replacement 32-entry sliding-window bitmap guard removed
+at v2.6.0, and the latter two both modelled the same three-state
+Healthy/Degraded/Faulted watchdog machine, driven by a client-side
+periodic `CommandType::Watchdog` kick, discarded outright at v2.10.0. The
+current watchdog mechanism has no Degraded intermediate state and is kicked
+by any accepted inbound request, not a dedicated command.
 
 ## Verification Method
 
-Specs are verified with the TLC model checker (TLA+ Toolbox ≥ 1.7):
+Specs are verified with the TLC model checker (`tla2tools.jar`, TLA+
+Toolbox ≥ 1.7). Each spec's like-named `.cfg` file in `tla/` supplies the
+constants, `INIT`/`NEXT`, and the invariants/properties TLC checks — TLC
+loads it automatically when invoked without `-config`:
 
 ```bash
-# Install TLA+ Toolbox or tlc2 JAR
-java -jar tla2tools.jar -workers 4 tla/HealthStateMachine.tla
-java -jar tla2tools.jar -workers 4 tla/AntiReplayGuard.tla
-java -jar tla2tools.jar -workers 4 tla/WatchdogProtocol.tla
+java -jar tla2tools.jar -workers 4 tla/RxSequenceGuard.tla
+java -jar tla2tools.jar -workers 4 tla/CrcSafeStateLatch.tla
+java -jar tla2tools.jar -workers 4 tla/WatchdogSafeState.tla
 ```
 
 Expected output: `Model checking completed. No error has been found.`
 
+`CrcSafeStateLatch.cfg` and `WatchdogSafeState.cfg` each check their
+respective spec's affirmative latch behavior under
+`EnforceLatch`/`SafestateEnabled = TRUE`; the complementary
+`NoLatchWithoutEnforce`/`NoLatchWithoutEnable` property is non-vacuous only
+under the `FALSE` configuration — flip the relevant `CONSTANT` line and
+re-run to check it directly (see each `.cfg` file's own comment).
+
 ## Safety Properties Verified
 
-### SP1 — No Direct Health Transition (HealthStateMachine, WatchdogProtocol)
+### SP1/SP2 — Sequence Monotonicity (`RxSequenceGuard`)
 
-A zone controller in `Healthy` state may never transition directly to `Faulted`.
-It must pass through `Degraded`.  This prevents a single missed heartbeat from
-triggering an emergency shutdown.
+A stream's high-water mark (`last_seq`) never decreases, and a sequence
+number no greater than the current high-water mark is never subsequently
+accepted. Unlike the pre-replacement sliding-window bitmap this spec
+supersedes, there is no window to exhaust — acceptance is a single
+comparison against the high-water mark.
 
-**ASIL tracing**: H-002 (watchdog miss), SG-002 (watchdog recovery), REQ-WDG-003.
+**ASIL tracing**: H-004 (request replay/out-of-order delivery), SG-004,
+REQ-E2E-007.
 
-### SP2 — Anti-Replay Double-Acceptance (AntiReplayGuard)
+### SP1/SP2 — CRC Drop-vs-Latch Rule (`CrcSafeStateLatch`)
 
-A sequence number that has been accepted by the E2E guard may never be accepted
-again within the replay window.  Sequence numbers older than `ReplayWindowSize`
-ticks are unconditionally rejected.
+A stream configured with `rx_enforce_e2e = FALSE` never latches on a CRC
+failure — only that request is rejected. A stream configured with
+`rx_enforce_e2e = TRUE` latches on its first CRC failure, and — once
+latched — only an explicit `reset_latch()` step (identifiable in the model
+by every other tracked state component staying unchanged) ever clears it.
 
-**ASIL tracing**: H-008 (unauthorized injection), SG-006 (mTLS + E2E), REQ-E2E-004.
+**ASIL tracing**: H-011 (E2E CRC integrity — the most safety-relevant new
+surface introduced across this roadmap), SG-011, REQ-E2E-004, REQ-E2E-006.
+
+### SP1/SP2 — Watchdog Timeout + Safe-State Latch (`WatchdogSafeState`)
+
+A stream configured with `rx_wd_safestate_enable = FALSE` never latches on
+a watchdog timeout — only the overflow itself is reported. A stream
+configured with `rx_wd_safestate_enable = TRUE` latches on the first
+observed timeout, and only an explicit `clear_safe_state()` step ever
+clears it. `kick()` alone never causes a timeout, since overflow detection
+requires an elapsed-time step (`Tick`) past `rx_wd_timeout_interval`.
+
+**ASIL tracing**: H-003 (watchdog not kicked), H-009 (RC Server not woken),
+SG-003, SG-008, SG-010, REQ-WDG-001, REQ-WDG-003, REQ-WDG-004.
 
 ## Assumptions and Abstractions
 
-- The TLA+ models use natural numbers as simulated clocks; overflow is not
-  modelled (production uses 32-bit wrap-around with correct comparison).
-- The `AntiReplayGuard` model does not model counter rollover; the C++
-  implementation handles rollover via unsigned arithmetic.
-- The `WatchdogProtocol` model assumes synchronous ticks; the C++
-  implementation uses a background `std::thread` with `std::condition_variable`.
+- The TLA+ models use natural numbers as simulated clocks; unsigned 32-bit
+  wrap-around (the C++ implementation's actual sequence-number and
+  watchdog-timer representation) is not modelled directly, since TLC model
+  checking already bounds the state space independently via each spec's
+  `.cfg` constants/constraints.
+- `RxSequenceGuard.tla` and `CrcSafeStateLatch.tla`/`WatchdogSafeState.tla`
+  are modelled independently, matching `rcp/e2e.hpp`'s own separation of
+  `RxSequenceGuard`, `RxStreamGuard`, and `RxWatchdog` into three
+  independently-configurable primitives — a stream can enable any
+  combination of `rx_enforce_seq`, `rx_enforce_e2e`, and
+  `rx_wd_safestate_enable` (or none) per the register map.
+- `WatchdogSafeState.tla` assumes a synchronous `Tick` action for the
+  elapsed-time check; the C++ implementation instead compares
+  caller-supplied wall-clock milliseconds on each `check()`/`poll()` call,
+  with no timer thread of its own (`RxWatchdog`/`StreamWatchdog` are
+  primitives, not a scheduler — see `rcp/watchdog.hpp`'s own header
+  comment).
 
 ## Mapping to C++ Implementation
 
-| TLA+ Variable | C++ Location |
-|---------------|--------------|
-| `state[z]` | `watchdog::Keeper::health_[z]` |
-| `accepted` | `e2e::ReplayGuard::bitmap_` + `high_water_` |
-| `last_kick[z]` | `watchdog::Keeper::last_kick_[z]` |
+| TLA+ Spec | TLA+ Variable | C++ Location |
+|-----------|---------------|--------------|
+| `RxSequenceGuard` | `last_seq`, `has_last` | `e2e::RxSequenceGuard::last_seq_`, `has_last_` |
+| `CrcSafeStateLatch` | `latched` | `e2e::RxStreamGuard::latched_` |
+| `WatchdogSafeState` | `kicked`, `last_kick`, `latched` | `e2e::RxWatchdog::kicked_`, `last_kick_ms_`, `in_safe_state_` |

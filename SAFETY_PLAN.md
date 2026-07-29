@@ -30,10 +30,10 @@ cpp-RCP is the C++ implementation of the Remote Control Protocol for automotive 
 | Payload copy-on-send | REQ-CTRL-026 | Payload is deep-copied before handler invocation |
 | Payload copy-on-publish | REQ-CTRL-027 | Published payload is deep-copied before delivery to subscribers |
 | Context / deadline propagation | REQ-CTRL-004 | Expired context terminates Send without invoking the handler |
-| Watchdog kick | REQ-CMD-005, REQ-WDG-007 | CmdWatchdog is a named constant schedulable at PriorityHigh |
-| Replay guard | REQ-E2E-005 | ReplayGuard detects replayed sequence numbers within a sliding window |
+| Watchdog kick | REQ-WDG-002 | Any accepted inbound request resets ("kicks") its stream's watchdog |
+| Sequence guard | REQ-E2E-007 | RxSequenceGuard rejects a non-strictly-increasing sequence number when rx_enforce_seq is set |
 | Deadline monitor | REQ-DL-002 | Monitor detects a zone going silent within Config.Deadline |
-| Priority scheduling | REQ-PQ-001 | PriorityCritical dispatched before High and Normal |
+| Execution-priority ordering | REQ-SEQ-002 | Cancellation and triggered requests dispatch ahead of standard/compound requests queued earlier on the same stream |
 
 ## Verification approach
 
