@@ -1,7 +1,7 @@
 {
   "builder": "local",
   "format": "x-FuSa provenance v1",
-  "generatedAt": "2026-07-29T00:57:06Z",
+  "generatedAt": "2026-07-29T01:48:24Z",
   "kind": "provenance",
   "language": "cpp",
   "module": "github.com/SoundMatt/cpp-FuSa",
@@ -10,5 +10,5 @@
   "tool": "cpp-FuSa",
   "toolVersion": "0.16.0",
   "vcsModified": true,
-  "vcsRevision": "265aff76f2925520c0a0a7c7c6f98c382e22868b"
+  "vcsRevision": "433f9a983400593f93f9270637898716ae0f7a16"
 }
