@@ -206,8 +206,8 @@
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/grpcbridge.hpp",
       "linePct": 100.0,
-      "linesHit": 11,
-      "linesTotal": 11
+      "linesHit": 10,
+      "linesTotal": 10
     },
     {
       "branchPct": 0.0,
@@ -413,8 +413,8 @@
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/restbridge.hpp",
       "linePct": 100.0,
-      "linesHit": 11,
-      "linesTotal": 11
+      "linesHit": 10,
+      "linesTotal": 10
     },
     {
       "branchPct": 0.0,
@@ -440,8 +440,8 @@
       "branchesTotal": 0,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/someipbr.hpp",
       "linePct": 100.0,
-      "linesHit": 11,
-      "linesTotal": 11
+      "linesHit": 10,
+      "linesTotal": 10
     },
     {
       "branchPct": 0.0,
@@ -1033,8 +1033,8 @@
       "branchesHit": 0,
       "branchesTotal": 0,
       "filename": "/usr/include/c++/12/bits/stl_heap.h",
-      "linePct": 53.333333333333336,
-      "linesHit": 32,
+      "linePct": 58.333333333333336,
+      "linesHit": 35,
       "linesTotal": 60
     },
     {
@@ -1434,15 +1434,15 @@
       "linesTotal": 14
     }
   ],
-  "generatedAt": "2026-07-29T01:48:24Z",
-  "linePct": 70.00425170068027,
+  "generatedAt": "2026-07-29T02:20:33Z",
+  "linePct": 70.02658160552897,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
     "hitBranches": 0,
     "hitLines": 6586,
     "totalBranches": 0,
-    "totalLines": 9408
+    "totalLines": 9405
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0
