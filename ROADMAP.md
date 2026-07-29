@@ -698,7 +698,7 @@ still not claimed — see this file's own disclaimer pattern in
 
 ### 52. Fragmentation — Go/No-Go Decision (v2.8.0)
 
-**Done (v2.14.1):** this milestone's call was made in prose (below) before
+**Done (v2.15.1):** this milestone's call was made in prose (below) before
 any of its downstream consequences landed, and every one of those
 consequences was already built and cross-referencing "ROADMAP.md milestone
 52" as settled fact by the time this close-out PR was opened: the
@@ -719,9 +719,9 @@ label used throughout the tree's forward references to this decision
 (`rcp/uart.hpp`, `rcp/spi.hpp`, `rcp/can.hpp`, `rcp/acf.hpp`,
 `rcp/avtp.hpp`, and this file's own milestone heading above) and is left
 unchanged for that reason, but it was never tagged — this close-out PR sat
-open while `main` moved through the v2.7.1 naming reconciliation and six
-more milestones to v2.14.0 — so `rcp::kVersion`/the CMake project version
-move to `2.14.1` instead, an out-of-band patch bump on top of current
+open while `main` moved through the v2.7.1 naming reconciliation and seven
+more milestones to v2.15.0 — so `rcp::kVersion`/the CMake project version
+move to `2.15.1` instead, an out-of-band patch bump on top of current
 `main` rather than the unavailable `2.8.0` slot, the same convention
 `v2.7.1` itself set for landing non-sequential, milestone-adjacent work.
 No wire-format, endpoint, or safety-mechanism behavior changes in this
@@ -1215,6 +1215,41 @@ same as the equivalent disclaimers in `rcp/avtp.hpp`, `rcp/acf.hpp`,
 - Depends on: Wire format core (v2.0.0) at minimum; each bridge's own
   external dependency (an MQTT/DDS/SOME-IP/UDS library) is unchanged by
   this rework
+
+**Done (v2.15.0):** All seven files are ADAPTed in place per the Satellite
+Package Disposition table's entries — each pre-replacement
+`<Name>Controller : public rcp::Controller` wrapper (keyed by the removed
+`Zone` type) becomes a standalone `<Name>Bridge` class, the same
+"primitives, not a wrapped chokepoint" choice `rcp/authz.hpp` (v2.11.0) and
+`rcp/tsn.hpp`/`rcp/record.hpp`/`rcp/observe.hpp` (v2.14.0) already made —
+there is no unified client-side `send()` chokepoint left to wrap. Addressing
+moves from `Zone` to the opaque per-connection `stream_key` (typically
+`avtp::StreamId::to_u64()`) plus `avtp::ByteBusId` endpoint pair every other
+Phase 14/15 header keys on since v2.10.0. Each bridge's pre-replacement
+`send()` becomes `request()`, shaped to match `rcp/record.hpp`'s/
+`rcp/observe.hpp`'s `RequestFn` — the same "new client-side send-equivalent
+call" shape as `rcp/udp.hpp`'s `Client::request` core signature — so a
+caller can address a bridge exactly where it would otherwise address a
+transport `Client`; the pre-replacement `subscribe()`/`StatusChannel`
+method is dropped with no replacement, since it belonged to
+`rcp::Controller`'s status-telemetry push model, which has no analog in the
+target specification's request/response shape. Every method still returns
+`errc::function_not_supported` (`close()` still succeeds) — no real
+MQTT/DDS/SOME-IP/REST/gRPC/UDS/DoIP behavior is implemented here, exactly as
+this milestone's own scope states; each protocol's `Config` struct is
+unchanged. `canbr.hpp`/`linbr.hpp` are untouched, per this milestone's own
+scope note — they remain a separate DEPRECATE item at milestone 61
+(v2.17.0). Grepping the tree for consumers of each file's pre-v2.15.0 API
+beyond its own (now-rewritten) test found none, so no legacy-shim split
+file was needed for any of the seven, same as `rcp/udp.hpp`'s v2.13.0
+rebuild and the seven files ADAPTed at v2.14.0. New coverage lives in
+`tests/test_mqttbr.cpp`, `tests/test_ddsbr.cpp`, `tests/test_someipbr.cpp`,
+`tests/test_restbridge.cpp`, `tests/test_grpcbridge.cpp`,
+`tests/test_udsbr.cpp`, and `tests/test_doipbr.cpp` (`REQ-MQTT-001..004`,
+`REQ-DDS-001..004`, `REQ-SOMEIP-001..004`, `REQ-REST-001..004`,
+`REQ-GRPC-001..004`, `REQ-UDS-001..004`, `REQ-DOIP-001..004`), entirely
+rewritten under the same file/prefix identity as the discarded
+pre-replacement coverage, traced in `.fusa-reqs.json`.
 
 ### 60. C ABI & CLI Rebuild (v2.16.0)
 

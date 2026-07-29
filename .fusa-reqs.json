@@ -2394,96 +2394,96 @@
     },
     {
       "id": "REQ-GRPC-001",
-      "title": "GrpcController::send returns function_not_supported when stub",
-      "text": "GrpcController::send() shall return std::errc::function_not_supported until a concrete gRPC adapter is linked.",
+      "title": "GrpcBridge::request returns function_not_supported when stub",
+      "text": "GrpcBridge::request() shall return std::errc::function_not_supported until a concrete gRPC adapter is linked.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-GRPC-002",
-      "title": "GrpcController::zone returns configured zone",
-      "text": "GrpcController::zone() shall return the zone supplied at construction.",
+      "title": "GrpcBridge::stream_key returns configured value",
+      "text": "GrpcBridge::stream_key() shall return the stream_key supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-GRPC-003",
-      "title": "GrpcController::subscribe returns function_not_supported when stub",
-      "text": "GrpcController::subscribe() shall return std::errc::function_not_supported until a concrete gRPC adapter is linked.",
+      "title": "GrpcBridge::endpoint returns configured value",
+      "text": "GrpcBridge::endpoint() shall return the avtp::ByteBusId endpoint supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-GRPC-004",
-      "title": "GrpcController::close returns no error",
-      "text": "GrpcController::close() shall return a zero error_code (stub has no resources to release).",
+      "title": "GrpcBridge::close returns no error",
+      "text": "GrpcBridge::close() shall return a zero error_code (stub has no resources to release).",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-REST-001",
-      "title": "RestController::send returns function_not_supported when stub",
-      "text": "RestController::send() shall return std::errc::function_not_supported until an HTTP client adapter is linked.",
+      "title": "RestBridge::request returns function_not_supported when stub",
+      "text": "RestBridge::request() shall return std::errc::function_not_supported until an HTTP client adapter is linked.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-REST-002",
-      "title": "RestController::zone returns configured zone",
-      "text": "RestController::zone() shall return the zone supplied at construction.",
+      "title": "RestBridge::stream_key returns configured value",
+      "text": "RestBridge::stream_key() shall return the stream_key supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-REST-003",
-      "title": "RestController::subscribe returns function_not_supported when stub",
-      "text": "RestController::subscribe() shall return std::errc::function_not_supported until an HTTP adapter is linked.",
+      "title": "RestBridge::endpoint returns configured value",
+      "text": "RestBridge::endpoint() shall return the avtp::ByteBusId endpoint supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-REST-004",
-      "title": "RestController::close returns no error",
-      "text": "RestController::close() shall return a zero error_code.",
+      "title": "RestBridge::close returns no error",
+      "text": "RestBridge::close() shall return a zero error_code (stub has no resources to release).",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-SOMEIP-001",
-      "title": "SomeIpController::send returns function_not_supported when stub",
-      "text": "SomeIpController::send() shall return std::errc::function_not_supported until a vsomeip adapter is linked.",
+      "title": "SomeIpBridge::request returns function_not_supported when stub",
+      "text": "SomeIpBridge::request() shall return std::errc::function_not_supported until the vsomeip adapter is linked.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-SOMEIP-002",
-      "title": "SomeIpController::zone returns configured zone",
-      "text": "SomeIpController::zone() shall return the zone supplied at construction.",
+      "title": "SomeIpBridge::stream_key returns configured value",
+      "text": "SomeIpBridge::stream_key() shall return the stream_key supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-SOMEIP-003",
-      "title": "SomeIpController::subscribe returns function_not_supported when stub",
-      "text": "SomeIpController::subscribe() shall return std::errc::function_not_supported until a vsomeip adapter is linked.",
+      "title": "SomeIpBridge::endpoint returns configured value",
+      "text": "SomeIpBridge::endpoint() shall return the avtp::ByteBusId endpoint supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-SOMEIP-004",
-      "title": "SomeIpController::close returns no error",
-      "text": "SomeIpController::close() shall return a zero error_code.",
+      "title": "SomeIpBridge::close returns no error",
+      "text": "SomeIpBridge::close() shall return a zero error_code (stub has no resources to release).",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2522,64 +2522,64 @@
     },
     {
       "id": "REQ-DDS-001",
-      "title": "DdsController::send returns function_not_supported when stub",
-      "text": "DdsController::send() shall return std::errc::function_not_supported until a DDS adapter is linked.",
+      "title": "DdsBridge::request returns function_not_supported when stub",
+      "text": "DdsBridge::request() shall return std::errc::function_not_supported until a concrete DDS backend is linked.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-DDS-002",
-      "title": "DdsController::zone returns configured zone",
-      "text": "DdsController::zone() shall return the zone supplied at construction.",
+      "title": "DdsBridge::stream_key returns configured value",
+      "text": "DdsBridge::stream_key() shall return the stream_key supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-DDS-003",
-      "title": "DdsController::subscribe returns function_not_supported when stub",
-      "text": "DdsController::subscribe() shall return std::errc::function_not_supported until a DDS adapter is linked.",
+      "title": "DdsBridge::endpoint returns configured value",
+      "text": "DdsBridge::endpoint() shall return the avtp::ByteBusId endpoint supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-DDS-004",
-      "title": "DdsController::close returns no error",
-      "text": "DdsController::close() shall return a zero error_code.",
+      "title": "DdsBridge::close returns no error",
+      "text": "DdsBridge::close() shall return a zero error_code (stub has no resources to release).",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-MQTT-001",
-      "title": "MqttController::send returns function_not_supported when stub",
-      "text": "MqttController::send() shall return std::errc::function_not_supported until a Paho adapter is linked.",
+      "title": "MqttBridge::request returns function_not_supported when stub",
+      "text": "MqttBridge::request() shall return std::errc::function_not_supported until a concrete MQTT backend is linked.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-MQTT-002",
-      "title": "MqttController::zone returns configured zone",
-      "text": "MqttController::zone() shall return the zone supplied at construction.",
+      "title": "MqttBridge::stream_key returns configured value",
+      "text": "MqttBridge::stream_key() shall return the stream_key supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-MQTT-003",
-      "title": "MqttController::subscribe returns function_not_supported when stub",
-      "text": "MqttController::subscribe() shall return std::errc::function_not_supported until a Paho adapter is linked.",
+      "title": "MqttBridge::endpoint returns configured value",
+      "text": "MqttBridge::endpoint() shall return the avtp::ByteBusId endpoint supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-MQTT-004",
-      "title": "MqttController::close returns no error",
-      "text": "MqttController::close() shall return a zero error_code.",
+      "title": "MqttBridge::close returns no error",
+      "text": "MqttBridge::close() shall return a zero error_code (stub has no resources to release).",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
@@ -2618,64 +2618,64 @@
     },
     {
       "id": "REQ-UDS-001",
-      "title": "UdsController::send returns function_not_supported when stub",
-      "text": "UdsController::send() shall return std::errc::function_not_supported until a UDS stack adapter is linked.",
+      "title": "UdsBridge::request returns function_not_supported when stub",
+      "text": "UdsBridge::request() shall return std::errc::function_not_supported until a concrete UDS stack is linked.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-UDS-002",
-      "title": "UdsController::zone returns configured zone",
-      "text": "UdsController::zone() shall return the zone supplied at construction.",
+      "title": "UdsBridge::stream_key returns configured value",
+      "text": "UdsBridge::stream_key() shall return the stream_key supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-UDS-003",
-      "title": "UdsController::subscribe returns function_not_supported when stub",
-      "text": "UdsController::subscribe() shall return std::errc::function_not_supported until a UDS adapter is linked.",
+      "title": "UdsBridge::endpoint returns configured value",
+      "text": "UdsBridge::endpoint() shall return the avtp::ByteBusId endpoint supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-UDS-004",
-      "title": "UdsController::close returns no error",
-      "text": "UdsController::close() shall return a zero error_code.",
+      "title": "UdsBridge::close returns no error",
+      "text": "UdsBridge::close() shall return a zero error_code (stub has no resources to release).",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-DOIP-001",
-      "title": "DoIpController::send returns function_not_supported when stub",
-      "text": "DoIpController::send() shall return std::errc::function_not_supported until a DoIP stack adapter is linked.",
+      "title": "DoIpBridge::request returns function_not_supported when stub",
+      "text": "DoIpBridge::request() shall return std::errc::function_not_supported until a concrete DoIP stack is linked.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-DOIP-002",
-      "title": "DoIpController::zone returns configured zone",
-      "text": "DoIpController::zone() shall return the zone supplied at construction.",
+      "title": "DoIpBridge::stream_key returns configured value",
+      "text": "DoIpBridge::stream_key() shall return the stream_key supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-DOIP-003",
-      "title": "DoIpController::subscribe returns function_not_supported when stub",
-      "text": "DoIpController::subscribe() shall return std::errc::function_not_supported until a DoIP adapter is linked.",
+      "title": "DoIpBridge::endpoint returns configured value",
+      "text": "DoIpBridge::endpoint() shall return the avtp::ByteBusId endpoint supplied at construction.",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
     },
     {
       "id": "REQ-DOIP-004",
-      "title": "DoIpController::close returns no error",
-      "text": "DoIpController::close() shall return a zero error_code.",
+      "title": "DoIpBridge::close returns no error",
+      "text": "DoIpBridge::close() shall return a zero error_code (stub has no resources to release).",
       "standard": "iso26262",
       "level": "ASIL-A",
       "asil": "ASIL-A"
