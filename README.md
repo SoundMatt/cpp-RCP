@@ -24,7 +24,8 @@ reference.
 | `<rcp/rcp.hpp>` | Core interfaces: `Controller`, `Registry`, `Command`, `Response`, `Status`, `Zone`, `Context`, `StatusChannel` |
 | `<rcp/adapt.hpp>` | `Adapt()` — the RELAY §10.3 entry point, wraps a `Controller` as a `relay::Caller`; `ToMessage`/`FromMessage` conversions |
 | `<relay/relay.hpp>` | `relay::` namespace types (§18.2): `Protocol`, `Message`, `Errc` sentinels, `Channel<T>`, `Context`, `Node`, `Caller` |
-| `<rcp/mock.hpp>` | In-process mock controller and registry — zero I/O, default for unit tests |
+| `<rcp/mock.hpp>` | In-process TC18 RC Server simulator (lifecycle + register map + GPIO/SPI) — zero I/O, default for unit tests (ROADMAP.md v2.12.0) |
+| `<rcp/legacy_mock.hpp>` | Pre-replacement in-process `Controller`/`Registry`, kept only for the old-model dependents not yet rebound to the new request model (`capi_impl.hpp`/`cli.hpp`/`config.hpp`, v2.16.0) |
 | `<rcp/cli.hpp>` | RELAY-conformant CLI (§11/§12): `version`/`capabilities`/`status`/`send`; `cli/main.cpp` is a thin wrapper around it |
 | `<rcp/version.hpp>` | Binary version string — single source of truth for the CLI |
 | `<rcp/capi.h>` / `<rcp/capi_impl.hpp>` | C ABI / FFI surface for RTOS/bare-metal targets (Zephyr/FreeRTOS) |
@@ -79,7 +80,7 @@ reference.
 | `<rcp/avtp.hpp>` | TC18 wire codec, framing half — IEEE 1722 AVTPDU (NTSCF/TSCF) header framing (ROADMAP.md v2.0.0) |
 | `<rcp/acf.hpp>` | TC18 wire codec, message half — ACF_ABB/ACF_GBB message format (ROADMAP.md v2.0.0) |
 | `<rcp/legacy_wire.hpp>` | Pre-replacement 16-byte frame codec, kept only for `<rcp/udp.hpp>`'s internal use until it is rebuilt at v2.13.0 |
-| `<rcp/sim.hpp>` | Timing-realistic zone controller simulator for SiL/HIL testing |
+| `<rcp/sim.hpp>` | Timing-realistic RC Server simulator for SiL/HIL testing — wraps `<rcp/mock.hpp>` with latency/jitter and Fault/Recover controls, watchdog wired via `<rcp/watchdog.hpp>` (ROADMAP.md v2.12.0) |
 
 ## Build
 
@@ -93,13 +94,19 @@ ctest --test-dir build --output-on-failure
 
 ## Quick start
 
+The example below uses `<rcp/legacy_mock.hpp>`'s pre-replacement
+`Controller`/`Registry` pair, since `rcp/rcp.hpp`'s `Zone`/`Command`/
+`Response` model is itself still pre-replacement (see ROADMAP.md's
+Satellite Package Disposition table). For a TC18-shaped in-process server,
+see `<rcp/mock.hpp>`'s `mock::Server` instead.
+
 ```cpp
 #include <rcp/rcp.hpp>
-#include <rcp/mock.hpp>
+#include <rcp/legacy_mock.hpp>
 #include <cassert>
 
 int main() {
-    auto reg = rcp::mock::new_registry();
+    auto reg = rcp::legacy_mock::new_registry();
 
     std::shared_ptr<rcp::Controller> ctrl;
     reg->lookup(rcp::Zone::FrontLeft, ctrl);

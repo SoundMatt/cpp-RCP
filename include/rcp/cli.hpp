@@ -14,11 +14,18 @@
 // without spawning a subprocess; cli/main.cpp is a thin wrapper around it.
 //
 // Binary name: `cpp-rcp` (§13.2). Build with -DRELAY_BUILD_CLI=ON.
+//
+// Still built on rcp.hpp's pre-replacement Zone/Command/Controller model
+// and rcp/legacy_mock.hpp's Registry backing send_one/send_stream's
+// in-process demo transport (renamed from rcp/mock.hpp at ROADMAP.md
+// milestone 56, v2.12.0 — see rcp/legacy_mock.hpp's header comment). Per
+// the Satellite Package Disposition table's entry for `cli.hpp`, rebinding
+// `send`'s addressing to the new server/endpoint model is v2.16.0 scope.
 #pragma once
 
 #include <relay/relay.hpp>
 #include <rcp/adapt.hpp>
-#include <rcp/mock.hpp>
+#include <rcp/legacy_mock.hpp>
 #include <rcp/version.hpp>
 
 #include <cctype>
@@ -393,7 +400,7 @@ inline int send_one(const std::vector<std::string>& args, bool json,
     cmd.type    = type;
     cmd.payload = payload;
 
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     std::shared_ptr<Controller> ctrl;
     if (reg.lookup(zone, ctrl)) {
         err << "send: zone '" << zone_flag << "' not found\n";
@@ -420,7 +427,7 @@ inline int send_one(const std::vector<std::string>& args, bool json,
 // skipped (a single bad message must not tear down a crossbar route); only the
 // final count is written to `out`. Exit code is always kOk on clean EOF.
 inline int send_stream(std::istream& in, std::ostream& out, std::ostream& err) {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     std::string line;
     std::size_t sent = 0;
     while (std::getline(in, line)) {

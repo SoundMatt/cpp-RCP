@@ -936,6 +936,75 @@ pattern in `rcp/regmap.hpp`/`rcp/request.hpp`/`rcp/e2e.hpp`/
 - Depends on: everything in Phase 13 through v2.6.0 at minimum, to have a
   representative register map and safe-state model to simulate
 
+**Done (v2.12.0):** `rcp/mock.hpp` is replaced in full, per the Satellite
+Package Disposition table's entry for this file — the prior in-process
+`Controller`/`Registry` pair built on rcp.hpp's Zone/Command model is
+discarded, not adapted, since zone-addressed request/response has no
+analog once addressing moves to server+endpoint identifiers. `mock::Server`
+holds a real `lifecycle::ServerLifecycle` (starting `HW_UNCONFIGURED`, per
+v2.1.0), a real `regmap::RegisterMap` plus `regmap::Ep0` (including EP0's
+unrestricted whole-map read and root-client-gated whole-map write, also
+v2.1.0), and one instance each of `gpio::GpioEndpoint` and
+`spi::SpiEndpoint` (v2.3.0) as its representative endpoint set — GPIO and
+SPI were the natural choice, being the two endpoint types the roadmap
+itself sequenced first specifically for having the simplest fully-built
+request/response shapes (see milestone 47's own note). `Server::dispatch`
+is the single request/response entry point: it decodes the mandatory
+standard request kind's `evt[2:0]`/`op` fields (`rcp/acf.hpp`, v2.0.0),
+answers EP0 reads with the register map's magic number (the one field a
+`rcp/discovery.hpp`-shaped read needs by default — whole-map wire
+serialization itself remains out of scope, per `regmap.hpp`'s own header
+comment), rejects EP0 writes (reachable only through `ep0().write_whole_map`
+directly), and gates GPIO/SPI operational traffic on the lifecycle being
+`RCP_CONFIGURED` — this mock's own choice, not a rule reused from
+`regmap::Ep0::check_write_access`'s config-block locking, which models a
+different thing (whether an endpoint's *configuration* may still change,
+not whether the endpoint may be *operated*).
+
+The old `Controller`/`Registry` content is preserved unchanged, under
+`rcp/legacy_mock.hpp`, purely so the still-untouched old-model dependents
+that build against it keep working until each is rebound at its own later
+milestone — `rcp/capi_impl.hpp`, `rcp/cli.hpp`, and `rcp/config.hpp` (all
+v2.16.0 per the disposition table), plus every test file that used the old
+mock as a generic in-process test double for its own not-yet-rebuilt
+package (`firmware`/`prioqueue`/`proxy`/`record`/`redundancy`/`tsn`/
+`zonegroup`/`federation`/`observe`/`faultinject`/`loan`/`admin`, most
+themselves DEPRECATE/ADAPT candidates for later milestones). This is the
+same file-split precedent `rcp/wire.hpp`'s `rcp/legacy_wire.hpp` established
+at v2.0.0 — REQ-CTRL-*/REQ-REG-*/REQ-RESP-*/REQ-STAT-*/REQ-ERR-011 and
+their `tests/test_mock.cpp` coverage move to `tests/test_legacy_mock.cpp`
+unchanged, matching `REQ-UDP-*`'s equivalent move at that milestone.
+
+`rcp/sim.hpp` is likewise replaced in full — the prior `sim::Controller`,
+which implemented the full old `rcp::Controller` interface plus a
+client-driven `CommandType::Watchdog` kick model, is discarded outright
+(nothing else in this tree depended on it beyond its own test, so no
+legacy shim was needed here, unlike `mock.hpp`'s split). `sim::Simulator`
+wraps one `mock::Server` with the latency/jitter modeling concept carried
+forward unchanged from the pre-replacement design (`LatencyModel::
+Constant`/`Jitter`, `simulated_latency_ms()`) and the same Fault/Recover
+scenario-testing concept, re-targeted at this module's
+`std::error_code`/`AcfMessageInfo` response shape. Watchdog-miss detection
+is wired through `rcp::watchdog::StreamWatchdog`/`Manager` (v2.10.0)
+exactly as the roadmap called for: `Simulator::dispatch` kicks a
+registered stream's watchdog via `Manager::on_request_received` on every
+accepted request, and `poll_watchdog` forwards to `Manager::poll` for the
+caller to drive on its own schedule. Per the same "primitives, not a
+scheduler" convention every Phase 14 header has followed since v2.9.0/
+v2.10.0, `Simulator` spawns no background thread of its own — the old
+`sim::Controller`'s status/watchdog polling threads are not carried
+forward; `simulated_latency_ms()` reports a delay for the caller to apply
+however it sees fit rather than sleeping on the caller's behalf.
+
+New/rewritten coverage lives in `tests/test_mock.cpp` (`REQ-MOCK-001..010`,
+new) and `tests/test_sim.cpp` (`REQ-SIM-001..007`, entirely rewritten under
+the same file/prefix identity as the discarded pre-replacement coverage),
+traced in `.fusa-reqs.json`; the pre-replacement mock coverage lives on,
+unchanged, as `tests/test_legacy_mock.cpp`. Full bit-for-bit conformance
+against other TC18 implementations is not claimed, same as the equivalent
+disclaimers in `rcp/regmap.hpp`, `rcp/lifecycle.hpp`, `rcp/gpio.hpp`, and
+`rcp/spi.hpp`.
+
 ---
 ### Phase 15 — Transport & Ecosystem Bridge Migration
 ---

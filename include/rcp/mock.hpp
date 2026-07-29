@@ -1,251 +1,285 @@
-// fusa:req REQ-CTRL-001
-// fusa:req REQ-CTRL-002
-// fusa:req REQ-CTRL-003
-// fusa:req REQ-CTRL-004
-// fusa:req REQ-CTRL-005
-// fusa:req REQ-CTRL-006
-// fusa:req REQ-CTRL-007
-// fusa:req REQ-CTRL-008
-// fusa:req REQ-CTRL-009
-// fusa:req REQ-CTRL-010
-// fusa:req REQ-CTRL-011
-// fusa:req REQ-CTRL-012
-// fusa:req REQ-CTRL-013
-// fusa:req REQ-CTRL-014
-// fusa:req REQ-CTRL-015
-// fusa:req REQ-CTRL-016
-// fusa:req REQ-CTRL-017
-// fusa:req REQ-CTRL-018
-// fusa:req REQ-CTRL-019
-// fusa:req REQ-CTRL-020
-// fusa:req REQ-CTRL-021
-// fusa:req REQ-CTRL-022
-// fusa:req REQ-CTRL-023
-// fusa:req REQ-CTRL-024
-// fusa:req REQ-CTRL-025
-// fusa:req REQ-CTRL-026
-// fusa:req REQ-CTRL-027
-// fusa:req REQ-REG-001
-// fusa:req REQ-REG-002
-// fusa:req REQ-REG-003
-// fusa:req REQ-REG-004
-// fusa:req REQ-REG-005
-// fusa:req REQ-REG-006
-// fusa:req REQ-REG-007
-// fusa:req REQ-REG-008
-// fusa:req REQ-REG-009
-// fusa:req REQ-REG-010
-// fusa:req REQ-REG-011
-// fusa:req REQ-REG-012
-// fusa:req REQ-REG-013
-// fusa:req REQ-RESP-001
-// fusa:req REQ-RESP-002
-// fusa:req REQ-STAT-001
-// fusa:req REQ-STAT-002
-// fusa:req REQ-STAT-003
-// fusa:req REQ-STAT-004
-// fusa:req REQ-STAT-005
-// fusa:req REQ-ERR-011
+// fusa:req REQ-MOCK-001
+// fusa:req REQ-MOCK-002
+// fusa:req REQ-MOCK-003
+// fusa:req REQ-MOCK-004
+// fusa:req REQ-MOCK-005
+// fusa:req REQ-MOCK-006
+// fusa:req REQ-MOCK-007
+// fusa:req REQ-MOCK-008
+// fusa:req REQ-MOCK-009
+// fusa:req REQ-MOCK-010
 
-// Package mock provides an in-process RCP controller and registry for unit tests.
+// In-process RC Server simulator — a small, representative OPEN Alliance
+// TC18 Remote Control Protocol Specification v0.5.1_RC server built
+// entirely on the new stream/endpoint/register-map model, for unit tests
+// and other in-process callers that want something more realistic than a
+// hand-rolled stub to dispatch requests against.
 //
-// All operations execute synchronously in memory — no I/O, minimal threading
-// (one watcher thread per subscription). The mock is safe for concurrent use.
+// ROADMAP.md milestone 56, "Test & Simulation Harness Rebuild (v2.12.0)",
+// opening Phase 14's final pair of milestones: this header REPLACES this
+// file's pre-replacement content in full, per the Satellite Package
+// Disposition table's entry for `mock.hpp` — the prior in-process
+// `Controller`/`Registry` pair built on rcp.hpp's Zone/Command model is
+// discarded, not adapted, since it has no analog once addressing moves
+// from zone name to server+endpoint identifier. That old content is
+// preserved unchanged, under rcp/legacy_mock.hpp, purely so the
+// still-untouched old-model dependents that build against it
+// (rcp/capi_impl.hpp, rcp/cli.hpp, rcp/config.hpp, all v2.16.0; and every
+// test file using it as a generic in-process test double for its own
+// not-yet-rebuilt package) keep working until each is rebound at its own
+// later milestone — see rcp/legacy_mock.hpp's own header comment and
+// rcp/legacy_wire.hpp's equivalent precedent at v2.0.0.
+//
+// mock::Server holds a real rcp::lifecycle::ServerLifecycle (v2.1.0), a
+// real rcp::regmap::RegisterMap plus rcp::regmap::Ep0 (v2.1.0, including
+// EP0 whole-map-read and root-client write semantics), and one instance
+// each of the two simplest fully-built endpoint types — rcp::gpio::
+// GpioEndpoint and rcp::spi::SpiEndpoint (both v2.3.0) — as its
+// representative endpoint set. dispatch() below is the single
+// request/response entry point a test drives, decoding the standard
+// request kind's evt[2:0]/op fields (rcp/acf.hpp, v2.0.0) the same way a
+// real request-dispatch loop would. Conditional request kinds (v2.5.0),
+// E2E CRC safe points (v2.6.0), and watchdog wiring (v2.10.0) are
+// deliberately layered on top by rcp/sim.hpp rather than folded in here —
+// this header's own scope is the server model and a representative
+// endpoint set, matching the roadmap's own split between the two files.
+//
+// Whole-register-map wire serialization remains out of scope, per
+// rcp/regmap.hpp's own header comment — EP0's dispatch()-level read
+// answers with just the register map's magic number (the one field a
+// rcp/discovery.hpp-shaped read actually needs by default), and EP0
+// writes are only reachable through ep0()'s direct write_whole_map() call,
+// not through dispatch(), same "data model, not wire codec" scope split
+// regmap.hpp itself documents.
+//
+// Field names and behavior below implement TC18's *behavior* as described
+// in an internal structured extraction of the specification named above;
+// no text from that document is reproduced here. The concrete endpoint
+// numbering (GPIO at endpoint id / byte_bus_id 1, SPI at 2), access-policy
+// choice for operational requests (gated on lifecycle state only, not
+// per-endpoint ownership — see dispatch()'s own comment), and EP0 partial-
+// read encoding chosen in this file are this implementation's own, purely
+// for the purposes of being a usable in-process simulator — full
+// bit-for-bit conformance against other TC18 implementations is not
+// claimed, same as the equivalent disclaimers in rcp/regmap.hpp,
+// rcp/lifecycle.hpp, rcp/gpio.hpp, and rcp/spi.hpp.
 #pragma once
 
-#include "rcp.hpp"
+#include <rcp/acf.hpp>
+#include <rcp/avtp.hpp>
+#include <rcp/endpoint.hpp>
+#include <rcp/gpio.hpp>
+#include <rcp/lifecycle.hpp>
+#include <rcp/regmap.hpp>
+#include <rcp/spi.hpp>
 
-#include <algorithm>
-#include <atomic>
-#include <map>
-#include <shared_mutex>
-#include <stdexcept>
-#include <thread>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <system_error>
 #include <vector>
 
 namespace rcp {
 namespace mock {
 
-// Handler is a user-supplied function that produces a Response for a Command.
-// If nullptr, the controller returns StatusOK with empty payload.
-using Handler = std::function<Response(const Command&)>;
+// ── Representative endpoint set ──────────────────────────────────────────────
+// Endpoint ids double as byte_bus_id values in this simulator — a
+// deliberately simple 1:1 choice this mock is free to make since it owns
+// both the register map and the ep_id_mapping table it populates itself
+// (extraction §3.9's client-guaranteed table-order caveat, which
+// rcp/regmap.hpp flags explicitly, does not apply here: there is no
+// client populating this table, only this constructor).
 
-// Controller is a mock zone controller that handles commands in-process.
-class Controller final : public rcp::Controller {
+using regmap::EndpointId;
+
+constexpr EndpointId   kGpioEndpointId = 1;
+constexpr EndpointId   kSpiEndpointId  = 2;
+constexpr avtp::ByteBusId kGpioByteBusId = static_cast<avtp::ByteBusId>(kGpioEndpointId);
+constexpr avtp::ByteBusId kSpiByteBusId  = static_cast<avtp::ByteBusId>(kSpiEndpointId);
+
+// A discovery-shaped EP0 read only ever answers with the register map's
+// magic number below — see this header's own scope note above.
+constexpr size_t kEp0PartialReadLen = sizeof(uint32_t);
+
+// ── Server ────────────────────────────────────────────────────────────────────
+// A single simulated RC Server instance. Not copyable — regmap::Ep0 holds
+// references into this object's own RegisterMap/ServerLifecycle members,
+// so a Server is meant to be owned by reference or a smart pointer, the
+// same restriction Ep0 itself already carries.
+class Server final {
 public:
-    explicit Controller(Zone zone, Handler handler = nullptr)
-        : zone_(zone), handler_(std::move(handler)) {}
+    Server()
+        : lifecycle_(),
+          regs_(make_initial_register_map()),
+          ep0_(regs_, lifecycle_) {}
 
-    ~Controller() override { (void)close(); }
+    Server(const Server&)            = delete;
+    Server& operator=(const Server&) = delete;
 
-    Zone zone() const noexcept override { return zone_; }
+    lifecycle::ServerLifecycle&       lifecycle() noexcept { return lifecycle_; }
+    const lifecycle::ServerLifecycle& lifecycle() const noexcept { return lifecycle_; }
 
-    std::error_code send(const rcp::Context& ctx,
-                          const Command&       cmd,
-                          Response&            out) override {
-        if (closed_.load(std::memory_order_acquire))
-            return ErrClosed;
-        if (ctx.done())
-            return ErrTimeout;
-        if (cmd.zone != zone_)
-            return ErrZoneMismatch;
+    regmap::RegisterMap&       registers() noexcept { return regs_; }
+    const regmap::RegisterMap& registers() const noexcept { return regs_; }
 
-        // Copy payload before passing to handler (REQ-CTRL-026).
-        Command safe = cmd;
-        if (!cmd.payload.empty()) {
-            safe.payload = cmd.payload;
-        }
+    regmap::Ep0& ep0() noexcept { return ep0_; }
 
-        if (handler_) {
-            out = handler_(safe);
-        } else {
-            out = Response{cmd.id, zone_, ResponseStatus::OK, {}};
-        }
-        return {};
+    gpio::GpioEndpoint& gpio() noexcept { return gpio_; }
+    spi::SpiEndpoint&   spi() noexcept { return spi_; }
+
+    // set_spi_poci scripts the bytes a subsequent dispatch()/transfer()
+    // call on `channel` reads back as POCI-in data. A real SPI peripheral's
+    // response is whatever hardware is attached to that channel; this
+    // simulator lets a test script it directly instead of modeling actual
+    // hardware.
+    void set_spi_poci(uint8_t channel, std::vector<uint8_t> data) {
+        if (channel < spi::kMaxChannels) spi_poci_[channel] = std::move(data);
     }
 
-    std::error_code subscribe(const rcp::Context&              ctx,
-                               std::shared_ptr<StatusChannel>&  out) override {
-        auto ch = std::make_shared<StatusChannel>(16);
-        {
-            // Check closed_ and append under the same critical section close()
-            // uses, so a subscribe() racing a close() cannot observe "open" and
-            // then add to subs_ after close() has already cleared it (REQ-CTRL-008;
-            // RELAY spec §6.2/6.3/6.6 require a deterministic ErrClosed here, not
-            // a transiently-valid channel).
-            std::lock_guard<std::mutex> lk(mu_);
-            if (closed_.load(std::memory_order_acquire))
-                return ErrClosed;
-            subs_.push_back(ch);
-        }
-
-        // Watcher thread: remove subscription when ctx expires or controller closes.
-        std::thread([this, weak_ch = std::weak_ptr<StatusChannel>(ch), ctx]() mutable {
-            // Poll until ctx done or channel closed.
-            while (!ctx.done()) {
-                if (closed_.load(std::memory_order_acquire)) break;
-                auto ch_ptr = weak_ch.lock();
-                if (!ch_ptr || ch_ptr->is_closed()) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            auto ch_ptr = weak_ch.lock();
-            if (!ch_ptr) return;
-            {
-                std::lock_guard<std::mutex> lk(mu_);
-                auto it = std::find(subs_.begin(), subs_.end(), ch_ptr);
-                if (it != subs_.end()) subs_.erase(it);
-            }
-            ch_ptr->close();
-        }).detach();
-
-        out = std::move(ch);
-        return {};
+    // advance_to_rcp_configured is a convenience for tests/simulators that
+    // don't care about exercising ServerLifecycle's intermediate
+    // plausibility-check gating themselves and just want a fully live
+    // server to dispatch operational requests against — this Server
+    // supplies no PlausibilityCheck of its own (both transitions always
+    // succeed), so this always succeeds too.
+    std::error_code advance_to_rcp_configured() noexcept {
+        auto ec = lifecycle_.advance(lifecycle::ServerState::HwConfigured);
+        if (ec) return ec;
+        return lifecycle_.advance(lifecycle::ServerState::RcpConfigured);
     }
 
-    // Publish pushes a Status update to all active subscribers.
-    void publish(const std::vector<uint8_t>& payload) {
-        uint32_t seq = ++seq_;
-        // Copy payload so caller mutation cannot affect delivered Status (REQ-CTRL-027).
-        std::vector<uint8_t> p = payload;
+    // dispatch is this simulator's single request/response entry point,
+    // modeling the standard request kind (rcp::acf::RequestKind::Standard,
+    // v2.0.0) only — conditional kinds are rcp/request.hpp's concern, not
+    // this simulator's. `client` is the opaque per-connection index
+    // rcp/regmap.hpp's Ep0 already uses for root-client/ownership checks
+    // (see its own header comment). Every non-EP0 endpoint's operational
+    // (non-EP0) requests are gated purely on lifecycle state here — this
+    // mock's own choice of "operational traffic answers once fully live,
+    // rejected before that" rather than reusing Ep0::check_write_access's
+    // config-block locking (which models something different: whether an
+    // endpoint's *configuration* may still change, not whether the
+    // endpoint may be *operated*). Returns the same std::error_code the
+    // failing step below produced; out_resp is always populated (Error/Ack/
+    // Read/WriteResponse, per rcp::acf::make_response) even on failure, so
+    // a caller can always encode *something* back to a client.
+    std::error_code dispatch(size_t client, const acf::AcfMessageInfo& req,
+                              const std::vector<uint8_t>& req_payload,
+                              acf::AcfMessageInfo& out_resp,
+                              std::vector<uint8_t>& out_resp_payload) noexcept {
+        out_resp_payload.clear();
+        if (req.byte_bus_id == regmap::kEp0) return dispatch_ep0(client, req, out_resp, out_resp_payload);
+        if (req.byte_bus_id == kGpioByteBusId) return dispatch_gpio(req, req_payload, out_resp, out_resp_payload);
+        if (req.byte_bus_id == kSpiByteBusId) return dispatch_spi(req, req_payload, out_resp, out_resp_payload);
 
-        Status st{zone_, seq, !closed_.load(std::memory_order_acquire), std::move(p)};
-        std::lock_guard<std::mutex> lk(mu_);
-        for (auto& s : subs_) {
-            s->push(st);
-        }
-    }
-
-    std::error_code close() override {
-        // The closed_ exchange lives under mu_ too, so it is properly serialized
-        // against subscribe()'s check-and-append critical section above.
-        std::lock_guard<std::mutex> lk(mu_);
-        bool was_open = !closed_.exchange(true, std::memory_order_acq_rel);
-        if (!was_open) return {};
-        for (auto& s : subs_) s->close();
-        subs_.clear();
-        return {};
+        out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+        return make_error_code(regmap::RegMapErrc::invalid_parameter);
     }
 
 private:
-    Zone                zone_;
-    Handler             handler_;
-    std::atomic<bool>   closed_{false};
-    std::atomic<uint32_t> seq_{0};
-    std::mutex          mu_;
-    std::vector<std::shared_ptr<StatusChannel>> subs_;
-};
+    static regmap::RegisterMap make_initial_register_map() {
+        regmap::RegisterMap regs;
+        regs.endpoint_count = 2;
+        regs.generic_configs.resize(2);
+        regs.functional_configs.resize(2);
+        regs.ep_id_mapping = {
+            {kGpioEndpointId, kGpioByteBusId},
+            {kSpiEndpointId,  kSpiByteBusId},
+        };
+        return regs;
+    }
 
-// Registry is an in-process RCP registry backed by mock controllers.
-class Registry final : public rcp::Registry {
-public:
-    Registry() {
-        for (auto z : {Zone::FrontLeft, Zone::FrontRight,
-                        Zone::RearLeft,  Zone::RearRight,
-                        Zone::Central}) {
-            ctrls_[z] = std::make_shared<Controller>(z);
+    std::error_code dispatch_ep0(size_t /*client*/, const acf::AcfMessageInfo& req,
+                                  acf::AcfMessageInfo& out_resp,
+                                  std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (req.op) {
+            // Whole-map writes go through ep0().write_whole_map() at the
+            // object level, not through this byte-oriented path — see this
+            // header's own scope note.
+            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+            return make_error_code(regmap::RegMapErrc::request_rejected);
         }
-    }
-
-    ~Registry() override { (void)close(); }
-
-    std::error_code register_ctrl(std::shared_ptr<rcp::Controller> ctrl) override {
-        auto* mc = dynamic_cast<Controller*>(ctrl.get());
-        if (!mc) return std::make_error_code(std::errc::invalid_argument);
-
-        std::unique_lock<std::shared_mutex> lk(mu_);
-        if (closed_) return ErrClosed;
-        if (ctrls_.count(mc->zone())) return ErrAlreadyExists;
-        ctrls_[mc->zone()] = std::shared_ptr<Controller>(ctrl, mc);
+        auto ec = ep0_.check_read_access(regmap::kEp0);
+        if (ec) {
+            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+            return ec;
+        }
+        out_resp_payload.resize(kEp0PartialReadLen);
+        avtp::detail::put_u32(out_resp_payload.data(), regs_.magic);
+        out_resp = acf::make_response(req, acf::ResponseKind::ReadResponse);
         return {};
     }
 
-    std::error_code deregister(Zone z) override {
-        std::unique_lock<std::shared_mutex> lk(mu_);
-        auto it = ctrls_.find(z);
-        if (it == ctrls_.end()) return ErrNotFound;
-        auto ctrl = it->second;
-        ctrls_.erase(it);
-        lk.unlock();
-        return ctrl->close();
+    bool operational_requests_allowed() const noexcept {
+        return lifecycle_.state() == lifecycle::ServerState::RcpConfigured;
     }
 
-    std::error_code lookup(Zone z, std::shared_ptr<rcp::Controller>& out) override {
-        std::shared_lock<std::shared_mutex> lk(mu_);
-        if (closed_) return ErrClosed;
-        auto it = ctrls_.find(z);
-        if (it == ctrls_.end()) return ErrNotFound;
-        out = it->second;
+    std::error_code dispatch_gpio(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                   acf::AcfMessageInfo& out_resp,
+                                   std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (!operational_requests_allowed()) {
+            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+            return make_error_code(regmap::RegMapErrc::request_rejected);
+        }
+        if (!req.op) {
+            out_resp_payload = gpio::encode_gpio_payload(gpio_.read());
+            out_resp = acf::make_response(req, acf::ResponseKind::ReadResponse);
+            return {};
+        }
+        gpio::PinMask operand = 0;
+        auto ec = gpio::decode_gpio_payload(payload.data(), payload.size(), operand);
+        if (ec) {
+            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+            return ec;
+        }
+        gpio::PinMask new_value = 0;
+        ec = gpio_.handle_write(endpoint::write_semantics_of(req.evt_op), operand, new_value);
+        if (ec) {
+            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+            return ec;
+        }
+        out_resp_payload = gpio::encode_gpio_payload(new_value);
+        out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
+                                                         : acf::ResponseKind::WriteResponse);
         return {};
     }
 
-    std::vector<std::shared_ptr<rcp::Controller>> controllers() override {
-        std::shared_lock<std::shared_mutex> lk(mu_);
-        std::vector<std::shared_ptr<rcp::Controller>> out;
-        out.reserve(ctrls_.size());
-        for (auto& [z, c] : ctrls_) out.push_back(c);
-        return out;
-    }
-
-    std::error_code close() override {
-        std::unique_lock<std::shared_mutex> lk(mu_);
-        if (closed_) return {};
-        closed_ = true;
-        auto local = std::move(ctrls_);
-        lk.unlock();
-        for (auto& [z, c] : local) (void)c->close();
+    // SPI is inherently full-duplex (extraction §5.4) — this dispatch path
+    // deliberately does not branch on req.op the way GPIO's does: every SPI
+    // request, read or write, drives one spi::SpiEndpoint::transfer() using
+    // `payload` as the PICO-out bytes (empty for a pure read) and answers
+    // with whatever POCI-in bytes set_spi_poci() last scripted for that
+    // channel.
+    std::error_code dispatch_spi(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                  acf::AcfMessageInfo& out_resp,
+                                  std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (!operational_requests_allowed()) {
+            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+            return make_error_code(regmap::RegMapErrc::request_rejected);
+        }
+        uint8_t channel = 0;
+        auto ec = spi::channel_of(req.evt_op, channel);
+        if (ec) {
+            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+            return ec;
+        }
+        ec = spi_.transfer(channel, payload, spi_poci_[channel]);
+        if (ec) {
+            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+            return ec;
+        }
+        out_resp_payload = spi_.last_received(channel);
+        out_resp = acf::make_response(req, acf::ResponseKind::ReadResponse);
         return {};
     }
 
-private:
-    mutable std::shared_mutex            mu_;
-    std::map<Zone, std::shared_ptr<Controller>> ctrls_;
-    bool                                 closed_ = false;
+    lifecycle::ServerLifecycle lifecycle_;
+    regmap::RegisterMap        regs_;
+    regmap::Ep0                ep0_;
+    gpio::GpioEndpoint         gpio_;
+    spi::SpiEndpoint           spi_;
+    std::array<std::vector<uint8_t>, spi::kMaxChannels> spi_poci_{};
 };
-
-// Convenience factory — analogous to mock.NewRegistry() in Go.
-inline std::unique_ptr<Registry> new_registry() {
-    return std::make_unique<Registry>();
-}
 
 } // namespace mock
 } // namespace rcp

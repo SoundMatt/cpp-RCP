@@ -11,9 +11,16 @@
 // underlying protocol with a single constructor change.
 //
 // Usage:
-//   auto ctrl = std::make_shared<rcp::mock::Controller>(rcp::Zone::FrontLeft);
+//   auto ctrl = std::make_shared<rcp::legacy_mock::Controller>(rcp::Zone::FrontLeft);
 //   auto caller = rcp::Adapt(ctrl);          // relay::Caller*
 //   auto [resp, ec] = caller->call(ctx, msg);
+//
+// The example above uses rcp/legacy_mock.hpp's Controller (renamed from
+// rcp/mock.hpp at ROADMAP.md milestone 56, v2.12.0 — see its own header
+// comment) since this header itself is still built on rcp.hpp's
+// pre-replacement Zone/Command/Controller model; per the Satellite Package
+// Disposition table's entry for `adapt.hpp`, rebinding Adapt()/ToMessage/
+// FromMessage to the new request/response shapes is v2.16.0 scope.
 #pragma once
 
 #include <rcp/rcp.hpp>

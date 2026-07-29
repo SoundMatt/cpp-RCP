@@ -5,120 +5,141 @@
 // fusa:test REQ-SIM-005
 // fusa:test REQ-SIM-006
 // fusa:test REQ-SIM-007
-// fusa:test REQ-SIM-008
+
+// Tests for rcp/sim.hpp — the timing-realistic RC Server simulator
+// (ROADMAP.md milestone 56, "Test & Simulation Harness Rebuild", v2.12.0).
 
 #include <catch2/catch_test_macros.hpp>
 #include <rcp/sim.hpp>
 
 using namespace rcp;
 
-// ── Basic send ────────────────────────────────────────────────────────────────
+namespace {
 
-TEST_CASE("sim Controller::send returns OK by default", "[sim][REQ-SIM-001]") {
-    sim::Config cfg;
-    cfg.zone         = Zone::FrontLeft;
-    cfg.latency_model = sim::LatencyModel::Constant;
-    cfg.base_latency = std::chrono::milliseconds(0);
-
-    sim::Controller ctrl(cfg);
-    Command cmd;
-    cmd.zone = Zone::FrontLeft;
-    Response resp;
-    REQUIRE_FALSE(ctrl.send(Context::background(), cmd, resp));
-    REQUIRE(resp.status == ResponseStatus::OK);
+acf::AcfMessageInfo gpio_read_request() {
+    return acf::make_standard_request(mock::kGpioByteBusId, /*transaction_num=*/1,
+                                       /*write=*/false, /*read_size=*/0);
 }
 
-TEST_CASE("sim Controller::zone returns configured zone", "[sim][REQ-SIM-002]") {
-    sim::Config cfg;
-    cfg.zone = Zone::RearRight;
-    sim::Controller ctrl(cfg);
-    REQUIRE(ctrl.zone() == Zone::RearRight);
-}
+} // namespace
 
-// ── Latency ───────────────────────────────────────────────────────────────────
+// ── dispatch forwards to mock::Server ─────────────────────────────────────────
 
-TEST_CASE("sim Controller applies constant latency", "[sim][REQ-SIM-003]") {
-    sim::Config cfg;
-    cfg.zone          = Zone::FrontLeft;
-    cfg.latency_model = sim::LatencyModel::Constant;
-    cfg.base_latency  = std::chrono::milliseconds(10);
+TEST_CASE("dispatch forwards to the wrapped mock::Server by default", "[sim][REQ-SIM-001]") {
+    sim::Simulator sim;
+    REQUIRE_FALSE(sim.server().advance_to_rcp_configured());
 
-    sim::Controller ctrl(cfg);
-    Command cmd;
-    cmd.zone = Zone::FrontLeft;
-    Response resp;
-
-    auto start = std::chrono::steady_clock::now();
-    { auto ec = ctrl.send(Context::background(), cmd, resp); (void)ec; }
-    auto elapsed = std::chrono::steady_clock::now() - start;
-
-    REQUIRE(elapsed >= std::chrono::milliseconds(10));
+    auto req = gpio_read_request();
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(sim.dispatch(/*stream_key=*/1, /*client=*/0, req, {}, resp, resp_payload,
+                                /*now_ms=*/0));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
 }
 
 // ── Fault injection ───────────────────────────────────────────────────────────
 
-TEST_CASE("sim Controller::fault causes send to fail", "[sim][REQ-SIM-004]") {
-    sim::Config cfg;
-    cfg.zone = Zone::FrontLeft;
-    sim::Controller ctrl(cfg);
+TEST_CASE("fault() causes dispatch to fail without touching the server",
+          "[sim][REQ-SIM-002]") {
+    sim::Simulator sim;
+    REQUIRE_FALSE(sim.server().advance_to_rcp_configured());
+    sim.fault(std::make_error_code(std::errc::connection_reset));
+    REQUIRE(sim.faulted());
 
-    ctrl.fault(ErrClosed);
-
-    Command cmd;
-    cmd.zone = Zone::FrontLeft;
-    Response resp;
-    REQUIRE(ctrl.send(Context::background(), cmd, resp));
+    auto req = gpio_read_request();
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = sim.dispatch(1, 0, req, {}, resp, resp_payload, 0);
+    REQUIRE(ec == std::make_error_code(std::errc::connection_reset));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
 }
 
-TEST_CASE("sim Controller::recover restores send to OK", "[sim][REQ-SIM-005]") {
-    sim::Config cfg;
-    cfg.zone = Zone::FrontLeft;
-    sim::Controller ctrl(cfg);
+TEST_CASE("recover() restores normal dispatch", "[sim][REQ-SIM-003]") {
+    sim::Simulator sim;
+    REQUIRE_FALSE(sim.server().advance_to_rcp_configured());
+    sim.fault(std::make_error_code(std::errc::connection_reset));
+    sim.recover();
+    REQUIRE_FALSE(sim.faulted());
 
-    ctrl.fault(ErrClosed);
-    ctrl.recover();
-
-    Command cmd;
-    cmd.zone = Zone::FrontLeft;
-    Response resp;
-    REQUIRE_FALSE(ctrl.send(Context::background(), cmd, resp));
+    auto req = gpio_read_request();
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(sim.dispatch(1, 0, req, {}, resp, resp_payload, 0));
 }
 
-// ── Subscribe ─────────────────────────────────────────────────────────────────
+// ── Latency modeling ──────────────────────────────────────────────────────────
 
-TEST_CASE("sim Controller::subscribe returns a channel", "[sim][REQ-SIM-006]") {
+TEST_CASE("Constant latency model always reports base_latency", "[sim][REQ-SIM-004]") {
     sim::Config cfg;
-    cfg.zone            = Zone::FrontLeft;
-    cfg.status_interval = std::chrono::milliseconds(50);
-    sim::Controller ctrl(cfg);
+    cfg.latency_model = sim::LatencyModel::Constant;
+    cfg.base_latency   = std::chrono::milliseconds(7);
+    sim::Simulator sim(cfg);
 
-    std::shared_ptr<StatusChannel> ch;
-    REQUIRE_FALSE(ctrl.subscribe(Context::background(), ch));
-    REQUIRE(ch != nullptr);
-    ch->close();
+    for (int i = 0; i < 5; ++i) {
+        REQUIRE(sim.simulated_latency_ms() == std::chrono::milliseconds(7));
+    }
 }
 
-TEST_CASE("sim Controller publishes status on interval", "[sim][REQ-SIM-007]") {
+TEST_CASE("Jitter latency model reports a delay within [base_latency, base_latency+jitter]",
+          "[sim][REQ-SIM-005]") {
     sim::Config cfg;
-    cfg.zone            = Zone::FrontLeft;
-    cfg.status_interval = std::chrono::milliseconds(20);
-    sim::Controller ctrl(cfg);
+    cfg.latency_model = sim::LatencyModel::Jitter;
+    cfg.base_latency   = std::chrono::milliseconds(5);
+    cfg.jitter          = std::chrono::milliseconds(3);
+    sim::Simulator sim(cfg);
 
-    std::shared_ptr<StatusChannel> ch;
-    { auto ec = ctrl.subscribe(Context::background(), ch); (void)ec; }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    auto st = ch->try_recv();
-    REQUIRE(st.has_value());
-    ch->close();
+    for (int i = 0; i < 50; ++i) {
+        auto d = sim.simulated_latency_ms();
+        REQUIRE(d >= std::chrono::milliseconds(5));
+        REQUIRE(d <= std::chrono::milliseconds(8));
+    }
 }
 
-// ── Close ─────────────────────────────────────────────────────────────────────
+// ── Watchdog wiring ───────────────────────────────────────────────────────────
 
-TEST_CASE("sim Controller::close stops background threads", "[sim][REQ-SIM-008]") {
-    sim::Config cfg;
-    cfg.zone            = Zone::FrontLeft;
-    cfg.status_interval = std::chrono::milliseconds(50);
-    sim::Controller ctrl(cfg);
-    REQUIRE_FALSE(ctrl.close());
+TEST_CASE("dispatch kicks a registered stream's watchdog on every accepted request",
+          "[sim][REQ-SIM-006]") {
+    sim::Simulator sim;
+    REQUIRE_FALSE(sim.server().advance_to_rcp_configured());
+    sim.register_stream(/*stream_key=*/7);
+
+    regmap::RequestStreamConfig cfg;
+    cfg.rx_wd_enable           = true;
+    cfg.rx_wd_timeout_interval = 100;
+    request::RequestLedger ledger;
+
+    std::vector<watchdog::HealthEvent> events;
+    sim.watchdog().subscribe([&](const watchdog::HealthEvent& ev) { events.push_back(ev); });
+
+    // Never kicked yet: nothing to report.
+    REQUIRE_FALSE(sim.poll_watchdog(7, cfg, ledger, 1'000));
+    REQUIRE(events.empty());
+
+    auto req = gpio_read_request();
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(sim.dispatch(7, 0, req, {}, resp, resp_payload, /*now_ms=*/1'000));
+
+    // Kicked at 1'000ms: polling before the timeout elapses reports nothing...
+    REQUIRE_FALSE(sim.poll_watchdog(7, cfg, ledger, 1'050));
+    REQUIRE(events.empty());
+
+    // ...but polling once rx_wd_timeout_interval has elapsed since the kick
+    // reports the overflow.
+    REQUIRE_FALSE(sim.poll_watchdog(7, cfg, ledger, 1'150));
+    REQUIRE(events.size() == 1);
+    REQUIRE(events[0].overflowed);
+}
+
+TEST_CASE("dispatch on an unregistered stream does not touch the watchdog manager",
+          "[sim][REQ-SIM-007]") {
+    sim::Simulator sim;
+    REQUIRE_FALSE(sim.server().advance_to_rcp_configured());
+    REQUIRE_FALSE(sim.watchdog().is_registered(9));
+
+    auto req = gpio_read_request();
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(sim.dispatch(9, 0, req, {}, resp, resp_payload, 0));
+    REQUIRE_FALSE(sim.watchdog().is_registered(9));
 }

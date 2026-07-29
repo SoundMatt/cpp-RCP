@@ -6,7 +6,7 @@
 // fusa:test REQ-ZG-006
 #include <catch2/catch_test_macros.hpp>
 
-#include "rcp/mock.hpp"
+#include "rcp/legacy_mock.hpp"
 #include "rcp/proxy.hpp"
 #include "rcp/zonegroup.hpp"
 
@@ -26,7 +26,7 @@ TEST_CASE("zonegroup: ZoneGroup::rear() has 2 zones", "[zonegroup]") {
 }
 
 TEST_CASE("zonegroup: send_group dispatches to all zones", "[zonegroup]") {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
 
     zonegroup::GroupRegistry gr(reg);
 
@@ -39,7 +39,7 @@ TEST_CASE("zonegroup: send_group dispatches to all zones", "[zonegroup]") {
 }
 
 TEST_CASE("zonegroup: send_group returns results per zone", "[zonegroup]") {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     zonegroup::GroupRegistry gr(reg);
 
     Command cmd;
@@ -52,7 +52,7 @@ TEST_CASE("zonegroup: send_group returns results per zone", "[zonegroup]") {
 }
 
 TEST_CASE("zonegroup: missing zone returns error in result", "[zonegroup]") {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     // Deregister all zones to create an empty registry
     auto ec = reg.close();
     (void)ec;
@@ -99,7 +99,7 @@ TEST_CASE("zonegroup: ZoneGroup is a copyable value type", "[zonegroup][REQ-ZG-0
 
 TEST_CASE("zonegroup: send_group honours the caller context deadline",
           "[zonegroup][REQ-ZG-006]") {
-    mock::Registry reg;
+    legacy_mock::Registry reg;
     zonegroup::GroupRegistry gr(reg);
 
     Command cmd; cmd.type = CommandType::Get;

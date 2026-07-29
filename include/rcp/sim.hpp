@@ -5,30 +5,59 @@
 // fusa:req REQ-SIM-005
 // fusa:req REQ-SIM-006
 // fusa:req REQ-SIM-007
-// fusa:req REQ-SIM-008
 
-// Timing-realistic zone controller simulator for SiL/HIL testing.
+// Timing-realistic RC Server simulator for SiL/HIL testing — wraps
+// rcp/mock.hpp's in-process Server with configurable latency/jitter and
+// Fault/Recover scenario controls, and wires watchdog-miss detection
+// through rcp/watchdog.hpp's per-stream driver (v2.10.0).
 //
-// sim::Controller implements the full rcp::Controller interface and adds
-// Fault/Recover controls for deterministic scenario testing. Configurable
-// latency (constant or jitter), periodic Status publishing, and watchdog-miss
-// detection enable validation of safety mechanisms from v0.11.0–v0.16.0.
+// ROADMAP.md milestone 56, "Test & Simulation Harness Rebuild (v2.12.0)":
+// this header REPLACES this file's pre-replacement content in full, per
+// the Satellite Package Disposition table's entry for `sim.hpp` — the
+// prior sim::Controller, which implemented the full old rcp::Controller
+// interface plus a client-driven CommandType::Watchdog kick model, is
+// discarded, not adapted (that request/response shape and that watchdog
+// model both have no analog in the target protocol; the target protocol's
+// actual per-stream watchdog reset rule already exists as
+// rcp/watchdog.hpp's StreamWatchdog/Manager, v2.10.0). Nothing else in
+// this tree depended on the old sim::Controller API (only this file's own
+// test did), so no legacy shim is needed here — unlike rcp/mock.hpp's
+// legacy_mock.hpp split, sim.hpp's old content is not preserved anywhere.
+//
+// This header, like every Phase 14 primitive header since v2.9.0/v2.10.0,
+// supplies no clock or background thread of its own — the pre-replacement
+// sim::Controller's status/watchdog polling threads are not carried
+// forward. Every timed effect (simulated latency, watchdog kicks/polls) is
+// driven by an explicit now_ms a caller supplies, the same "primitive, not
+// scheduler" convention rcp/watchdog.hpp's Manager, rcp/deadline.hpp's
+// Monitor, and rcp/e2e.hpp's RxWatchdog already established.
+//
+// Field names and behavior below implement TC18's *behavior* as described
+// in an internal structured extraction of the specification named above;
+// no text from that document is reproduced here. The concrete latency/
+// jitter model and Fault/Recover shape chosen in this file are this
+// implementation's own, carried forward unchanged in concept from the
+// pre-replacement sim::Controller — full bit-for-bit conformance against
+// other TC18 implementations is not claimed, same as the equivalent
+// disclaimer in rcp/mock.hpp.
 #pragma once
 
-#include "rcp.hpp"
+#include <rcp/mock.hpp>
+#include <rcp/watchdog.hpp>
 
-#include <atomic>
 #include <chrono>
-#include <functional>
-#include <mutex>
+#include <cstdint>
 #include <random>
-#include <thread>
+#include <system_error>
 #include <vector>
 
 namespace rcp {
 namespace sim {
 
 // ── LatencyModel ─────────────────────────────────────────────────────────────
+// Carried forward unchanged in concept from the pre-replacement
+// sim::Controller: Constant always reports the same delay; Jitter adds a
+// uniformly distributed extra delay on top of it.
 
 enum class LatencyModel : uint8_t {
     Constant = 0,
@@ -38,187 +67,97 @@ enum class LatencyModel : uint8_t {
 // ── Config ────────────────────────────────────────────────────────────────────
 
 struct Config {
-    Zone                      zone;
-    std::chrono::milliseconds base_latency    {2};
-    std::chrono::milliseconds jitter          {1};
-    std::chrono::milliseconds status_interval {10}; // 0 = disabled
-    std::chrono::milliseconds watchdog_timeout{50}; // 0 = disabled
-    LatencyModel              latency_model   {LatencyModel::Jitter};
+    std::chrono::milliseconds base_latency{2};
+    std::chrono::milliseconds jitter{1};
+    LatencyModel              latency_model{LatencyModel::Jitter};
 };
 
-inline Config default_config(Zone z) {
-    Config cfg;
-    cfg.zone = z;
-    return cfg;
-}
-
-// ── Controller ────────────────────────────────────────────────────────────────
-
-class Controller final : public rcp::Controller {
+// ── Simulator ─────────────────────────────────────────────────────────────────
+// Wraps one mock::Server with scenario-testing controls. Not copyable —
+// mock::Server itself is not copyable (see its own header comment).
+class Simulator final {
 public:
-    using Handler = std::function<Response(const Command&)>;
+    explicit Simulator(Config cfg = {}) : cfg_(cfg), rng_(std::random_device{}()) {}
 
-    explicit Controller(Config cfg, Handler handler = nullptr)
-        : cfg_(cfg), handler_(std::move(handler)),
-          rng_(std::random_device{}()) {
-        if (cfg_.status_interval.count() > 0)
-            status_thread_ = std::thread([this]{ status_loop(); });
-        if (cfg_.watchdog_timeout.count() > 0)
-            wd_thread_ = std::thread([this]{ watchdog_loop(); });
+    Simulator(const Simulator&)            = delete;
+    Simulator& operator=(const Simulator&) = delete;
+
+    mock::Server&      server() noexcept { return server_; }
+    watchdog::Manager&  watchdog() noexcept { return watchdog_mgr_; }
+
+    // register_stream begins watchdog tracking for a request stream —
+    // forwards to rcp::watchdog::Manager::register_stream (v2.10.0). Call
+    // once per stream a scenario wants watchdog-miss detection for; a
+    // stream dispatch() is never called for simply never has its watchdog
+    // kicked or polled.
+    void register_stream(uint64_t stream_key) { watchdog_mgr_.register_stream(stream_key); }
+
+    // fault injects `err` on every subsequent dispatch() call until
+    // recover() is called — the same Fault/Recover scenario-testing
+    // concept the pre-replacement sim::Controller offered, re-targeted at
+    // this module's std::error_code/AcfMessageInfo response shape.
+    void fault(std::error_code err) { fault_err_ = err; }
+
+    // recover clears any injected fault, restoring normal dispatch.
+    void recover() { fault_err_ = {}; }
+
+    bool faulted() const noexcept { return static_cast<bool>(fault_err_); }
+
+    // simulated_latency_ms draws this call's simulated response delay per
+    // cfg_'s LatencyModel — Constant always returns base_latency; Jitter
+    // adds a uniformly distributed extra delay in [0, jitter]. This class
+    // never sleeps on the caller's behalf (see this header's own
+    // "primitive, not scheduler" note) — a caller that wants to actually
+    // simulate the delay (e.g. a real SiL/HIL harness, or a test advancing
+    // its own now_ms clock) does so itself with the value returned here.
+    std::chrono::milliseconds simulated_latency_ms() {
+        if (cfg_.latency_model == LatencyModel::Constant || cfg_.jitter.count() <= 0)
+            return cfg_.base_latency;
+        std::uniform_int_distribution<std::chrono::milliseconds::rep> dist(0, cfg_.jitter.count());
+        return cfg_.base_latency + std::chrono::milliseconds(dist(rng_));
     }
 
-    ~Controller() override {
-        closed_.store(true, std::memory_order_release);
-        if (status_thread_.joinable()) status_thread_.join();
-        if (wd_thread_.joinable())     wd_thread_.join();
-        (void)close();
-    }
-
-    Zone zone() const noexcept override { return cfg_.zone; }
-
-    std::error_code send(const rcp::Context& ctx,
-                          const Command&      cmd,
-                          Response&           out) override {
-        if (closed_.load(std::memory_order_acquire)) return ErrClosed;
-        if (ctx.done())                               return ErrTimeout;
-        if (cmd.zone != cfg_.zone)                    return ErrZoneMismatch;
-
-        {
-            std::lock_guard<std::mutex> lk(mu_);
-            if (fault_err_) return fault_err_;
+    // dispatch is mock::Server::dispatch's timing-realistic wrapper: an
+    // injected fault (see fault() above) short-circuits before the server
+    // is touched at all; otherwise `stream_key`'s watchdog is kicked (if
+    // registered — see register_stream) per rcp/watchdog.hpp's "reset by
+    // any inbound request" rule, and the request is forwarded to
+    // mock::Server::dispatch unchanged. `now_ms` drives the watchdog kick
+    // only — simulated latency is reported via simulated_latency_ms(), not
+    // applied as a real sleep here, per this class's own scope note.
+    std::error_code dispatch(uint64_t stream_key, size_t client,
+                              const acf::AcfMessageInfo& req,
+                              const std::vector<uint8_t>& req_payload,
+                              acf::AcfMessageInfo& out_resp,
+                              std::vector<uint8_t>& out_resp_payload,
+                              uint64_t now_ms) {
+        if (fault_err_) {
+            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+            out_resp_payload.clear();
+            return fault_err_;
         }
-
-        // Simulate response latency.
-        auto delay = cfg_.base_latency;
-        if (cfg_.latency_model == LatencyModel::Jitter && cfg_.jitter.count() > 0) {
-            std::uniform_int_distribution<std::chrono::milliseconds::rep> dist(0, cfg_.jitter.count());
-            std::lock_guard<std::mutex> lk(mu_);
-            delay += std::chrono::milliseconds(dist(rng_));
+        if (watchdog_mgr_.is_registered(stream_key)) {
+            (void)watchdog_mgr_.on_request_received(stream_key, now_ms);
         }
-        if (delay.count() > 0)
-            std::this_thread::sleep_for(delay);
-
-        if (ctx.done()) return ErrTimeout;
-
-        // Reset watchdog on CmdWatchdog.
-        if (cmd.type == CommandType::Watchdog) {
-            wd_last_kick_.store(
-                std::chrono::steady_clock::now().time_since_epoch().count(),
-                std::memory_order_release);
-        }
-
-        if (handler_) {
-            std::lock_guard<std::mutex> lk(mu_);
-            out = handler_(cmd);
-        } else {
-            out = Response{cmd.id, cfg_.zone, ResponseStatus::OK, {}};
-        }
-        return {};
+        return server_.dispatch(client, req, req_payload, out_resp, out_resp_payload);
     }
 
-    std::error_code subscribe(const rcp::Context&             ctx,
-                               std::shared_ptr<StatusChannel>& out) override {
-        if (closed_.load(std::memory_order_acquire)) return ErrClosed;
-        auto ch = std::make_shared<StatusChannel>(16);
-        {
-            std::lock_guard<std::mutex> lk(mu_);
-            subs_.push_back(ch);
-        }
-        std::thread([this, weak_ch = std::weak_ptr<StatusChannel>(ch), ctx]() mutable {
-            while (!ctx.done() && !closed_.load()) {
-                auto c = weak_ch.lock();
-                if (!c || c->is_closed()) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            auto c = weak_ch.lock();
-            if (!c) return;
-            std::lock_guard<std::mutex> lk(mu_);
-            auto it = std::find(subs_.begin(), subs_.end(), c);
-            if (it != subs_.end()) subs_.erase(it);
-            c->close();
-        }).detach();
-        out = std::move(ch);
-        return {};
-    }
-
-    std::error_code close() override {
-        if (!closed_.exchange(true, std::memory_order_acq_rel)) {
-            std::lock_guard<std::mutex> lk(mu_);
-            for (auto& s : subs_) s->close();
-            subs_.clear();
-        }
-        return {};
-    }
-
-    // fault injects err on all subsequent send() calls until recover() is called.
-    void fault(std::error_code err) {
-        std::lock_guard<std::mutex> lk(mu_);
-        fault_err_ = err;
-    }
-
-    // recover clears any injected fault.
-    void recover() {
-        std::lock_guard<std::mutex> lk(mu_);
-        fault_err_ = {};
-    }
-
-    bool watchdog_missed() const noexcept {
-        return wd_miss_.load(std::memory_order_acquire);
-    }
-
-    // publish sends a Status to all subscribers (called by test harness).
-    void publish(const std::vector<uint8_t>& payload) {
-        uint32_t seq = ++seq_;
-        Status st{cfg_.zone, seq, !closed_.load(), payload};
-        std::lock_guard<std::mutex> lk(mu_);
-        for (auto& s : subs_) s->push(st);
+    // poll_watchdog is a thin forwarder to rcp::watchdog::Manager::poll for
+    // one registered stream — see rcp/watchdog.hpp. Deciding when to call
+    // this (i.e. running a timer loop) is the embedding
+    // application's/test's job, same as watchdog::Manager itself.
+    std::error_code poll_watchdog(uint64_t stream_key, const regmap::RequestStreamConfig& cfg,
+                                   request::RequestLedger& ledger, uint64_t now_ms) {
+        return watchdog_mgr_.poll(stream_key, cfg, ledger, now_ms);
     }
 
 private:
-    Config    cfg_;
-    Handler   handler_;
-    std::mt19937 rng_;
-    std::atomic<bool>     closed_{false};
-    std::atomic<uint32_t> seq_{0};
-    std::atomic<bool>     wd_miss_{false};
-    std::atomic<long long> wd_last_kick_{0};
-
-    std::mutex mu_;
-    std::error_code fault_err_;
-    std::vector<std::shared_ptr<StatusChannel>> subs_;
-    std::thread status_thread_;
-    std::thread wd_thread_;
-
-    void status_loop() {
-        while (!closed_.load(std::memory_order_acquire)) {
-            publish({});
-            std::this_thread::sleep_for(cfg_.status_interval);
-        }
-    }
-
-    void watchdog_loop() {
-        while (!closed_.load(std::memory_order_acquire)) {
-            std::this_thread::sleep_for(cfg_.watchdog_timeout);
-            auto last = wd_last_kick_.load(std::memory_order_acquire);
-            if (last == 0) {
-                wd_miss_.store(true, std::memory_order_release);
-                continue;
-            }
-            auto last_tp = std::chrono::steady_clock::time_point(
-                std::chrono::steady_clock::duration(last));
-            auto elapsed = std::chrono::steady_clock::now() - last_tp;
-            if (elapsed >= cfg_.watchdog_timeout) {
-                wd_miss_.store(true, std::memory_order_release);
-            } else {
-                wd_miss_.store(false, std::memory_order_release);
-            }
-        }
-    }
+    Config            cfg_;
+    std::mt19937      rng_;
+    std::error_code   fault_err_;
+    mock::Server      server_;
+    watchdog::Manager watchdog_mgr_;
 };
-
-inline std::unique_ptr<Controller> new_controller(Config cfg, Controller::Handler h = nullptr) {
-    return std::make_unique<Controller>(cfg, std::move(h));
-}
 
 } // namespace sim
 } // namespace rcp
