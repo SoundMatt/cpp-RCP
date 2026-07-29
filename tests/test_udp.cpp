@@ -70,6 +70,12 @@ acf::AcfMessageInfo standard_request(avtp::ByteBusId bus_id, uint8_t transaction
 
 } // namespace
 
+// Every TEST_CASE below exercises the real POSIX implementation (Frame
+// codec, Server, Client) — on Windows, rcp/udp.hpp's own header comment
+// documents that all of these are the function_not_supported stub, so
+// there is nothing real left for REQ-UDP-001..012 to exercise there.
+#if defined(RCP_UDP_POSIX)
+
 // ── Frame encode/decode (pure codec, no sockets) ─────────────────────────────
 
 TEST_CASE("Frame round-trips an NTSCF-framed ACF_ABB request", "[udp][REQ-UDP-001]") {
@@ -167,12 +173,6 @@ TEST_CASE("decode_frame rejects an unrecognized ACF message type", "[udp][REQ-UD
     Frame out;
     REQUIRE(decode_frame(bytes.data(), bytes.size(), out));
 }
-
-// Server/Client exercise real UDP sockets, which only exist on the POSIX
-// build (RCP_UDP_POSIX, set by rcp/udp.hpp itself) — on Windows both classes
-// are the function_not_supported stub rcp/udp.hpp's own header comment
-// documents, so REQ-UDP-007..012 have nothing real to exercise there.
-#if defined(RCP_UDP_POSIX)
 
 // ── Server (real UDP sockets, loopback) ──────────────────────────────────────
 
@@ -329,6 +329,26 @@ TEST_CASE("Server and Client close() are idempotent and requests after close fai
     std::vector<uint8_t>  resp_payload;
     auto ctx = Context::background();
     REQUIRE(client.request(ctx, standard_request(1, 1), {}, resp, resp_payload) == ErrClosed);
+}
+
+#else // !RCP_UDP_POSIX
+
+// On Windows rcp/udp.hpp has no real transport (see its own header comment)
+// — this exercises the function_not_supported stub surface instead, so this
+// binary still registers a real assertion rather than reporting "No tests
+// ran" (which Catch2, and therefore ctest, treats as a failure).
+TEST_CASE("Windows stub reports function_not_supported", "[udp]") {
+    Server server(make_stream_id(0x02, 1), "127.0.0.1", 0);
+    REQUIRE_FALSE(server.ok());
+
+    Client client(make_stream_id(0x03, 1), "127.0.0.1", 0);
+    REQUIRE_FALSE(client.ok());
+
+    auto ctx = Context::background();
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = client.request(ctx, standard_request(1, 1), {}, resp, resp_payload);
+    REQUIRE(ec == std::make_error_code(std::errc::function_not_supported));
 }
 
 #endif // RCP_UDP_POSIX
