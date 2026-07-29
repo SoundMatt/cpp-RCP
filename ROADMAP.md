@@ -698,6 +698,35 @@ still not claimed — see this file's own disclaimer pattern in
 
 ### 52. Fragmentation — Go/No-Go Decision (v2.8.0)
 
+**Done (v2.15.1):** this milestone's call was made in prose (below) before
+any of its downstream consequences landed, and every one of those
+consequences was already built and cross-referencing "ROADMAP.md milestone
+52" as settled fact by the time this close-out PR was opened: the
+single-AVTPDU UART RX-FIFO/`read_size` bound in `rcp/uart.hpp`, the
+equivalent SPI framing note in `rcp/spi.hpp`, the CAN XL
+`kMaxXlPayloadSingleAvtpdu` vs. `kMaxXlPayloadSpec` split in `rcp/can.hpp`,
+the `ms` ("more segments") field comment in `rcp/acf.hpp` (`rcp/wire.hpp`
+at the time this close-out was first drafted; split into `rcp/avtp.hpp`/
+`rcp/acf.hpp` by the post-hoc naming reconciliation below, v2.7.1 — the
+`ms` field itself lives in the ACF message-format half, `rcp/acf.hpp`), and
+the `REQ-UART-006`/`REQ-CANEP-004` traceability entries in `.fusa-reqs.json`.
+This milestone formally closes the decision itself: the
+`kOptFragmentation` bit comment in `rcp/regmap.hpp` — the one remaining
+place in the tree still describing the call as "pending" — now reads
+consistently with the rest of the codebase (reserved, never set, per this
+already-decided no-go). This milestone's designated slot, `v2.8.0`, is the
+label used throughout the tree's forward references to this decision
+(`rcp/uart.hpp`, `rcp/spi.hpp`, `rcp/can.hpp`, `rcp/acf.hpp`,
+`rcp/avtp.hpp`, and this file's own milestone heading above) and is left
+unchanged for that reason, but it was never tagged — this close-out PR sat
+open while `main` moved through the v2.7.1 naming reconciliation and seven
+more milestones to v2.15.0 — so `rcp::kVersion`/the CMake project version
+move to `2.15.1` instead, an out-of-band patch bump on top of current
+`main` rather than the unavailable `2.8.0` slot, the same convention
+`v2.7.1` itself set for landing non-sequential, milestone-adjacent work.
+No wire-format, endpoint, or safety-mechanism behavior changes in this
+milestone — it is a documentation and version close-out only.
+
 **Decision: no-go for this cycle.** Fragmentation (the `ms`/`segment_num`
 mechanism for splitting one logical request/response across multiple
 AVTPDUs) is explicitly called out in the specification itself as optional
