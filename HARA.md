@@ -1,9 +1,16 @@
 # Hazard Analysis and Risk Assessment (HARA)
 
-**Standard:** ISO 26262:2018 Part 3  
-**System:** cpp-RCP — Remote Control Protocol for automotive zonal architecture  
-**Target ASIL:** ASIL-B (derived)  
+**Standard:** ISO 26262:2018 Part 3
+**System:** cpp-RCP — C++ implementation of the OPEN Alliance TC18 Remote Control Protocol
+**Target ASIL:** ASIL-B (derived)
 **Source:** `.fusa-hara.json` (machine-readable authoritative source)
+
+This revision (ROADMAP.md milestone 62, "Certification Refresh", v2.18.0)
+supersedes the pre-replacement, Zone/Command/Controller-shaped analysis
+authored at milestone 41. Hazard/safety-goal IDs are carried forward
+unchanged where the underlying concern still applies to the current
+stream/endpoint/register-map architecture; new hazards introduced by
+Phase 13-16 work are appended as H-011/SG-011.
 
 ---
 
@@ -11,12 +18,13 @@
 
 | ID | Description |
 |----|-------------|
-| OS-001 | Normal vehicle operation — all zone controllers reachable |
-| OS-002 | Partial network fault — one or more zone controllers unreachable |
-| OS-003 | Safety-critical manoeuvre — emergency braking or collision avoidance active |
-| OS-004 | HPC software fault — runaway process, crash, or OOM condition |
-| OS-005 | Elevated network latency — congestion, EMI, or hardware degradation |
-| OS-006 | Adversarial access — attacker present on the zone Ethernet bus |
+| OS-001 | Normal operation — the RC Client and every discovered RC Server are reachable |
+| OS-002 | Partial network fault — one or more RC Servers unreachable or a request stream lost |
+| OS-003 | Safety-critical manoeuvre — a request is in flight to a safety-relevant endpoint (e.g. a GPIO/CAN endpoint driving a braking-adjacent actuator) |
+| OS-004 | RC Client software fault — runaway process, crash, or OOM condition on the HPC |
+| OS-005 | Elevated network latency — congestion, EMI, or hardware degradation on the AVB/TSN segment |
+| OS-006 | Adversarial access — attacker present on the Ethernet segment |
+| OS-007 | RC Server power-state transition — cold/hot start or a StandBy/Sleep to Normal wake sequence in progress |
 
 ---
 
@@ -24,16 +32,17 @@
 
 | ID | Hazard | Severity | Exposure | Controllability | ASIL | Safety Goals |
 |----|--------|----------|----------|-----------------|------|--------------|
-| H-001 | Loss of command delivery to safety-critical zone (e.g. braking actuator) | S3 | E4 | C2 | ASIL-B | SG-001 |
-| H-002 | Spurious command sent to wrong zone controller | S2 | E3 | C2 | ASIL-B | SG-002 |
-| H-003 | Zone controller watchdog not kicked, leading to unintended reset | S2 | E4 | C2 | ASIL-B | SG-003 |
-| H-004 | Replay of stale commands from a previous drive cycle | S2 | E3 | C2 | ASIL-B | SG-004 |
-| H-005 | Zone controller falsely reported as alive when unresponsive | S2 | E3 | C2 | ASIL-B | SG-007 |
-| H-006 | Priority inversion — low-priority burst starves safety-critical CmdWatchdog | S2 | E4 | C2 | ASIL-B | SG-001, SG-005 |
-| H-007 | Rate limiter blocks watchdog kick during high command burst | S2 | E3 | C2 | ASIL-B | SG-003, SG-005 |
-| H-008 | Unauthorized command injection via unsecured transport | S3 | E2 | C2 | ASIL-B | SG-006 |
-| H-009 | Power state management failure — zone not properly woken from sleep | S3 | E3 | C2 | ASIL-B | SG-001, SG-008 |
-| H-010 | Fault injection state persists across vehicle power cycles | S2 | E2 | C3 | ASIL-A | SG-009 |
+| H-001 | Loss of request delivery to a safety-critical endpoint (e.g. a braking-adjacent actuator) | S3 | E4 | C2 | ASIL-B | SG-001 |
+| H-002 | Request misaddressed to the wrong endpoint via a stale or corrupted stream_id/byte_bus_id pairing | S2 | E3 | C2 | ASIL-B | SG-002 |
+| H-003 | Per-stream watchdog not kicked, leading to an unintended safe-state entry or endpoint reset | S2 | E4 | C2 | ASIL-B | SG-003 |
+| H-004 | Replay or out-of-order re-delivery of a stale request from a previous session | S2 | E3 | C2 | ASIL-B | SG-004 |
+| H-005 | RC Server falsely reported reachable/ready when actually unresponsive | S2 | E3 | C2 | ASIL-B | SG-007 |
+| H-006 | Execution-priority inversion — a lower-priority request burst starves a safety-tagged or cancellation request | S2 | E4 | C2 | ASIL-B | SG-001, SG-005 |
+| H-007 | Rate limiter blocks a safety-relevant request during a high-traffic burst, causing a spurious watchdog trip | S2 | E3 | C2 | ASIL-B | SG-003, SG-005 |
+| H-008 | Unauthorized request injection or register-map modification via an unsecured transport, spoofed discovery response, or non-root EP0 write | S3 | E2 | C2 | ASIL-B | SG-006 |
+| H-009 | RC Server not properly woken from StandBy/Sleep, causing loss of actuation during a safety manoeuvre | S3 | E3 | C2 | ASIL-B | SG-001, SG-008 |
+| H-010 | Fault injection state persists across process/power cycles, masking real faults in production | S2 | E2 | C3 | ASIL-A | SG-009 |
+| H-011 | Undetected payload corruption bypasses the E2E CRC check, or a stream configured to latch on CRC failure fails to enter or hold safe state | S3 | E3 | C2 | ASIL-B | SG-011 |
 
 ---
 
@@ -41,61 +50,113 @@
 
 | ID | Safety Goal | ASIL | Addressed By |
 |----|-------------|------|--------------|
-| SG-001 | Commands to safety-critical zones shall be delivered within the watchdog period or a fault shall be signalled. | ASIL-B | `watchdog::Keeper`, `deadline::Monitor` |
-| SG-002 | Commands shall only be processed by the zone they are addressed to; misrouted commands shall be rejected. | ASIL-B | `Controller::send()` ErrZoneMismatch check |
-| SG-003 | The watchdog kick command (CmdWatchdog) shall always be deliverable at the configured priority. | ASIL-B | `ratelimit::Controller` exempt_critical, `prioqueue::Controller` Critical bypass |
-| SG-004 | Replayed or duplicated commands from prior sessions shall be detected and rejected. | ASIL-B | `e2e::ReplayGuard` bitmap sliding window |
-| SG-005 | Priority::Critical commands shall never be delayed by Priority::Normal or Priority::High commands queued earlier. | ASIL-B | `prioqueue::Controller` priority ordering |
-| SG-006 | Transport authentication (mTLS or equivalent) shall be enforced on all external zone controller connections. | ASIL-B | `tls::Controller` (interface), mTLS Config |
-| SG-007 | A zone controller that stops publishing Status shall be detected as dead within the configured deadline. | ASIL-B | `deadline::Monitor` |
-| SG-008 | A zone controller shall only be declared operational after a successful Wake command response. | ASIL-B | `powerstate::Manager` Active transition gate |
+| SG-001 | Requests to safety-critical endpoints shall be delivered within the configured watchdog period or a fault shall be signalled. | ASIL-B | `watchdog::Manager`/`StreamWatchdog`, `deadline::Monitor` |
+| SG-002 | Requests shall only be dispatched to the endpoint they are addressed to (stream_id + byte_bus_id); misaddressed requests shall be rejected. | ASIL-B | `acf::AcfMessageInfo` byte_bus_id decode, RC Server dispatch (e.g. `mock::Server::dispatch`) |
+| SG-003 | A per-stream watchdog kick shall be recorded for every accepted inbound request, regardless of request kind or safety tag. | ASIL-B | `watchdog::StreamWatchdog::kick_from_request`, `e2e::RxWatchdog` |
+| SG-004 | A request stream configured with rx_enforce_seq shall reject any sequence number that is not strictly greater than the last accepted one. | ASIL-B | `e2e::RxSequenceGuard::check` |
+| SG-005 | Cancellation and triggered requests shall never be delayed by a standard or compound request queued earlier on the same stream. | ASIL-B | `request::SequencerTable`/`RequestLedger` execution-priority ordering |
+| SG-006 | Transport authentication (mTLS on the UDP/IP variant, or link-layer authentication on native Ethernet) and per-endpoint access policy shall be enforced on every external RC Server connection. | ASIL-B | `tls::SecureClient`/`SecureServer`, `authz::AccessPolicy`, `discovery::DiscoveryClaim` |
+| SG-007 | An RC Server that stops responding shall be detected as unreachable within the configured liveness deadline. | ASIL-B | `deadline::Monitor`/`LivenessTracker` |
+| SG-008 | An RC Server shall only be treated as operational after its lifecycle state machine reports RCP_CONFIGURED following a successful wake sequence. | ASIL-B | `lifecycle::ServerLifecycle`, `powerstate::PowerManager` |
 | SG-009 | Fault injection rules shall not persist beyond the lifetime of the injecting process. | ASIL-A | `faultinject::Controller` in-process state only |
-| SG-010 | Zone controller health state transitions shall be deterministically derivable from observable send() outcomes alone. | ASIL-B | `watchdog::Keeper` deterministic state machine |
+| SG-010 | A stream's watchdog/safe-state status shall be deterministically derivable from its own kick/overflow/latch history alone. | ASIL-B | `e2e::RxWatchdog`, `watchdog::StreamWatchdog` deterministic state |
+| SG-011 | A request whose computed E2E CRC does not match its received trailer shall be rejected, and a stream configured with rx_enforce_e2e shall latch safe state on the first such failure until explicitly reset. | ASIL-B | `e2e::verify_crc`, `e2e::RxStreamGuard` |
 
 ---
 
 ## ASIL Decomposition Rationale
 
-### H-001 (ASIL-B): Loss of command delivery
+### H-001 (ASIL-B): Loss of request delivery
 
-The HPC sends commands to zone controllers over an automotive Ethernet network. Network faults, ECU resets, or HPC process crashes can prevent command delivery. The required ASIL is B because:
+The RC Client sends requests to RC Servers over an automotive Ethernet
+network. Network faults, ECU resets, or HPC process crashes can prevent
+request delivery. The required ASIL is B because:
 
-- **S3**: Loss of braking actuation during emergency deceleration could be life-threatening.
-- **E4**: Zone controllers are continuously addressable during normal driving.
-- **C2**: The driver may not be able to react in time if actuation is silently lost.
+- **S3**: loss of actuation on a braking-adjacent endpoint during emergency
+  deceleration could be life-threatening.
+- **E4**: RC Servers are continuously addressable during normal driving.
+- **C2**: the driver may not be able to react in time if actuation is
+  silently lost.
 
 **Decomposition**: ASIL-B is achieved via:
-1. `watchdog::Keeper` (ASIL-B): detects non-responsive zones within `fault_after × interval`.
-2. `deadline::Monitor` (ASIL-B): detects zones that stop sending Status telemetry.
-3. No decomposition into lower ASIL-A + ASIL-A elements is claimed; the above mechanisms together satisfy ASIL-B.
+1. `watchdog::Manager`/`StreamWatchdog` (ASIL-B): detects a stream whose
+   `rx_wd_timeout_interval` has elapsed with no accepted request.
+2. `deadline::Monitor` (ASIL-B): detects an RC Server whose liveness
+   signal (response/ack-queue heartbeat or EP0 lifecycle-state-changed
+   trigger) has gone silent past its configured deadline.
+3. No decomposition into lower ASIL-A + ASIL-A elements is claimed; the
+   above mechanisms together satisfy ASIL-B.
 
-### H-002 (ASIL-B): Zone misrouting
+### H-002 (ASIL-B): Endpoint misaddressing
 
-Each `Controller::send()` checks `cmd.zone == this->zone()` before processing. This check is a single-point protection; ASIL-B is met because the check is simple and directly observable (returns ErrZoneMismatch).
+Every request carries an explicit `(stream_id, byte_bus_id)` pair in its
+AVTPDU/ACF framing (`rcp/avtp.hpp`, `rcp/acf.hpp`). An RC Server's dispatch
+layer is responsible for routing a decoded request only to the endpoint
+whose `byte_bus_id` it names — `mock::Server::dispatch` is this codebase's
+own reference implementation of that check. This is a single-point
+protection; ASIL-B is met because the check is simple, directly observable
+in the decoded `acf::AcfMessageInfo`, and independent of request payload
+content.
 
 ### H-003 (ASIL-B): Watchdog failure
 
-SG-003 is addressed by the combination of:
-1. `prioqueue::Controller` — Critical-priority CmdWatchdog bypasses queue backpressure.
-2. `ratelimit::Controller` — `exempt_critical=true` bypasses the token bucket for Critical commands.
+SG-003 is addressed by `watchdog::StreamWatchdog::kick_from_request`,
+called once per accepted inbound request regardless of request kind or
+safety tag, wrapping `e2e::RxWatchdog`'s timeout/latch primitive
+(`rx_wd_enable`/`rx_wd_timeout_interval`). A stream configured with
+`rx_wd_safestate_enable` additionally latches safe state and purges queued
+non-safety requests on overflow (`e2e::apply_watchdog_overflow`), leaving
+safety-tagged (0x8x) requests untouched so they can still drive the
+endpoint through its own safe-state sequence.
 
-Both mechanisms are independently verifiable and together meet ASIL-B by preventing starvation.
+### H-004 (ASIL-B): Request replay / out-of-order delivery
 
-### H-004 (ASIL-B): Command replay
+`e2e::RxSequenceGuard::check` enforces a strictly-increasing sequence
+number per stream when `rx_enforce_seq` is set: the first observed
+sequence number bootstraps the comparison, and any subsequent sequence
+number that is not strictly greater than the last accepted one is
+rejected outright. Unlike the pre-replacement 32-entry sliding-window
+bitmap this supersedes, there is no window to exhaust — the check is a
+single comparison against the high-water mark, independently gated per
+stream and orthogonal to the E2E CRC check in H-011.
 
-`e2e::ReplayGuard` implements a 32-entry bitmap sliding window. Frames are rejected if:
-- The sequence number matches a previously-accepted number within the window, or
-- The sequence number is more than `ReplayWindowSize` (32) behind the current high-water mark.
+### H-006 (ASIL-B): Execution-priority inversion
 
-The CRC-16/CCITT-FALSE also protects against accidentally-valid replays.
+`request::SequencerTable`/`RequestLedger` dispatch in the specification's
+fixed execution-priority ordering — cancellation, then triggered, timed,
+compound, compound-wait, chained, and finally standard requests — enforced
+server-side per stream rather than as a client-side send-order wrapper.
+A burst of standard requests queued ahead of a cancellation or triggered
+request can never delay it once dispatch reaches that stream.
 
-### H-006 (ASIL-B): Priority inversion
+### H-008 (ASIL-B): Unauthorized injection / register-map modification
 
-`prioqueue::Controller` uses `std::priority_queue` with Priority::Critical as the highest key. FIFO ordering within the same priority level preserves fairness. The dispatch thread always dispatches the highest-priority entry in the queue.
+Three independent mechanisms cover this hazard's distinct attack
+surfaces: `tls::SecureClient`/`SecureServer` require mutual TLS on the
+UDP/IP transport variant (native Ethernet deployments should prefer
+MACsec (802.1AE) at layer 2, flagged as the longer-term mechanism this
+package does not itself implement); `authz::AccessPolicy` gates requests
+by `(identity, server, endpoint, request kind)`; and
+`regmap::Ep0::check_write_access` restricts a whole-register-map write to
+the root client, rejecting a non-root client's attempt to reconfigure an
+endpoint's stream/lifecycle behavior.
 
-### H-008 (ASIL-B): Unauthorized injection
+### H-011 (ASIL-B): E2E CRC integrity
 
-The `tls::Controller` interface requires mutual TLS. The stub returns `errc::function_not_supported` to ensure integrators cannot accidentally connect without authentication. Full OpenSSL backend is scoped for v0.7.0 acceptance testing.
+This is the hazard the roadmap identifies as the most safety-relevant new
+surface introduced across this whole roadmap. `e2e::verify_crc` recomputes
+the 32-bit CRC (polynomial `0xF4ACFB13`) over the stream_id, AVTP
+timestamp (or its documented zero-fill under NTSCF), ACF header, and
+payload, and compares it against the received trailer; a mismatch is
+reported as `E2eErrc::crc_error` for that request. `e2e::RxStreamGuard`
+implements the per-stream opt-in latch: with `rx_enforce_e2e` clear, a
+CRC failure is reported for that request alone; with it set, the first
+failure additionally latches the whole stream so every subsequent request
+also reports `crc_error` until `reset_latch()` is called explicitly (e.g.
+on stream reconfiguration). ASIL-B is met because both the per-request
+rejection and the whole-stream latch are deterministic functions of the
+received bytes and the stream's own configuration — no timing-dependent
+or best-effort behavior is involved.
 
 ---
 
@@ -103,6 +164,7 @@ The `tls::Controller` interface requires mutual TLS. The stub returns `errc::fun
 
 | Risk | Likelihood | Mitigation | Status |
 |------|-----------|------------|--------|
-| ReplayGuard window exhausted by rapid legitimate traffic | Low | 32-entry window handles 32 in-flight commands per zone; watchdog period is at least 10 ms | Accepted |
-| TLS stub returns `function_not_supported` on non-Linux CI | Low | CI explicitly tests the shmem/mock transport; TLS tested on Linux only | Accepted |
-| mDNS StaticDiscoverer not sufficient for dynamic topology | Medium | Full mDNS backend deferred to v0.6.0 platform integration; static config covers initial SiL testing | Accepted |
+| A stream with `rx_enforce_seq` clear accepts replayed/out-of-order requests by design | Low | Per-endpoint configuration choice; safety-relevant streams are expected to set `rx_enforce_seq` | Accepted |
+| `tls::SecureClient`/`SecureServer` require an application-supplied OpenSSL/wolfSSL backend; the interface itself performs no cryptography | Low | Native Ethernet deployments should prefer MACsec (802.1AE) at layer 2 instead, per `tls.hpp`'s own header note | Accepted |
+| `mdns.hpp`'s discovery-adjacent name service is rescoped to the UDP/IP transport variant only | Low | TC18's own wire-level discovery (`discovery.hpp`, v2.2.0) covers native Ethernet deployments without a name-service layer | Accepted |
+| `rcp/config.hpp` and `rcp/faultinject.hpp` still build against the pre-replacement `rcp.hpp` Zone/Command/Controller model | Medium | Tracked as a separate, still-open rebind item (per milestone 60's closeout); neither is on a safety-relevant request-dispatch path introduced by Phase 13-16 | Accepted |

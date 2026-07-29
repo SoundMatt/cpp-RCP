@@ -1,26 +1,6 @@
-// fusa:test REQ-ZONE-001
-// fusa:test REQ-ZONE-002
-// fusa:test REQ-ZONE-003
-// fusa:test REQ-ZONE-004
-// fusa:test REQ-ZONE-005
-// fusa:test REQ-ZONE-006
-// fusa:test REQ-ZONE-007
-// fusa:test REQ-ZONE-008
 // fusa:test REQ-PRI-001
 // fusa:test REQ-PRI-002
 // fusa:test REQ-PRI-003
-// fusa:test REQ-CMD-001
-// fusa:test REQ-CMD-002
-// fusa:test REQ-CMD-003
-// fusa:test REQ-CMD-004
-// fusa:test REQ-CMD-005
-// fusa:test REQ-CMD-006
-// fusa:test REQ-STATUS-001
-// fusa:test REQ-STATUS-002
-// fusa:test REQ-STATUS-003
-// fusa:test REQ-STATUS-004
-// fusa:test REQ-STATUS-005
-// fusa:test REQ-STATUS-006
 // fusa:test REQ-ERR-001
 // fusa:test REQ-ERR-002
 // fusa:test REQ-ERR-003
@@ -47,7 +27,7 @@ using namespace rcp;
 
 // ── Zone constants ────────────────────────────────────────────────────────────
 
-TEST_CASE("Zone::to_string returns unique non-empty name", "[zone][REQ-ZONE-001]") {
+TEST_CASE("Zone::to_string returns unique non-empty name", "[zone]") {
     const std::vector<Zone> zones{
         Zone::FrontLeft, Zone::FrontRight,
         Zone::RearLeft,  Zone::RearRight,
@@ -62,7 +42,7 @@ TEST_CASE("Zone::to_string returns unique non-empty name", "[zone][REQ-ZONE-001]
     }
 }
 
-TEST_CASE("Zone constants have correct numeric values", "[zone][REQ-ZONE-002][REQ-ZONE-003][REQ-ZONE-004][REQ-ZONE-005][REQ-ZONE-006][REQ-ZONE-007]") {
+TEST_CASE("Zone constants have correct numeric values", "[zone]") {
     REQUIRE(static_cast<uint8_t>(Zone::Unknown)    == 0);
     REQUIRE(static_cast<uint8_t>(Zone::FrontLeft)  == 1);
     REQUIRE(static_cast<uint8_t>(Zone::FrontRight) == 2);
@@ -71,7 +51,7 @@ TEST_CASE("Zone constants have correct numeric values", "[zone][REQ-ZONE-002][RE
     REQUIRE(static_cast<uint8_t>(Zone::Central)    == 5);
 }
 
-TEST_CASE("All Zone constants are distinct", "[zone][REQ-ZONE-008]") {
+TEST_CASE("All Zone constants are distinct", "[zone]") {
     const std::vector<Zone> zones{
         Zone::FrontLeft, Zone::FrontRight,
         Zone::RearLeft,  Zone::RearRight,
@@ -94,7 +74,7 @@ TEST_CASE("Priority constants have correct ordering", "[priority][REQ-PRI-001][R
 
 // ── CommandType constants ─────────────────────────────────────────────────────
 
-TEST_CASE("CommandType constants have correct numeric values", "[cmdtype][REQ-CMD-001][REQ-CMD-002][REQ-CMD-003][REQ-CMD-004][REQ-CMD-005]") {
+TEST_CASE("CommandType constants have correct numeric values", "[cmdtype]") {
     REQUIRE(static_cast<uint16_t>(CommandType::Noop)     == 0);
     REQUIRE(static_cast<uint16_t>(CommandType::Set)      == 1);
     REQUIRE(static_cast<uint16_t>(CommandType::Get)      == 2);
@@ -104,7 +84,7 @@ TEST_CASE("CommandType constants have correct numeric values", "[cmdtype][REQ-CM
     REQUIRE(static_cast<uint16_t>(CommandType::Wake)     == 6);
 }
 
-TEST_CASE("All CommandType constants are distinct", "[cmdtype][REQ-CMD-006]") {
+TEST_CASE("All CommandType constants are distinct", "[cmdtype]") {
     const std::vector<CommandType> cmds{
         CommandType::Noop, CommandType::Set, CommandType::Get,
         CommandType::Reset, CommandType::Watchdog,
@@ -118,7 +98,7 @@ TEST_CASE("All CommandType constants are distinct", "[cmdtype][REQ-CMD-006]") {
 
 // ── ResponseStatus constants ──────────────────────────────────────────────────
 
-TEST_CASE("ResponseStatus::to_string returns unique non-empty name", "[status][REQ-STATUS-001]") {
+TEST_CASE("ResponseStatus::to_string returns unique non-empty name", "[status]") {
     const std::vector<ResponseStatus> statuses{
         ResponseStatus::OK, ResponseStatus::Error,
         ResponseStatus::Timeout, ResponseStatus::Busy,
@@ -133,14 +113,14 @@ TEST_CASE("ResponseStatus::to_string returns unique non-empty name", "[status][R
     }
 }
 
-TEST_CASE("ResponseStatus constants have correct numeric values", "[status][REQ-STATUS-002][REQ-STATUS-003][REQ-STATUS-004][REQ-STATUS-005]") {
+TEST_CASE("ResponseStatus constants have correct numeric values", "[status]") {
     REQUIRE(static_cast<uint8_t>(ResponseStatus::OK)      == 0);
     REQUIRE(static_cast<uint8_t>(ResponseStatus::Error)   == 1);
     REQUIRE(static_cast<uint8_t>(ResponseStatus::Timeout) == 2);
     REQUIRE(static_cast<uint8_t>(ResponseStatus::Busy)    == 3);
 }
 
-TEST_CASE("All ResponseStatus constants are distinct", "[status][REQ-STATUS-006]") {
+TEST_CASE("All ResponseStatus constants are distinct", "[status]") {
     const std::vector<ResponseStatus> statuses{
         ResponseStatus::OK, ResponseStatus::Error,
         ResponseStatus::Timeout, ResponseStatus::Busy,

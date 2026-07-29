@@ -1,26 +1,6 @@
-// fusa:req REQ-ZONE-001
-// fusa:req REQ-ZONE-002
-// fusa:req REQ-ZONE-003
-// fusa:req REQ-ZONE-004
-// fusa:req REQ-ZONE-005
-// fusa:req REQ-ZONE-006
-// fusa:req REQ-ZONE-007
-// fusa:req REQ-ZONE-008
 // fusa:req REQ-PRI-001
 // fusa:req REQ-PRI-002
 // fusa:req REQ-PRI-003
-// fusa:req REQ-CMD-001
-// fusa:req REQ-CMD-002
-// fusa:req REQ-CMD-003
-// fusa:req REQ-CMD-004
-// fusa:req REQ-CMD-005
-// fusa:req REQ-CMD-006
-// fusa:req REQ-STATUS-001
-// fusa:req REQ-STATUS-002
-// fusa:req REQ-STATUS-003
-// fusa:req REQ-STATUS-004
-// fusa:req REQ-STATUS-005
-// fusa:req REQ-STATUS-006
 // fusa:req REQ-ERR-001
 // fusa:req REQ-ERR-002
 // fusa:req REQ-ERR-003
@@ -56,15 +36,27 @@
 // design predates cpp-RCP's alignment to the OPEN Alliance TC18 Remote
 // Control Protocol Specification v0.5.1_RC (see ROADMAP.md's Satellite
 // Package Disposition table, which marks this file REPLACE). It remains in
-// place, unmodified in behavior, purely because roughly three dozen other
-// headers under include/rcp/ still build against it, and their own rebind
-// milestones (v2.9.0 onward per the Release Plan) haven't landed yet — see
-// ROADMAP.md milestone 45 ("RC Server Lifecycle & Register-Map Model,
-// v2.1.0") for why this file could not simply be deleted at that milestone.
+// place, unmodified in behavior, purely because one remaining header under
+// include/rcp/ — rcp/config.hpp — still builds against it (its own rebind
+// is a separate, still-open item per milestone 60's closeout); every other
+// former dependent has been rebound at its own milestone through v2.16.0.
 // The new stream/endpoint/register-map model that supersedes the types
 // below lives in rcp/avtp.hpp/rcp/acf.hpp (v2.0.0), rcp/lifecycle.hpp, and
 // rcp/regmap.hpp (both v2.1.0); do not build new functionality on top of
 // Zone/Command/Controller/Registry going forward.
+//
+// Certification Refresh notice (ROADMAP.md milestone 62, v2.18.0): the
+// REQ-ZONE-*/REQ-CMD-*/REQ-STATUS-* requirement groups that used to trace
+// to the Zone enum, CommandType enum, and Status struct/StatusChannel
+// below are retired from .fusa-reqs.json as of this milestone — this file
+// having no TC18 analog was already recorded at REPLACE above, so carrying
+// certified requirement coverage for it any further would misrepresent
+// this as safety-relevant surface going forward. The Priority enum
+// (REQ-PRI-*), sentinel error codes (REQ-ERR-*), and the Command/Response
+// struct shapes and ResponseStatus enum (REQ-CMDSTRUCT-*/REQ-RESP-*/
+// REQ-STAT-*) keep their existing requirement coverage unchanged, since
+// milestone 62's own scope names only the Zone/CommandType/Status trio for
+// retirement.
 #pragma once
 
 #include <relay/relay.hpp>
