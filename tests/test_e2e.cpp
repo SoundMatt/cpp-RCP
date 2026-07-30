@@ -77,19 +77,19 @@ TEST_CASE("coverage_buffer zero-fills avtp_timestamp under NTSCF (nullopt)", "[e
     info.byte_bus_id = 5;
     std::vector<uint8_t> payload{0xAA, 0xBB};
 
-    auto with_zero    = coverage_buffer(sid, uint32_t{0}, info, payload);
-    auto with_nullopt = coverage_buffer(sid, std::nullopt, info, payload);
+    auto with_zero    = coverage_buffer(sid, uint32_t{0}, info, std::nullopt, payload);
+    auto with_nullopt = coverage_buffer(sid, std::nullopt, info, std::nullopt, payload);
     REQUIRE(with_zero == with_nullopt);
 }
 
-TEST_CASE("coverage_buffer layout is stream_id + avtp_timestamp + ACF header + payload",
+TEST_CASE("coverage_buffer layout is stream_id + avtp_timestamp + ACF header + payload for ACF_ABB",
           "[e2e][REQ-E2E-002]") {
     auto sid = make_stream_id(0x02, 0x0001);
-    AcfMessageInfo info;
+    AcfMessageInfo info; // acf_msg_type defaults to kAcfMsgTypeAbb
     info.byte_bus_id = 7;
     std::vector<uint8_t> payload{1, 2, 3};
 
-    auto buf = coverage_buffer(sid, uint32_t{0xDEADBEEF}, info, payload);
+    auto buf = coverage_buffer(sid, uint32_t{0xDEADBEEF}, info, std::nullopt, payload);
     REQUIRE(buf.size() == 8 + 4 + rcp::acf::kAcfCommonHeaderLen + payload.size());
 
     // stream_id occupies the first 8 bytes, big-endian.
@@ -104,22 +104,67 @@ TEST_CASE("coverage_buffer layout is stream_id + avtp_timestamp + ACF header + p
     REQUIRE(buf[buf.size() - 1] == 3);
 }
 
+// cpp-RCP-N2-03: for ACF_GBB, the wire carries an 8-byte message_timestamp
+// between the Message Info header and the payload (see rcp/acf.hpp's
+// encode_acf_gbb) — coverage_buffer must include those exact 8 bytes at
+// that exact offset, not omit them.
+TEST_CASE("coverage_buffer inserts the 8-byte message_timestamp between the ACF header and "
+          "payload for ACF_GBB",
+          "[e2e][REQ-E2E-002]") {
+    auto sid = make_stream_id(0x02, 0x0003);
+    AcfMessageInfo info;
+    info.acf_msg_type = rcp::acf::kAcfMsgTypeGbb;
+    info.byte_bus_id   = 9;
+    info.mtv            = true;
+    std::vector<uint8_t> payload{0x11, 0x22};
+    const uint64_t ts = 0x0102030405060708ULL;
+
+    auto buf = coverage_buffer(sid, uint32_t{0}, info, ts, payload);
+    REQUIRE(buf.size() == 8 + 4 + rcp::acf::kAcfCommonHeaderLen + rcp::acf::kAcfGbbTimestampLen +
+                              payload.size());
+
+    // The 8 message_timestamp bytes sit right after stream_id(8) +
+    // avtp_timestamp(4) + Message Info(8) = offset 20, big-endian.
+    const size_t ts_off = 8 + 4 + rcp::acf::kAcfCommonHeaderLen;
+    REQUIRE(buf[ts_off + 0] == 0x01);
+    REQUIRE(buf[ts_off + 7] == 0x08);
+    // Payload follows immediately after the timestamp, unchanged.
+    REQUIRE(buf[ts_off + 8]     == 0x11);
+    REQUIRE(buf[ts_off + 8 + 1] == 0x22);
+
+    // An ACF_ABB message with the same nominal message_timestamp argument
+    // must NOT grow by those 8 bytes — the type gates inclusion, not merely
+    // whether the caller happens to pass a value.
+    AcfMessageInfo abb_info;
+    abb_info.byte_bus_id = 9;
+    auto abb_buf = coverage_buffer(sid, uint32_t{0}, abb_info, ts, payload);
+    REQUIRE(abb_buf.size() == 8 + 4 + rcp::acf::kAcfCommonHeaderLen + payload.size());
+}
+
 TEST_CASE("compute_crc changes when covered fields change", "[e2e][REQ-E2E-002]") {
     auto sid = make_stream_id(0x02, 0x0001);
     AcfMessageInfo info;
     info.byte_bus_id = 1;
     std::vector<uint8_t> payload{9, 9, 9};
 
-    uint32_t base = compute_crc(sid, std::nullopt, info, payload);
+    uint32_t base = compute_crc(sid, std::nullopt, info, std::nullopt, payload);
 
     AcfMessageInfo different_info = info;
     different_info.byte_bus_id     = 2;
-    REQUIRE(compute_crc(sid, std::nullopt, different_info, payload) != base);
+    REQUIRE(compute_crc(sid, std::nullopt, different_info, std::nullopt, payload) != base);
 
     std::vector<uint8_t> different_payload{9, 9, 8};
-    REQUIRE(compute_crc(sid, std::nullopt, info, different_payload) != base);
+    REQUIRE(compute_crc(sid, std::nullopt, info, std::nullopt, different_payload) != base);
 
-    REQUIRE(compute_crc(sid, uint32_t{1}, info, payload) != base);
+    REQUIRE(compute_crc(sid, uint32_t{1}, info, std::nullopt, payload) != base);
+
+    // A GBB message's CRC must also be sensitive to message_timestamp itself
+    // (cpp-RCP-N2-03) — this would have been silently ignored before the fix.
+    AcfMessageInfo gbb_info = info;
+    gbb_info.acf_msg_type    = rcp::acf::kAcfMsgTypeGbb;
+    uint32_t gbb_base = compute_crc(sid, std::nullopt, gbb_info, uint64_t{1}, payload);
+    REQUIRE(compute_crc(sid, std::nullopt, gbb_info, uint64_t{2}, payload) != gbb_base);
+    REQUIRE(compute_crc(sid, std::nullopt, gbb_info, std::nullopt, payload) != gbb_base);
 }
 
 TEST_CASE("apply_acf_length_adjustment adds exactly one quadlet", "[e2e][REQ-E2E-003]") {
@@ -153,10 +198,39 @@ TEST_CASE("verify_crc accepts a matching CRC and rejects a corrupted one", "[e2e
     info.byte_bus_id = 3;
     std::vector<uint8_t> payload{1, 2, 3, 4};
 
-    uint32_t crc = compute_crc(sid, std::nullopt, info, payload);
-    REQUIRE_FALSE(verify_crc(sid, std::nullopt, info, payload, crc));
-    REQUIRE(verify_crc(sid, std::nullopt, info, payload, crc ^ 0xFFFFFFFFu) ==
+    uint32_t crc = compute_crc(sid, std::nullopt, info, std::nullopt, payload);
+    REQUIRE_FALSE(verify_crc(sid, std::nullopt, info, std::nullopt, payload, crc));
+    REQUIRE(verify_crc(sid, std::nullopt, info, std::nullopt, payload, crc ^ 0xFFFFFFFFu) ==
             make_error_code(E2eErrc::crc_error));
+}
+
+TEST_CASE("verify_crc for ACF_GBB fails if the message_timestamp used to verify differs from "
+          "the one used to compute",
+          "[e2e][REQ-E2E-004]") {
+    auto sid = make_stream_id(0x02, 0x0005);
+    AcfMessageInfo info;
+    info.acf_msg_type = rcp::acf::kAcfMsgTypeGbb;
+    info.byte_bus_id   = 4;
+    std::vector<uint8_t> payload{5, 6, 7};
+
+    uint32_t crc = compute_crc(sid, std::nullopt, info, uint64_t{42}, payload);
+    REQUIRE_FALSE(verify_crc(sid, std::nullopt, info, uint64_t{42}, payload, crc));
+    REQUIRE(verify_crc(sid, std::nullopt, info, uint64_t{43}, payload, crc) ==
+            make_error_code(E2eErrc::crc_error));
+}
+
+// ── Numeric TC18 wire error code (cpp-RCP-08) ─────────────────────────────────
+
+TEST_CASE("wire_error_code maps crc_error to TC18's numeric POCI_FAILURE (12)",
+          "[e2e][REQ-E2E-004]") {
+    auto code = wire_error_code(E2eErrc::crc_error);
+    REQUIRE(code.has_value());
+    REQUIRE(*code == 12);
+    REQUIRE(*code == kPociFailureErrorCode);
+
+    // sequence_violation has no TC18 Table 27 entry of its own — this
+    // module reports "no mapping" rather than guessing one.
+    REQUIRE_FALSE(wire_error_code(E2eErrc::sequence_violation).has_value());
 }
 
 TEST_CASE("append_crc appends exactly 4 big-endian octets", "[e2e][REQ-E2E-004]") {

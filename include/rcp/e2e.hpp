@@ -42,16 +42,22 @@
 //
 // Field names and behavior below implement TC18's *behavior* as described
 // in an internal structured extraction of the specification named above;
-// no text from that document is reproduced here. The concrete CRC
-// bit-packing, byte layout of the coverage buffer, and watchdog/safe-state
-// class shapes chosen in this file are this implementation's own encoding
-// of that behavior — full bit-for-bit conformance against other TC18
-// implementations is not claimed, same as the equivalent disclaimers in
-// rcp/avtp.hpp, rcp/acf.hpp, rcp/regmap.hpp, and rcp/request.hpp. This
-// header provides primitives, not a running scheduler or timer thread —
-// deciding *when* to call overflowed()/kick()/should_emit_info_notification()
-// is left to the embedding application, same as every other header in this
-// codebase.
+// no text from that document is reproduced here. The CRC32 algorithm itself
+// (polynomial, init/refin/refout/xorout) was already independently
+// verifiable and unchanged by this note. The coverage buffer's *byte
+// layout* was corrected alongside rcp/acf.hpp's/rcp/avtp.hpp's own wire
+// conformance pass (v2.19.0, issue cpp-RCP-N2-03): it now inserts an
+// ACF_GBB message's 8-byte message_timestamp between the Message Info
+// header and the payload — matching what rcp/acf.hpp's encode_acf_gbb
+// actually transmits — where it previously omitted that field from
+// coverage entirely. See rcp/acf.hpp's and rcp/avtp.hpp's own header
+// comments, and this repository's pull request description, for the
+// specification derivation and its honestly-stated confidence level; this
+// file's coverage_buffer is a direct, mechanical consequence of that
+// derivation rather than a second independent one. This header provides
+// primitives, not a running scheduler or timer thread — deciding *when* to
+// call overflowed()/kick()/should_emit_info_notification() is left to the
+// embedding application, same as every other header in this codebase.
 #pragma once
 
 #include <rcp/acf.hpp>
@@ -93,6 +99,29 @@ inline const std::error_category& e2e_category() noexcept {
 
 inline std::error_code make_error_code(E2eErrc e) noexcept {
     return {static_cast<int>(e), e2e_category()};
+}
+
+// ── Numeric TC18 wire error code (extraction Table 27; issue cpp-RCP-08) ─────
+// The E2eErrc enum's own ordinal values (1, 2, ...) are this codec's
+// internal std::error_code values — unrelated to, and not meant to collide
+// with, the numeric error codes TC18 actually puts in an error response's
+// byte_msg_payload (extraction Table 27, "Error codes in responses"; no
+// other error enum in this codebase currently exposes that numeric-code
+// mapping either, so there is no existing convention here to match beyond
+// keeping the C++ enum's own ordinal untouched). Of E2eErrc's two values,
+// only crc_error has a direct TC18 wire error code: POCI_FAILURE (12),
+// "CRC of request does not match". sequence_violation has no dedicated TC18
+// error code of its own in that table, so wire_error_code() reports
+// std::nullopt for it rather than guessing a mapping the specification
+// does not state.
+
+constexpr int kPociFailureErrorCode = 12; // TC18 POCI_FAILURE — CRC of request does not match
+
+inline std::optional<int> wire_error_code(E2eErrc e) noexcept {
+    switch (e) {
+    case E2eErrc::crc_error: return kPociFailureErrorCode;
+    default:                 return std::nullopt;
+    }
 }
 
 // ── CRC32 primitive (extraction §4.7) ────────────────────────────────────────
@@ -153,11 +182,20 @@ inline uint32_t crc32(const std::vector<uint8_t>& data) noexcept {
 // ── CRC coverage & the trailing-CRC length pre-adjustment (extraction §4.7) ──
 // Coverage is exactly: stream_id + avtp_timestamp (zero-filled when the
 // frame rides under an NTSCF header, since NTSCF carries no avtp_timestamp
-// field to begin with) + the full ACF shared header + payload. Because the
-// CRC is computed *over* the ACF header, and the header's own
-// acf_msg_length field must already reflect the trailer's length before
-// that header is serialized, the length adjustment has to be applied
-// first, not patched in after the fact.
+// field to begin with) + the complete ACF header + the complete payload.
+// "Complete ACF header" (issue cpp-RCP-N2-03, fixed alongside cpp-RCP-04):
+// for ACF_GBB this means the 8-byte Message Info *and* the 8-byte
+// message_timestamp field that immediately follows it on the wire — the
+// same message_timestamp encode_acf_gbb (rcp/acf.hpp) places right after
+// the Message Info — not the Message Info alone. ACF_ABB has no
+// message_timestamp field at all, so its coverage is the Message Info only,
+// same as before. Before this fix, coverage_buffer had no way to include
+// message_timestamp at all, so a GBB message's CRC silently omitted 8 real
+// wire bytes and folded the payload in 8 bytes early relative to what
+// encode_acf_gbb actually transmits. Because the CRC is computed *over* the
+// ACF header, and the header's own acf_msg_length field must already
+// reflect the trailer's length before that header is serialized, the
+// length adjustment has to be applied first, not patched in after the fact.
 
 constexpr uint16_t kCrcLengthAdjustQuadlets = 1; // +1 quadlet on AcfMessageInfo::acf_msg_length
 constexpr uint16_t kCrcLengthAdjustOctets   = 4; // +4 octets on an outer AVTPDU frame-length field
@@ -198,16 +236,26 @@ inline void put_u64_be(std::vector<uint8_t>& buf, uint64_t v) {
 // rides under an NTSCF header — coverage_buffer supplies the documented
 // zero-filled stand-in in that case rather than requiring the caller to
 // pass an explicit zero (making the NTSCF case a visible, named choice at
-// every call site instead of an easy-to-miss "just pass 0"). `info` must
-// already have apply_acf_length_adjustment() applied if the caller wants
-// the trailer's length reflected in the coverage — this function only
-// serializes whatever AcfMessageInfo it is given.
+// every call site instead of an easy-to-miss "just pass 0"). `message_timestamp`
+// is std::nullopt for ACF_ABB (which has no such field) and the actual
+// 64-bit value passed to encode_acf_gbb for ACF_GBB — coverage_buffer only
+// inserts it into the buffer when `info.acf_msg_type == acf::kAcfMsgTypeGbb`,
+// regardless of what the caller passes for a non-GBB `info`, so a caller
+// cannot accidentally cover 8 bytes of timestamp for an ACF_ABB message.
+// `info` must already have apply_acf_length_adjustment() applied if the
+// caller wants the trailer's length reflected in the coverage — this
+// function only serializes whatever AcfMessageInfo (and message_timestamp)
+// it is given.
 inline std::vector<uint8_t> coverage_buffer(const avtp::StreamId& stream_id,
                                              std::optional<uint32_t> avtp_timestamp,
                                              const acf::AcfMessageInfo& info,
+                                             std::optional<uint64_t> message_timestamp,
                                              const std::vector<uint8_t>& payload) {
+    const bool is_gbb = (info.acf_msg_type == acf::kAcfMsgTypeGbb);
+
     std::vector<uint8_t> buf;
-    buf.reserve(8 + 4 + acf::kAcfCommonHeaderLen + payload.size());
+    buf.reserve(8 + 4 + acf::kAcfCommonHeaderLen +
+                (is_gbb ? acf::kAcfGbbTimestampLen : 0) + payload.size());
 
     detail::put_u64_be(buf, stream_id.to_u64());
     detail::put_u32_be(buf, avtp_timestamp.value_or(0)); // zero-filled stand-in under NTSCF
@@ -216,6 +264,10 @@ inline std::vector<uint8_t> coverage_buffer(const avtp::StreamId& stream_id,
     acf::encode_acf_message_info(info, hdr);
     buf.insert(buf.end(), hdr, hdr + acf::kAcfCommonHeaderLen);
 
+    if (is_gbb) {
+        detail::put_u64_be(buf, message_timestamp.value_or(0));
+    }
+
     buf.insert(buf.end(), payload.begin(), payload.end());
     return buf;
 }
@@ -223,8 +275,9 @@ inline std::vector<uint8_t> coverage_buffer(const avtp::StreamId& stream_id,
 // compute_crc is coverage_buffer() + crc32() in one call — the usual way a
 // caller actually wants this used.
 inline uint32_t compute_crc(const avtp::StreamId& stream_id, std::optional<uint32_t> avtp_timestamp,
-                             const acf::AcfMessageInfo& info, const std::vector<uint8_t>& payload) {
-    return crc32(coverage_buffer(stream_id, avtp_timestamp, info, payload));
+                             const acf::AcfMessageInfo& info, std::optional<uint64_t> message_timestamp,
+                             const std::vector<uint8_t>& payload) {
+    return crc32(coverage_buffer(stream_id, avtp_timestamp, info, message_timestamp, payload));
 }
 
 // append_crc appends the 4-octet big-endian CRC trailer to `frame` — the
@@ -237,14 +290,16 @@ inline void append_crc(std::vector<uint8_t>& frame, uint32_t crc) {
     frame.push_back(static_cast<uint8_t>(crc & 0xFF));
 }
 
-// verify_crc recomputes the CRC over stream_id/avtp_timestamp/info/payload
-// and compares it against `received_crc` (as decoded from a frame's
-// trailing 4 octets). Returns E2eErrc::crc_error — the CRC_ERROR failure
-// path — on mismatch.
+// verify_crc recomputes the CRC over
+// stream_id/avtp_timestamp/info/message_timestamp/payload and compares it
+// against `received_crc` (as decoded from a frame's trailing 4 octets).
+// Returns E2eErrc::crc_error — the CRC_ERROR failure path, whose numeric
+// TC18 wire error code is e2e::kPociFailureErrorCode /
+// e2e::wire_error_code() above — on mismatch.
 inline std::error_code verify_crc(const avtp::StreamId& stream_id, std::optional<uint32_t> avtp_timestamp,
-                                   const acf::AcfMessageInfo& info, const std::vector<uint8_t>& payload,
-                                   uint32_t received_crc) {
-    if (compute_crc(stream_id, avtp_timestamp, info, payload) != received_crc)
+                                   const acf::AcfMessageInfo& info, std::optional<uint64_t> message_timestamp,
+                                   const std::vector<uint8_t>& payload, uint32_t received_crc) {
+    if (compute_crc(stream_id, avtp_timestamp, info, message_timestamp, payload) != received_crc)
         return make_error_code(E2eErrc::crc_error);
     return {};
 }

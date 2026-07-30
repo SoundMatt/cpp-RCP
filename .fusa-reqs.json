@@ -2433,6 +2433,14 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-WIRE-015",
+      "title": "RELAY spec §15.5 canonical ControlFlags/Message conversion",
+      "text": "rcp::acf::ControlFlags shall define FlagAck/FlagRead/FlagWrite/FlagResponse/FlagError/FlagMoreSegments at bit values 0x80/0x40/0x20/0x10/0x08/0x04 respectively, matching RELAY spec §15.5's Go definition exactly; rcp::acf::to_message/from_message shall convert between AcfMessageInfo and the RELAY spec §15.5 canonical Message shape, preserving byte_bus_id, transaction_num, read_size_or_segment, and body, and carrying message_timestamp only for the ACF_GBB encoding.",
+      "standard": "relay",
+      "level": "QM",
+      "asil": "QM"
+    },
+    {
       "id": "REQ-LIFECYCLE-001",
       "title": "ServerState byte encoding",
       "text": "rcp::lifecycle::ServerState shall encode HwUnconfigured as 0x00, HwConfigured as 0x55, and RcpConfigured as 0xAA, and a freshly constructed ServerLifecycle shall report HwUnconfigured as its initial state.",

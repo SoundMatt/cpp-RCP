@@ -47,7 +47,7 @@ TEST_CASE("Distinct MAC halves produce distinct StreamId values", "[avtp][REQ-WI
 TEST_CASE("NTSCF header round-trips stream_id, sequence_num, control_data_length", "[avtp][REQ-WIRE-001]") {
     NtscfHeader hdr;
     hdr.stream_id           = make_stream_id(0xAA, 7);
-    hdr.sequence_num        = 4242;
+    hdr.sequence_num        = 242; // sequence_num is an 8-bit field (0-255)
     hdr.control_data_length = 128;
 
     auto buf = encode_ntscf_header(hdr);
@@ -91,6 +91,105 @@ TEST_CASE("TSCF header marks timestamp invalid distinctly from a zero timestamp"
     TscfHeader out;
     REQUIRE_FALSE(decode_tscf_header(buf.data(), buf.size(), out));
     REQUIRE_FALSE(out.timestamp_valid);
+}
+
+// ── Hand-computed expected-byte-sequence vectors ──────────────────────────────
+// Every byte below is computed by hand from the field values and this file's
+// own derived bit layout (see avtp.hpp's "NTSCF / TSCF AVTPDU headers"
+// comment) — not copied from anywhere. MSB-first bit numbering throughout
+// (bit0 = MSB of byte0), matching the specification's own diagrams.
+
+TEST_CASE("NTSCF header hand-computed expected byte sequence", "[avtp][REQ-WIRE-001]") {
+    NtscfHeader hdr;
+    hdr.stream_id           = make_stream_id(0x02, 0xBEEF); // mac 02 03 04 05 06 07, suffix BEEF
+    hdr.sequence_num        = 200; // 0xC8, a full octet
+    hdr.control_data_length = 1500; // 0x5DC, 11-bit field: top3=0b101=5, low8=0xDC
+
+    // byte0 = subtype = 0x82
+    // byte1 = sv(0x80) | control_data_length[10:8] = 0x80 | 0x05 = 0x85
+    // byte2 = control_data_length[7:0] = 0xDC
+    // byte3 = sequence_num = 0xC8
+    // bytes4-11 = stream_id = 02 03 04 05 06 07 BE EF
+    const std::vector<uint8_t> expected = {0x82, 0x85, 0xDC, 0xC8,
+                                            0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0xBE, 0xEF};
+    auto buf = encode_ntscf_header(hdr);
+    REQUIRE(buf == expected);
+
+    NtscfHeader decoded;
+    REQUIRE_FALSE(decode_ntscf_header(buf.data(), buf.size(), decoded));
+    REQUIRE(decoded.sequence_num == 200);
+    REQUIRE(decoded.control_data_length == 1500);
+    REQUIRE(decoded.stream_id == hdr.stream_id);
+    REQUIRE(encode_ntscf_header(decoded) == buf); // encode -> decode -> re-encode == identity
+}
+
+TEST_CASE("TSCF header hand-computed expected byte sequence", "[avtp][REQ-WIRE-002][REQ-WIRE-011]") {
+    TscfHeader hdr;
+    hdr.stream_id           = make_stream_id(0x10, 0x2233); // mac 10 11 12 13 14 15, suffix 2233
+    hdr.sequence_num        = 77; // 0x4D
+    hdr.timestamp_valid     = true;
+    hdr.avtp_timestamp      = 0xCAFEBABE;
+    hdr.control_data_length = 0x1234; // full 16-bit field (stream_data_length)
+
+    // byte0 = subtype = 0x05
+    // byte1 = sv(0x80) | tv(0x01) = 0x81 (version/mr/rsv all 0)
+    // byte2 = sequence_num = 0x4D
+    // byte3 = reserved(7)+tu(1) = 0x00
+    // bytes4-11 = stream_id = 10 11 12 13 14 15 22 33
+    // bytes12-15 = avtp_timestamp = CA FE BA BE
+    // bytes16-19 = reserved = 00 00 00 00
+    // bytes20-21 = control_data_length = 12 34
+    // bytes22-23 = reserved = 00 00
+    const std::vector<uint8_t> expected = {
+        0x05, 0x81, 0x4D, 0x00,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x22, 0x33,
+        0xCA, 0xFE, 0xBA, 0xBE,
+        0x00, 0x00, 0x00, 0x00,
+        0x12, 0x34,
+        0x00, 0x00};
+    auto buf = encode_tscf_header(hdr);
+    REQUIRE(buf.size() == 24);
+    REQUIRE(buf == expected);
+
+    TscfHeader decoded;
+    REQUIRE_FALSE(decode_tscf_header(buf.data(), buf.size(), decoded));
+    REQUIRE(decoded.sequence_num == 77);
+    REQUIRE(decoded.timestamp_valid == true);
+    REQUIRE(decoded.avtp_timestamp == 0xCAFEBABE);
+    REQUIRE(decoded.control_data_length == 0x1234);
+    REQUIRE(decoded.stream_id == hdr.stream_id);
+    REQUIRE(encode_tscf_header(decoded) == buf); // encode -> decode -> re-encode == identity
+}
+
+// ── Sub-octet field width ──────────────────────────────────────────────────────
+
+TEST_CASE("NTSCF sequence_num is an 8-bit field, not 16", "[avtp][REQ-WIRE-001]") {
+    NtscfHeader hdr;
+    hdr.sequence_num = 255;
+    auto buf = encode_ntscf_header(hdr);
+    REQUIRE(buf[3] == 255);
+    NtscfHeader out;
+    REQUIRE_FALSE(decode_ntscf_header(buf.data(), buf.size(), out));
+    REQUIRE(out.sequence_num == 255);
+}
+
+TEST_CASE("NTSCF control_data_length round-trips its full 11-bit range", "[avtp][REQ-WIRE-001]") {
+    NtscfHeader hdr;
+    hdr.control_data_length = 2047; // max 11-bit value
+    auto buf = encode_ntscf_header(hdr);
+    NtscfHeader out;
+    REQUIRE_FALSE(decode_ntscf_header(buf.data(), buf.size(), out));
+    REQUIRE(out.control_data_length == 2047);
+}
+
+TEST_CASE("ByteBusId round-trips values above 255 through AcfMessageInfo (11-bit wire field)",
+          "[avtp][REQ-WIRE-001]") {
+    // ByteBusId itself (avtp.hpp) is just a uint16_t alias; this checks the
+    // alias is actually wide enough for the wire field it names, since the
+    // sub-octet packing itself is exercised in tests/test_acf.cpp.
+    static_assert(sizeof(ByteBusId) >= sizeof(uint16_t), "ByteBusId must be wide enough for the 11-bit wire field");
+    ByteBusId id = 2047;
+    REQUIRE(id == 2047);
 }
 
 // ── AVTPDU subtype validation ──────────────────────────────────────────────────

@@ -289,7 +289,11 @@ TEST_CASE("Client::request correlates concurrent requests by byte_bus_id/transac
                            const std::vector<uint8_t>&,
                            acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload) {
         out_resp         = acf::make_response(req, acf::ResponseKind::ReadResponse);
-        out_resp_payload = {req.byte_bus_id, req.transaction_num};
+        // avtp::ByteBusId widened to uint16_t (rcp/avtp.hpp v2.19.0 wire
+        // conformance pass, issue cpp-RCP-04, since byte_bus_id is an
+        // 11-bit wire field) — narrow explicitly for this single-byte test
+        // payload rather than relying on an implicit narrowing conversion.
+        out_resp_payload = {static_cast<uint8_t>(req.byte_bus_id), req.transaction_num};
         return std::error_code{};
     });
 

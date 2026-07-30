@@ -161,7 +161,12 @@ inline std::error_code decode_frame(const uint8_t* b, size_t len, Frame& out) {
     }
 
     if (len < acf_off + 1) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
-    if (b[acf_off] == acf::kAcfMsgTypeGbb) {
+    // acf_msg_type is a 7-bit field, not a whole octet (rcp/acf.hpp v2.19.0
+    // wire conformance pass, issue cpp-RCP-04) — go through
+    // acf::peek_acf_msg_type() rather than comparing b[acf_off] directly,
+    // which would almost never match kAcfMsgTypeGbb now that byte0's LSB is
+    // acf_msg_length's MSB.
+    if (acf::peek_acf_msg_type(b + acf_off) == acf::kAcfMsgTypeGbb) {
         return acf::decode_acf_gbb(b + acf_off, len - acf_off, out.info,
                                     out.message_timestamp, out.payload);
     }

@@ -38,11 +38,19 @@
 //
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
-// text from that document is reproduced here. The concrete bit-packing
-// chosen in this file is this implementation's own encoding of that
-// behavior for milestone 44; full bit-for-bit wire conformance against
-// other TC18 implementations is not claimed until v2.6.0 lands, per the
-// Phase 13 introduction in ROADMAP.md.
+// text from that document is reproduced here. Wire conformance note (v2.19.0,
+// issue cpp-RCP-04): the NTSCF/TSCF bit-packing below was re-derived field by
+// field from the specification's own header diagrams (bit-position figures,
+// not prose) and cross-checked against a second, independent worked example
+// elsewhere in the specification that plugs concrete field values into the
+// same header shape. Both derivations agree, which is the strongest
+// consistency check available without a second, independent TC18
+// implementation to interoperate against directly — see this repository's
+// pull request description for the full derivation and its honestly-stated
+// confidence level. The one part of this file *not* re-derived from a figure
+// is byte order/endianness of multi-byte integer fields (big-endian
+// throughout), which was already big-endian before this pass and is kept
+// unchanged.
 #pragma once
 
 #include <array>
@@ -173,8 +181,14 @@ inline bool operator!=(const StreamId& a, const StreamId& b) noexcept { return !
 // enforces the echo half of that rule structurally: see its make_response(),
 // which always copies byte_bus_id (and transaction_num) from the request it
 // is built from rather than accepting them as free parameters.
+//
+// Width: on the wire (rcp/acf.hpp's ACF Message Info header) byte_bus_id is
+// an 11-bit field (0–2047), not a full octet — a detail only visible in the
+// specification's bit-position diagram for that header, not in prose. This
+// alias is uint16_t, wide enough for that full range; rcp/acf.hpp's encoder
+// masks to 11 bits, matching every other sub-octet field in that header.
 
-using ByteBusId = uint8_t;
+using ByteBusId = uint16_t;
 
 // ── NTSCF / TSCF AVTPDU headers ───────────────────────────────────────────────
 //
@@ -187,35 +201,78 @@ using ByteBusId = uint8_t;
 // exposes the two header shapes distinctly enough that misusing one for the
 // other's direction is a visible, deliberate choice rather than an accident.
 
+// Bit layouts below (extraction §2.2's figures — the specification's actual
+// header diagrams, each with a per-bit ruler, not the prose) diverge from
+// generic IEEE 1722 subtype-header assumptions in field widths, so every
+// width here was counted from those diagrams rather than assumed:
+//
+// NTSCF, 12 bytes total:
+//   byte0            subtype (0x82)
+//   byte1 bit7       sv (stream_valid — always written 1 here)
+//   byte1 bits6:4    version (always 0)
+//   byte1 bit3       r (reserved, always 0; not surfaced as a field)
+//   byte1 bits2:0 +
+//   byte2            ntscf_data_length — 11 bits total (byte1's low 3 bits
+//                    are its MSBs, byte2 is its low 8 bits): byte length of
+//                    the ACF message that follows, same quantity
+//                    NtscfHeader::control_data_length already held, just
+//                    narrower than a full octet pair on the wire
+//   byte3            sequence_num — 8 bits (not 16 — a per-stream_id
+//                    rolling counter that wraps at 256)
+//   bytes4-11        stream_id, 64 bits
+//
+// TSCF, 24 bytes total — noticeably longer than the 18 bytes this codec
+// used before this pass, because the real header carries a 32-bit reserved
+// word (bytes16-19) and a 16-bit reserved half (bytes22-23 — the other half
+// of the 32-bit word carrying stream_data_length) that this codec
+// previously omitted entirely:
+//   byte0            subtype (0x05)
+//   byte1 bit7       sv (always 1)
+//   byte1 bits6:4    version (always 0)
+//   byte1 bit3       mr (reserved here, always 0; not surfaced)
+//   byte1 bits2:1    rsv (always 0)
+//   byte1 bit0       tv (timestamp_valid)
+//   byte2            sequence_num — 8 bits, same rolling-counter field as
+//                    NTSCF's
+//   byte3            reserved (7 bits) + tu (1 bit) — always 0; not
+//                    surfaced (no RCP-specific behavior found for either)
+//   bytes4-11        stream_id, 64 bits
+//   bytes12-15       avtp_timestamp, 32 bits
+//   bytes16-19       reserved, always 0
+//   bytes20-21       stream_data_length(octets) — 16 bits; this is
+//                    TscfHeader::control_data_length's wire position
+//   bytes22-23       reserved, always 0
 struct NtscfHeader {
     StreamId stream_id{};
-    uint16_t sequence_num        = 0; // per-stream_id AVTPDU counter
-    uint16_t control_data_length = 0; // byte length of the ACF message that follows
+    uint8_t  sequence_num        = 0; // per-stream_id AVTPDU counter, 8-bit rolling
+    uint16_t control_data_length = 0; // byte length of the ACF message that follows; wire field is 11 bits (0–2047)
 };
 
 struct TscfHeader {
     StreamId stream_id{};
-    uint16_t sequence_num        = 0;
-    uint16_t control_data_length = 0;
+    uint8_t  sequence_num        = 0; // per-stream_id AVTPDU counter, 8-bit rolling
+    uint16_t control_data_length = 0; // byte length of the ACF message that follows; wire field is a full 16 bits
     bool     timestamp_valid     = false; // "tv" — whether avtp_timestamp below is meaningful
     uint32_t avtp_timestamp      = 0;     // 32-bit; TSCF-only (extraction §2.6)
 };
 
-constexpr size_t kNtscfHeaderLen = 14; // 1 subtype + 1 flags + 2 seq + 8 stream_id + 2 cdl
-constexpr size_t kTscfHeaderLen  = 18; // kNtscfHeaderLen + 4 avtp_timestamp
+constexpr size_t kNtscfHeaderLen = 12; // 1 subtype + 1 flags/length-hi + 1 length-lo + 1 seq + 8 stream_id
+constexpr size_t kTscfHeaderLen  = 24; // kNtscfHeaderLen + 4 avtp_timestamp + 4 reserved + 2 stream_data_length + 2 reserved
 
 namespace detail {
-constexpr uint8_t kFlagStreamValid = 0x80; // "sv" — always set for these control formats
-constexpr uint8_t kFlagTimestampValid = 0x40; // "tv" — TSCF only
+constexpr uint8_t  kFlagStreamValid      = 0x80; // "sv" — always set for these control formats, byte1 bit7 in both headers
+constexpr uint8_t  kFlagTimestampValid   = 0x01; // "tv" — TSCF only, byte1 bit0 (NOT bit6 — see header comment above)
+constexpr uint16_t kNtscfDataLengthMask  = 0x07FF; // ntscf_data_length is 11 bits wide
 } // namespace detail
 
 inline std::vector<uint8_t> encode_ntscf_header(const NtscfHeader& h) {
     std::vector<uint8_t> buf(kNtscfHeaderLen, 0);
+    const uint16_t data_len = static_cast<uint16_t>(h.control_data_length & detail::kNtscfDataLengthMask);
     buf[0] = kSubtypeNtscf;
-    buf[1] = detail::kFlagStreamValid;
-    detail::put_u16(&buf[2], h.sequence_num);
+    buf[1] = static_cast<uint8_t>(detail::kFlagStreamValid | ((data_len >> 8) & 0x07));
+    buf[2] = static_cast<uint8_t>(data_len & 0xFF);
+    buf[3] = h.sequence_num;
     detail::put_u64(&buf[4], h.stream_id.to_u64());
-    detail::put_u16(&buf[12], h.control_data_length);
     return buf;
 }
 
@@ -223,9 +280,9 @@ inline std::error_code decode_ntscf_header(const uint8_t* b, size_t len, NtscfHe
     if (len < 1) return make_error_code(AvtpErrc::short_buffer);
     if (b[0] != kSubtypeNtscf) return make_error_code(AvtpErrc::bad_subtype);
     if (len < kNtscfHeaderLen) return make_error_code(AvtpErrc::short_buffer);
-    out.sequence_num        = detail::get_u16(&b[2]);
+    out.control_data_length = static_cast<uint16_t>(((b[1] & 0x07) << 8) | b[2]);
+    out.sequence_num        = b[3];
     out.stream_id           = StreamId::from_u64(detail::get_u64(&b[4]));
-    out.control_data_length = detail::get_u16(&b[12]);
     return {};
 }
 
@@ -234,10 +291,13 @@ inline std::vector<uint8_t> encode_tscf_header(const TscfHeader& h) {
     buf[0] = kSubtypeTscf;
     buf[1] = static_cast<uint8_t>(detail::kFlagStreamValid |
                                   (h.timestamp_valid ? detail::kFlagTimestampValid : 0));
-    detail::put_u16(&buf[2], h.sequence_num);
+    buf[2] = h.sequence_num;
+    // buf[3] (reserved + tu) stays 0.
     detail::put_u64(&buf[4], h.stream_id.to_u64());
-    detail::put_u16(&buf[12], h.control_data_length);
-    detail::put_u32(&buf[14], h.avtp_timestamp);
+    detail::put_u32(&buf[12], h.avtp_timestamp);
+    // buf[16..19] (reserved) stays 0.
+    detail::put_u16(&buf[20], h.control_data_length);
+    // buf[22..23] (reserved) stays 0.
     return buf;
 }
 
@@ -246,10 +306,10 @@ inline std::error_code decode_tscf_header(const uint8_t* b, size_t len, TscfHead
     if (b[0] != kSubtypeTscf) return make_error_code(AvtpErrc::bad_subtype);
     if (len < kTscfHeaderLen) return make_error_code(AvtpErrc::short_buffer);
     out.timestamp_valid     = (b[1] & detail::kFlagTimestampValid) != 0;
-    out.sequence_num        = detail::get_u16(&b[2]);
+    out.sequence_num        = b[2];
     out.stream_id           = StreamId::from_u64(detail::get_u64(&b[4]));
-    out.control_data_length = detail::get_u16(&b[12]);
-    out.avtp_timestamp      = detail::get_u32(&b[14]);
+    out.avtp_timestamp      = detail::get_u32(&b[12]);
+    out.control_data_length = detail::get_u16(&b[20]);
     return {};
 }
 
