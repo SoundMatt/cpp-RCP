@@ -103,7 +103,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: SoundMatt/RELAY
-          ref: 3344b3d1a6a4d870d26c81c6f3c3ff5ca2930e16 # v2.0.2
+          ref: 810d1877362145a407b865426bb007657e42d00f # v2.0.4
           path: RELAY
 
       - name: Set up Go
