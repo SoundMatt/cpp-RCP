@@ -2,7 +2,7 @@
 
 **Standard:** ISO 26262:2018 Part 3
 **System:** cpp-RCP — C++ implementation of the OPEN Alliance TC18 Remote Control Protocol
-**Target ASIL:** ASIL-B (derived)
+**Target ASIL:** ASIL-C (derived)
 **Source:** `.fusa-hara.json` (machine-readable authoritative source)
 
 This revision (ROADMAP.md milestone 62, "Certification Refresh", v2.18.0)
@@ -32,7 +32,7 @@ Phase 13-16 work are appended as H-011/SG-011.
 
 | ID | Hazard | Severity | Exposure | Controllability | ASIL | Safety Goals |
 |----|--------|----------|----------|-----------------|------|--------------|
-| H-001 | Loss of request delivery to a safety-critical endpoint (e.g. a braking-adjacent actuator) | S3 | E4 | C2 | ASIL-B | SG-001 |
+| H-001 | Loss of request delivery to a safety-critical endpoint (e.g. a braking-adjacent actuator) | S3 | E4 | C2 | ASIL-C | SG-001 |
 | H-002 | Request misaddressed to the wrong endpoint via a stale or corrupted stream_id/byte_bus_id pairing | S2 | E3 | C2 | ASIL-B | SG-002 |
 | H-003 | Per-stream watchdog not kicked, leading to an unintended safe-state entry or endpoint reset | S2 | E4 | C2 | ASIL-B | SG-003 |
 | H-004 | Replay or out-of-order re-delivery of a stale request from a previous session | S2 | E3 | C2 | ASIL-B | SG-004 |
@@ -50,13 +50,13 @@ Phase 13-16 work are appended as H-011/SG-011.
 
 | ID | Safety Goal | ASIL | Addressed By |
 |----|-------------|------|--------------|
-| SG-001 | Requests to safety-critical endpoints shall be delivered within the configured watchdog period or a fault shall be signalled. | ASIL-B | `watchdog::Manager`/`StreamWatchdog`, `deadline::Monitor` |
+| SG-001 | Requests to safety-critical endpoints shall be delivered within the configured watchdog period or a fault shall be signalled. | ASIL-C | `watchdog::Manager`/`StreamWatchdog`, `deadline::Monitor` |
 | SG-002 | Requests shall only be dispatched to the endpoint they are addressed to (stream_id + byte_bus_id); misaddressed requests shall be rejected. | ASIL-B | `acf::AcfMessageInfo` byte_bus_id decode, RC Server dispatch (e.g. `mock::Server::dispatch`) |
-| SG-003 | A per-stream watchdog kick shall be recorded for every accepted inbound request, regardless of request kind or safety tag. | ASIL-B | `watchdog::StreamWatchdog::kick_from_request`, `e2e::RxWatchdog` |
+| SG-003 | A per-stream watchdog kick shall be recorded for every accepted inbound request, regardless of request kind or safety tag. | ASIL-C | `watchdog::StreamWatchdog::kick_from_request`, `e2e::RxWatchdog` |
 | SG-004 | A request stream configured with rx_enforce_seq shall reject any sequence number that is not strictly greater than the last accepted one. | ASIL-B | `e2e::RxSequenceGuard::check` |
 | SG-005 | Cancellation and triggered requests shall never be delayed by a standard or compound request queued earlier on the same stream. | ASIL-B | `request::SequencerTable`/`RequestLedger` execution-priority ordering |
 | SG-006 | Transport authentication (mTLS on the UDP/IP variant, or link-layer authentication on native Ethernet) and per-endpoint access policy shall be enforced on every external RC Server connection. | ASIL-B | `tls::SecureClient`/`SecureServer`, `authz::AccessPolicy`, `discovery::DiscoveryClaim` |
-| SG-007 | An RC Server that stops responding shall be detected as unreachable within the configured liveness deadline. | ASIL-B | `deadline::Monitor`/`LivenessTracker` |
+| SG-007 | An RC Server that stops responding shall be detected as unreachable within the configured liveness deadline. | ASIL-C | `deadline::Monitor`/`LivenessTracker` |
 | SG-008 | An RC Server shall only be treated as operational after its lifecycle state machine reports RCP_CONFIGURED following a successful wake sequence. | ASIL-B | `lifecycle::ServerLifecycle`, `powerstate::PowerManager` |
 | SG-009 | Fault injection rules shall not persist beyond the lifetime of the injecting process. | ASIL-A | `faultinject::Controller` in-process state only |
 | SG-010 | A stream's watchdog/safe-state status shall be deterministically derivable from its own kick/overflow/latch history alone. | ASIL-B | `e2e::RxWatchdog`, `watchdog::StreamWatchdog` deterministic state |
@@ -66,11 +66,11 @@ Phase 13-16 work are appended as H-011/SG-011.
 
 ## ASIL Decomposition Rationale
 
-### H-001 (ASIL-B): Loss of request delivery
+### H-001 (ASIL-C): Loss of request delivery
 
 The RC Client sends requests to RC Servers over an automotive Ethernet
 network. Network faults, ECU resets, or HPC process crashes can prevent
-request delivery. The required ASIL is B because:
+request delivery. The required ASIL is C because:
 
 - **S3**: loss of actuation on a braking-adjacent endpoint during emergency
   deceleration could be life-threatening.
@@ -78,14 +78,22 @@ request delivery. The required ASIL is B because:
 - **C2**: the driver may not be able to react in time if actuation is
   silently lost.
 
-**Decomposition**: ASIL-B is achieved via:
-1. `watchdog::Manager`/`StreamWatchdog` (ASIL-B): detects a stream whose
+Per ISO 26262-3's severity/exposure/controllability-to-ASIL determination
+table, S3/E4/C2 maps to ASIL-C, not ASIL-B. This row previously stated
+ASIL-B without claiming any decomposition to justify the reduction; it is
+corrected here to ASIL-C, with the correction propagated to SG-001,
+SG-003, and SG-007 (the request-delivery/watchdog/liveness chain that
+implements this hazard's mitigation, per the decomposition below) and to
+this document's stated target ASIL.
+
+**Decomposition**: ASIL-C is achieved via:
+1. `watchdog::Manager`/`StreamWatchdog` (ASIL-C): detects a stream whose
    `rx_wd_timeout_interval` has elapsed with no accepted request.
-2. `deadline::Monitor` (ASIL-B): detects an RC Server whose liveness
+2. `deadline::Monitor` (ASIL-C): detects an RC Server whose liveness
    signal (response/ack-queue heartbeat or EP0 lifecycle-state-changed
    trigger) has gone silent past its configured deadline.
-3. No decomposition into lower ASIL-A + ASIL-A elements is claimed; the
-   above mechanisms together satisfy ASIL-B.
+3. No decomposition into lower ASIL elements is claimed; the above
+   mechanisms together satisfy ASIL-C directly.
 
 ### H-002 (ASIL-B): Endpoint misaddressing
 

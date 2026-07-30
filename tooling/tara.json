@@ -25,8 +25,6 @@
         "safety": "major"
       },
       "mitigations": [
-        "sign — HMAC-SHA256 artifact signing",
-        "SLSA provenance verification (slsa command)",
         "Release workflow requires branch-protected, reviewed PRs before tagging"
       ],
       "risk": "medium",
@@ -66,7 +64,6 @@
       },
       "mitigations": [
         "audit-pack — hashed manifest over every evidence artifact",
-        "sign --verify re-checks HMAC signatures before submission",
         "sci — Software Configuration Index records a per-file sha256 at release time"
       ],
       "risk": "medium",
@@ -74,7 +71,7 @@
       "treatment": "mitigate"
     },
     {
-      "asset": "Third-party CMake dependencies (FetchContent: CLI11, nlohmann/json, Catch2)",
+      "asset": "Third-party CMake dependencies (FetchContent: Catch2)",
       "attackFeasibility": "very-low",
       "attackVector": "Supply-chain compromise of an upstream GitHub repository or its release tags fetched by FetchDeps.cmake.",
       "id": "TARA-004",
