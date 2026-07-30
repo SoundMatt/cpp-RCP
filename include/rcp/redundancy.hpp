@@ -7,17 +7,24 @@
 // fusa:req REQ-RED-007
 // fusa:req REQ-RED-008
 
-// Hot-standby Registry and HPC failover for ASIL-B fault tolerance (v0.23.0).
+// Hot-standby primary/standby failover for ASIL-B fault tolerance (v0.23.0).
 //
-// RedundantController holds a primary and a standby rcp::Controller for the
-// same zone.  All sends go to the primary; on ErrClosed or ErrTimeout the
-// controller promotes the standby automatically and retries.
+// RedundantRequestFn holds a primary and a standby rcp::RequestFn (rcp/
+// adapt.hpp's client-side send-equivalent call) addressing the same RC
+// Server endpoint over two independent paths. All requests go to the
+// primary; on ErrClosed or ErrTimeout the active path is promoted to the
+// standby automatically and the request is retried.
 //
-// RedundantRegistry wraps two rcp::Registry instances (primary/standby).
-// Heartbeat health monitoring (via watchdog::Keeper) drives promotion.
+// Rebound (cpp-RCP-FS-03, #86): this was `RedundantController`, an
+// `rcp::Controller` decorator keyed by the retired `Zone` (`Zone zone()`
+// echoed whichever inner controller happened to be active). That base
+// interface and Zone itself are retired (cpp-RCP-FS-01, #84); a redundant
+// pair is now identified by whatever the embedding application already
+// uses to key its two `RequestFn`s (e.g. a stream_key), not by this header.
 #pragma once
 
 #include "rcp.hpp"
+#include "adapt.hpp"
 
 #include <memory>
 #include <mutex>
@@ -32,26 +39,35 @@ struct Config {
     int  max_retries {1};     // number of retries on the standby before giving up
 };
 
-// ── RedundantController ───────────────────────────────────────────────────────
+// ── RedundantRequestFn ────────────────────────────────────────────────────────
 
-class RedundantController final : public rcp::Controller {
+class RedundantRequestFn {
 public:
-    RedundantController(std::shared_ptr<rcp::Controller> primary,
-                         std::shared_ptr<rcp::Controller> standby,
-                         Config                            cfg = {})
+    RedundantRequestFn(RequestFn primary, RequestFn standby, Config cfg = {})
         : primary_(std::move(primary))
         , standby_(std::move(standby))
         , cfg_(cfg) {
-        // Both controllers must serve the same zone.
-        active_ = primary_;
+        active_ = &primary_;
     }
 
-    Zone zone() const noexcept override { return active_->zone(); }
+    // active_ points into this object's own primary_/standby_ members, so
+    // copying or moving a RedundantRequestFn would leave active_ dangling
+    // (or pointing at the wrong instance) — not supported. Always hold one
+    // through a std::shared_ptr (see new_redundant() below).
+    RedundantRequestFn(const RedundantRequestFn&) = delete;
+    RedundantRequestFn& operator=(const RedundantRequestFn&) = delete;
+    RedundantRequestFn(RedundantRequestFn&&) = delete;
+    RedundantRequestFn& operator=(RedundantRequestFn&&) = delete;
 
-    std::error_code send(const rcp::Context& ctx,
-                          const Command&      cmd,
-                          Response&           out) override {
-        auto ec = active_->send(ctx, cmd, out);
+    std::error_code send(const rcp::Context& ctx, const acf::AcfMessageInfo& req,
+                          const std::vector<uint8_t>& payload,
+                          acf::AcfMessageInfo& out, std::vector<uint8_t>& out_payload) {
+        RequestFn* active;
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            active = active_;
+        }
+        auto ec = (*active)(ctx, req, payload, out, out_payload);
         if (!ec) return {};
 
         if (!cfg_.auto_promote) return ec;
@@ -60,51 +76,49 @@ public:
         if (ec == ErrClosed || ec == ErrTimeout) {
             promote();
             for (int i = 0; i < cfg_.max_retries; ++i) {
-                ec = active_->send(ctx, cmd, out);
+                RequestFn* retry_active;
+                {
+                    std::lock_guard<std::mutex> lk(mu_);
+                    retry_active = active_;
+                }
+                ec = (*retry_active)(ctx, req, payload, out, out_payload);
                 if (!ec) return {};
             }
         }
         return ec;
     }
 
-    std::error_code subscribe(const rcp::Context&             ctx,
-                               std::shared_ptr<StatusChannel>& out) override {
-        return active_->subscribe(ctx, out);
+    // operator() lets a RedundantRequestFn itself be handed anywhere an
+    // rcp::RequestFn is expected — e.g. straight into rcp::Adapt().
+    std::error_code operator()(const rcp::Context& ctx, const acf::AcfMessageInfo& req,
+                                const std::vector<uint8_t>& payload,
+                                acf::AcfMessageInfo& out, std::vector<uint8_t>& out_payload) {
+        return send(ctx, req, payload, out, out_payload);
     }
 
-    std::error_code close() override {
-        std::lock_guard<std::mutex> lk(mu_);
-        auto ec = primary_->close();
-        auto ec2 = standby_->close();
-        return ec ? ec : ec2;
-    }
-
-    // promote manually promotes the standby to active.
+    // promote manually promotes the standby to active (or back to primary
+    // if the standby is already active).
     void promote() {
         std::lock_guard<std::mutex> lk(mu_);
-        if (active_ == primary_) active_ = standby_;
-        else                      active_ = primary_;
+        active_ = (active_ == &primary_) ? &standby_ : &primary_;
     }
 
     bool is_primary_active() const {
         std::lock_guard<std::mutex> lk(mu_);
-        return active_ == primary_;
+        return active_ == &primary_;
     }
 
 private:
-    std::shared_ptr<rcp::Controller> primary_;
-    std::shared_ptr<rcp::Controller> standby_;
-    std::shared_ptr<rcp::Controller> active_;
+    RequestFn primary_;
+    RequestFn standby_;
+    RequestFn* active_;
     Config cfg_;
     mutable std::mutex mu_;
 };
 
-inline std::shared_ptr<RedundantController> new_controller(
-        std::shared_ptr<rcp::Controller> primary,
-        std::shared_ptr<rcp::Controller> standby,
-        Config                            cfg = {}) {
-    return std::make_shared<RedundantController>(
-        std::move(primary), std::move(standby), cfg);
+inline std::shared_ptr<RedundantRequestFn> new_redundant(
+        RequestFn primary, RequestFn standby, Config cfg = {}) {
+    return std::make_shared<RedundantRequestFn>(std::move(primary), std::move(standby), cfg);
 }
 
 } // namespace redundancy

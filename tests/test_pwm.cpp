@@ -11,6 +11,7 @@
 // PWM_OUT, PWM_IN", v2.4.0).
 
 #include <catch2/catch_test_macros.hpp>
+#include <rcp/avtp.hpp>
 #include <rcp/pwm.hpp>
 
 using namespace rcp::pwm;
@@ -24,10 +25,54 @@ TEST_CASE("PwmValue defaults both fields to zero", "[pwm][REQ-PWM-001]") {
     REQUIRE(v.active_duration == 0);
 }
 
-// ── PWM_OUT: 8-way write-semantics reuse from GPIO ───────────────────────────
+// ── Wire codec: fixed 4-byte payload, period then active, big-endian ────────
+// Verified against the spec's "pwmo request format" figure (§13.7.5.3),
+// which shows PWM_Period occupying the first two bytes of the payload and
+// PWM_active the last two.
 
-TEST_CASE("PwmOutEndpoint::handle_write applies Replace/Or/And/Xor independently to both fields",
-          "[pwm][REQ-PWM-002]") {
+TEST_CASE("kPwmPayloadLen is exactly 4 bytes", "[pwm][REQ-PWM-001]") {
+    REQUIRE(kPwmPayloadLen == 4);
+    REQUIRE(sizeof(PwmWireBytes) == 4);
+}
+
+TEST_CASE("encode_pwm_payload places period first, then active_duration, big-endian",
+          "[pwm][REQ-PWM-001]") {
+    PwmValue v;
+    v.period          = 0x1234;
+    v.active_duration = 0x5678;
+
+    auto wire = encode_pwm_payload(v);
+    REQUIRE(wire == PwmWireBytes{0x12, 0x34, 0x56, 0x78});
+}
+
+TEST_CASE("decode_pwm_payload round-trips encode_pwm_payload", "[pwm][REQ-PWM-001]") {
+    PwmValue in;
+    in.period          = 60000;
+    in.active_duration = 12345;
+
+    auto wire = encode_pwm_payload(in);
+
+    PwmValue out;
+    auto ec = decode_pwm_payload(wire.data(), wire.size(), out);
+    REQUIRE_FALSE(ec);
+    REQUIRE(out.period == in.period);
+    REQUIRE(out.active_duration == in.active_duration);
+}
+
+TEST_CASE("decode_pwm_payload reports short_buffer for fewer than 4 bytes", "[pwm][REQ-PWM-001]") {
+    uint8_t short_buf[3] = {0, 0, 0};
+    PwmValue out;
+    auto ec = decode_pwm_payload(short_buf, sizeof(short_buf), out);
+    REQUIRE(ec == rcp::avtp::make_error_code(rcp::avtp::AvtpErrc::short_buffer));
+}
+
+// ── PWM_OUT: Replace applies directly, every other semantics is rejected ────
+// The spec's PWM_OUT request-handling section describes only direct
+// application of the request's period/active values — no GPIO-style
+// bitmask/saturating-write combination against the previous state — so
+// handle_write no longer reuses rcp::endpoint::apply_bitmask_write.
+
+TEST_CASE("PwmOutEndpoint::handle_write applies Replace directly", "[pwm][REQ-PWM-002]") {
     PwmOutEndpoint ep;
     PwmValue out;
 
@@ -35,22 +80,38 @@ TEST_CASE("PwmOutEndpoint::handle_write applies Replace/Or/And/Xor independently
     REQUIRE(out.period == 100);
     REQUIRE(out.active_duration == 40);
 
-    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Or, {0x0F, 0x01}, out));
-    REQUIRE(out.period == (100 | 0x0F));
-    REQUIRE(out.active_duration == (40 | 0x01));
+    // A second Replace fully overwrites the previous state (no combination
+    // against it — e.g. this is not an OR of 0x0F/0x01 against {100, 40}).
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Replace, {0x0F, 0x01}, out));
+    REQUIRE(out.period == 0x0F);
+    REQUIRE(out.active_duration == 0x01);
 }
 
-TEST_CASE("PwmOutEndpoint::handle_write applies saturating Add/Subtract to both fields",
+TEST_CASE("PwmOutEndpoint::handle_write applying a period of 0 is a normal Replace (stop request)",
+          "[pwm][REQ-PWM-002]") {
+    PwmOutEndpoint ep;
+    PwmValue out;
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Replace, {500, 250}, out));
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Replace, {0, 0}, out));
+    REQUIRE(out.period == 0);
+    REQUIRE(ep.read().period == 0);
+}
+
+TEST_CASE("PwmOutEndpoint::handle_write rejects Or/And/Xor/Add/Subtract as non-combinable",
           "[pwm][REQ-PWM-003]") {
     PwmOutEndpoint ep;
     PwmValue out;
-    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Replace, {0xFFFFFFF0, 5}, out));
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Replace, {10, 5}, out));
 
-    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Add, {0x20, 0}, out));
-    REQUIRE(out.period == 0xFFFFFFFF); // saturates, does not wrap
-
-    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Subtract, {0, 10}, out));
-    REQUIRE(out.active_duration == 0); // saturates at 0, does not wrap
+    for (auto op : {WriteSemantics::Or, WriteSemantics::And, WriteSemantics::Xor,
+                     WriteSemantics::Add, WriteSemantics::Subtract}) {
+        auto ec = ep.handle_write(op, {999, 999}, out);
+        REQUIRE(ec == rcp::endpoint::make_error_code(
+                           rcp::endpoint::EndpointErrc::non_combinable_write_semantics));
+        // State is unchanged by a rejected write.
+        REQUIRE(ep.read().period == 10);
+        REQUIRE(ep.read().active_duration == 5);
+    }
 }
 
 TEST_CASE("PwmOutEndpoint::handle_write rejects Reserved without changing state",
@@ -65,7 +126,7 @@ TEST_CASE("PwmOutEndpoint::handle_write rejects Reserved without changing state"
     REQUIRE(ep.read().active_duration == 5);
 }
 
-TEST_CASE("PwmOutEndpoint::handle_write leaves Reconfigure to apply_bitmask_write's own rejection",
+TEST_CASE("PwmOutEndpoint::handle_write rejects Reconfigure (PWM_OUT defines no Reconfigure target)",
           "[pwm][REQ-PWM-004]") {
     PwmOutEndpoint ep;
     PwmValue out;

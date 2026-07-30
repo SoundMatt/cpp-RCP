@@ -3,10 +3,18 @@
 // Measures round-trip latency and throughput for common operations.
 // Run with: ctest -R bench --output-on-failure
 // Or directly: ./tests/bench_mock [!benchmark]
+//
+// Rebound (cpp-RCP-FS-01/#84): this used to benchmark
+// legacy_mock::Controller::send() against the retired Zone/Command/Response
+// model. That model is retired; rcp::mock::Server (rcp/mock.hpp) — the
+// TC18-shaped in-process RC Server simulator this file's own name already
+// referred to — is the transport actually under benchmark now.
 #include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <rcp/legacy_mock.hpp>
+#include <rcp/acf.hpp>
+#include <rcp/mock.hpp>
 
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -14,99 +22,74 @@ using namespace rcp;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-static std::shared_ptr<legacy_mock::Controller> make_ctrl(Zone z = Zone::FrontLeft) {
-    return std::make_shared<legacy_mock::Controller>(z);
+static std::shared_ptr<mock::Server> make_server() {
+    auto srv = std::make_shared<mock::Server>();
+    srv->advance_to_rcp_configured();
+    return srv;
 }
 
 // ── Sanity test (always runs in CTest) ───────────────────────────────────────
 
-TEST_CASE("bench mock baseline send succeeds", "[bench]") {
-    auto ctrl = make_ctrl();
-    Command cmd;
-    cmd.zone = Zone::FrontLeft;
-    Response resp;
-    REQUIRE_FALSE(ctrl->send(Context::background(), cmd, resp));
+TEST_CASE("bench mock baseline dispatch succeeds", "[bench]") {
+    auto srv = make_server();
+    auto req = acf::make_standard_request(mock::kGpioByteBusId, /*transaction_num=*/0,
+                                           /*write=*/false, /*read_size=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(srv->dispatch(0, req, {}, resp, resp_payload));
 }
 
 // ── Benchmarks (run with: bench_mock [!benchmark]) ───────────────────────────
 
-TEST_CASE("Benchmark: Send_RoundTrip", "[!benchmark]") {
-    auto ctrl = make_ctrl();
-    Command cmd;
-    cmd.zone = Zone::FrontLeft;
-    Response resp;
-    auto ctx = Context::background();
+TEST_CASE("Benchmark: Dispatch_RoundTrip", "[!benchmark]") {
+    auto srv = make_server();
+    auto req = acf::make_standard_request(mock::kGpioByteBusId, 0, false, 0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
 
-    BENCHMARK("legacy_mock::Controller::send round-trip") {
-        auto ec = ctrl->send(ctx, cmd, resp);
+    BENCHMARK("mock::Server::dispatch round-trip") {
+        auto ec = srv->dispatch(0, req, {}, resp, resp_payload);
         return ec;
     };
 }
 
-TEST_CASE("Benchmark: Send_RoundTrip_WithPayload", "[!benchmark]") {
-    auto ctrl = make_ctrl();
-    Command cmd;
-    cmd.zone    = Zone::FrontLeft;
-    cmd.payload = std::vector<uint8_t>(64, 0xAB);
-    Response resp;
-    auto ctx = Context::background();
+TEST_CASE("Benchmark: Dispatch_RoundTrip_WithPayload", "[!benchmark]") {
+    auto srv = make_server();
+    auto req = acf::make_standard_request(mock::kSpiByteBusId, 0, /*write=*/true, 0);
+    std::vector<uint8_t> payload(64, 0xAB);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
 
-    BENCHMARK("legacy_mock::Controller::send 64-byte payload") {
-        auto ec = ctrl->send(ctx, cmd, resp);
+    BENCHMARK("mock::Server::dispatch 64-byte payload") {
+        auto ec = srv->dispatch(0, req, payload, resp, resp_payload);
         return ec;
     };
 }
 
-TEST_CASE("Benchmark: Send_Concurrent", "[!benchmark]") {
-    auto ctrl = make_ctrl();
+TEST_CASE("Benchmark: Dispatch_Concurrent", "[!benchmark]") {
+    // mock::Server (like rcp/shmem.hpp's Channel) dispatches synchronously
+    // on the calling thread and documents no locking of its own, so this
+    // benchmark gives each thread its own Server rather than sharing one —
+    // the same "one StreamID per connection" shape a real multi-client
+    // deployment would have anyway, and it avoids a genuine data race on
+    // shared mutable register-map/endpoint state that concurrent dispatch()
+    // calls against a single Server would otherwise introduce.
     constexpr int N = 8;
 
-    BENCHMARK("8-thread concurrent send") {
+    BENCHMARK("8-thread concurrent dispatch (one Server per thread)") {
         std::vector<std::thread> threads;
         threads.reserve(N);
         for (int i = 0; i < N; ++i) {
-            threads.emplace_back([&ctrl] {
-                Command cmd;
-                cmd.zone = Zone::FrontLeft;
-                Response resp;
-                auto ec = ctrl->send(Context::background(), cmd, resp);
+            threads.emplace_back([] {
+                auto srv = make_server();
+                auto req = acf::make_standard_request(mock::kGpioByteBusId, 0, false, 0);
+                acf::AcfMessageInfo resp;
+                std::vector<uint8_t> resp_payload;
+                auto ec = srv->dispatch(0, req, {}, resp, resp_payload);
                 (void)ec;
             });
         }
         for (auto& t : threads) t.join();
         return N;
-    };
-}
-
-TEST_CASE("Benchmark: Publish_FanOut", "[!benchmark]") {
-    auto ctrl = make_ctrl();
-    constexpr int kSubs = 8;
-
-    // Register 8 subscribers.
-    std::vector<std::shared_ptr<StatusChannel>> channels;
-    for (int i = 0; i < kSubs; ++i) {
-        std::shared_ptr<StatusChannel> ch;
-        auto ec = ctrl->subscribe(Context::background(), ch);
-        (void)ec;
-        channels.push_back(ch);
-    }
-
-    std::vector<uint8_t> payload(32, 0);
-
-    BENCHMARK("publish to 8 subscribers") {
-        ctrl->publish(payload);
-        return kSubs;
-    };
-
-    for (auto& c : channels) c->close();
-}
-
-TEST_CASE("Benchmark: Registry_Lookup", "[!benchmark]") {
-    auto reg = legacy_mock::new_registry();
-
-    BENCHMARK("legacy_mock::Registry::lookup") {
-        std::shared_ptr<rcp::Controller> out;
-        auto ec = reg->lookup(Zone::FrontLeft, out);
-        return ec;
     };
 }

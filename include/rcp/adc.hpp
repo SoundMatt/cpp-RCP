@@ -8,9 +8,9 @@
 // ADC endpoint (ep_type 0x09) — the three-level averaging model
 // (adc_sample_interval -> adc_avg_intervals_per_request ->
 // adc_combine_avg_values), request-driven sampling only (no free-running
-// push), two self-triggering cadence patterns, and a no-signal timeout
-// handling path analogous to PWM_IN's PWM_IN_NO_SIGNAL error (extraction
-// §5.9).
+// push), two self-triggering cadence patterns, and an internal no-signal
+// condition analogous in *purpose*, but not in TC18 error-code identity, to
+// PWM_IN's PWM_IN_NO_SIGNAL (extraction §5.9).
 //
 // ROADMAP.md milestone 48, "Basic Endpoint Types II — I2C, UART, ADC,
 // PWM_OUT, PWM_IN (v2.4.0)": ADC has no combinable write-request payload
@@ -19,28 +19,32 @@
 // rcp/endpoint.hpp's WriteSemantics/apply_bitmask_write at all — its shared
 // surface with the rest of this milestone is only the general
 // request-dispatch shape (one entry point per request) and the no-signal
-// error-path pattern rcp/pwm.hpp's PwmInEndpoint also implements
-// (PwmErrc::no_signal / AdcErrc::no_signal are deliberately parallel).
+// error-path pattern rcp/pwm.hpp's PwmInEndpoint also implements.
 //
-// Three-level averaging model (extraction §5.9), as implemented below:
-//   1. adc_sample_interval:            spacing between individual raw
-//                                        samples (a caller/clock concern —
-//                                        this header does not itself model
-//                                        wall-clock time, see AdcCadence)
-//   2. adc_avg_intervals_per_request:  how many adc_sample_interval-spaced
-//                                        raw samples are averaged into one
-//                                        "averaged-interval" value
-//   3. adc_combine_avg_values:         how many averaged-interval values
-//                                        are further combined into the
-//                                        single value returned to the
-//                                        request
+// Sample/result width fix (issue #77, cpp-RCP-09): this header previously
+// modeled ADC sample and result values as uint32_t throughout. Verified
+// against the OPEN Alliance TC18 Remote Control Protocol Specification's
+// ADC section (§13.7.9.1, "This endpoint type is for ADC's with a
+// resolution of up to 16bits") and its response-frame figures (Figure 32,
+// Figure 34), which are explicit about "16 bit ADC value" fields: ADC
+// samples and results are 16-bit quantities, not 32-bit. compute_average
+// and AdcEndpoint::request_reading/request_reading_from_trigger_queue below
+// operate on uint16_t samples/results (widening only internally, to a
+// 64-bit accumulator, to sum without overflow — the averaged *result*
+// itself is always narrowed back to uint16_t, matching the wire width).
 //
-// Two self-triggering cadence patterns (extraction §5.9), as implemented
-// below: SelfTimed, where the caller supplies raw samples already paced by
-// adc_sample_interval (e.g. a wall-clock-driven sampler), and
-// ExternalTrigger, where raw samples are instead paced by an external
-// trigger-signal occurrence — the roadmap's own example being rcp/pwm.hpp's
-// PwmInEndpoint mid-pulse signal keying ADC sampling cadence.
+// No-signal error-identity fix (issue #77, cpp-RCP-09): this header
+// previously rendered AdcErrc::no_signal's message as literally containing
+// "ADC_NO_SIGNAL", implying a TC18-defined numeric error code by that name.
+// Checked against the spec's Table 27 ("Error codes in responses",
+// §12.9.6): there is no ADC-specific no-signal entry there at all — the
+// only "*_NO_SIGNAL" entry in the whole table is PWM_IN_NO_SIGNAL (value 9),
+// which belongs to the PWM_IN endpoint type, not ADC. AdcErrc::no_signal
+// below is now documented and rendered as a plain internal library
+// condition with no claimed spec error-code identity; it remains
+// conceptually parallel to PWM_IN's no-signal handling (a request that
+// cannot produce a valid sample) without pretending to be, or to map to,
+// any numbered TC18 error code.
 //
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
@@ -78,7 +82,7 @@ enum class AdcCadence : uint8_t {
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 enum class AdcErrc : int {
-    no_signal                = 1, // analogous to PWM_IN_NO_SIGNAL: no valid sample before timeout/underrun
+    no_signal                = 1, // internal condition: no valid sample before timeout/underrun — not a TC18 error code (see header comment; Table 27 has no ADC-specific no-signal entry)
     invalid_averaging_config = 2, // adc_avg_intervals_per_request or adc_combine_avg_values is 0
 };
 
@@ -88,7 +92,8 @@ inline const std::error_category& adc_category() noexcept {
         std::string message(int ev) const override {
             switch (static_cast<AdcErrc>(ev)) {
             case AdcErrc::no_signal:
-                return "rcp/adc: no signal — no valid sample captured (ADC_NO_SIGNAL)";
+                return "rcp/adc: no signal — no valid sample captured (an internal condition; "
+                       "TC18's Table 27 defines no ADC-specific no-signal error code)";
             case AdcErrc::invalid_averaging_config:
                 return "rcp/adc: adc_avg_intervals_per_request/adc_combine_avg_values must be >= 1";
             default:
@@ -108,13 +113,16 @@ inline std::error_code make_error_code(AdcErrc e) noexcept {
 // Both levels of the averaging model use the same arithmetic-mean
 // combinator in this implementation — the extraction does not mandate a
 // different combination function per level, so reusing one keeps the two
-// levels' behavior obviously consistent with each other.
+// levels' behavior obviously consistent with each other. Samples and the
+// averaged result are 16-bit (the spec's ADC resolution ceiling, §13.7.9.1);
+// summation widens internally to avoid overflow but the result is narrowed
+// back to uint16_t.
 
-inline std::error_code compute_average(const std::vector<uint32_t>& samples, uint32_t& out_avg) noexcept {
+inline std::error_code compute_average(const std::vector<uint16_t>& samples, uint16_t& out_avg) noexcept {
     if (samples.empty()) return make_error_code(AdcErrc::no_signal);
     uint64_t sum = 0;
-    for (const uint32_t s : samples) sum += s;
-    out_avg = static_cast<uint32_t>(sum / samples.size());
+    for (const uint16_t s : samples) sum += s;
+    out_avg = static_cast<uint16_t>(sum / samples.size());
     return {};
 }
 
@@ -130,25 +138,25 @@ public:
     // by adc_sample_interval on the caller's side, e.g. by a wall-clock
     // driven sampler) and must return std::nullopt to report a failed/
     // missing capture, which this function surfaces as AdcErrc::no_signal —
-    // this endpoint's analog of PWM_IN's PWM_IN_NO_SIGNAL on the request
-    // path.
+    // this endpoint's analog of PWM_IN's no-signal handling on the request
+    // path (see header comment: not itself a TC18 error code).
     template <typename SampleFn>
     std::error_code request_reading(const AdcAveragingConfig& cfg, SampleFn take_sample,
-                                     uint32_t& out_value) {
+                                     uint16_t& out_value) {
         if (cfg.adc_avg_intervals_per_request == 0 || cfg.adc_combine_avg_values == 0)
             return make_error_code(AdcErrc::invalid_averaging_config);
 
-        std::vector<uint32_t> averaged_intervals;
+        std::vector<uint16_t> averaged_intervals;
         averaged_intervals.reserve(cfg.adc_combine_avg_values);
         for (uint16_t i = 0; i < cfg.adc_combine_avg_values; ++i) {
-            std::vector<uint32_t> raw;
+            std::vector<uint16_t> raw;
             raw.reserve(cfg.adc_avg_intervals_per_request);
             for (uint16_t j = 0; j < cfg.adc_avg_intervals_per_request; ++j) {
-                std::optional<uint32_t> sample = take_sample();
+                std::optional<uint16_t> sample = take_sample();
                 if (!sample.has_value()) return make_error_code(AdcErrc::no_signal);
                 raw.push_back(*sample);
             }
-            uint32_t interval_avg = 0;
+            uint16_t interval_avg = 0;
             auto ec = compute_average(raw, interval_avg);
             if (ec) return ec;
             averaged_intervals.push_back(interval_avg);
@@ -166,8 +174,8 @@ public:
     // with no valid capture) or a queue underrun (fewer trigger occurrences
     // than required).
     std::error_code request_reading_from_trigger_queue(
-        const AdcAveragingConfig& cfg, std::vector<std::optional<uint32_t>>& triggered_samples,
-        uint32_t& out_value) {
+        const AdcAveragingConfig& cfg, std::vector<std::optional<uint16_t>>& triggered_samples,
+        uint16_t& out_value) {
         if (cfg.adc_avg_intervals_per_request == 0 || cfg.adc_combine_avg_values == 0)
             return make_error_code(AdcErrc::invalid_averaging_config);
 
@@ -175,17 +183,17 @@ public:
             static_cast<size_t>(cfg.adc_avg_intervals_per_request) * cfg.adc_combine_avg_values;
         if (triggered_samples.size() < needed) return make_error_code(AdcErrc::no_signal);
 
-        std::vector<uint32_t> averaged_intervals;
+        std::vector<uint16_t> averaged_intervals;
         averaged_intervals.reserve(cfg.adc_combine_avg_values);
         size_t cursor = 0;
         for (uint16_t i = 0; i < cfg.adc_combine_avg_values; ++i) {
-            std::vector<uint32_t> raw;
+            std::vector<uint16_t> raw;
             raw.reserve(cfg.adc_avg_intervals_per_request);
             for (uint16_t j = 0; j < cfg.adc_avg_intervals_per_request; ++j, ++cursor) {
                 if (!triggered_samples[cursor].has_value()) return make_error_code(AdcErrc::no_signal);
                 raw.push_back(*triggered_samples[cursor]);
             }
-            uint32_t interval_avg = 0;
+            uint16_t interval_avg = 0;
             auto ec = compute_average(raw, interval_avg);
             if (ec) return ec;
             averaged_intervals.push_back(interval_avg);

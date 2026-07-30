@@ -1,0 +1,59 @@
+# clang-tidy configuration for the `clang-tidy` CI job (ci.yml).
+#
+# Why this file exists (issue #80 / cpp-RCP-12): before this file was added,
+# ci.yml ran `clang-tidy -p build --warnings-as-errors='*'` with no
+# `-checks` argument and no `.clang-tidy` file present. With nothing
+# enabling any checks, clang-tidy exits immediately with the fatal usage
+# error "Error: no checks enabled" -- and the trailing `|| true` on that
+# step was swallowing that failure, meaning the job has never actually
+# linted a single file in this repo's history, let alone gated on it.
+#
+# The check list below is deliberately narrow. It was hand-picked and
+# verified (locally, via Homebrew LLVM clang-tidy against this tree) to
+# have zero findings against the current include/ + tests/ sources, while
+# still being a real, non-trivial "definite bug pattern" gate: use-after-move,
+# infinite loops, dangling handles, sizeof/memset/string-compare misuse,
+# swapped arguments, virtual near-misses, etc.
+#
+# Broader categories -- full bugprone-*, cert-*, performance-*,
+# portability-*, modernize-*, readability-*, clang-analyzer-*, and even
+# clang-diagnostic-* (this project already has pre-existing -Wall/-Wextra
+# findings, e.g. -Wmissing-field-initializers in tests/test_legacy_mock.cpp,
+# that don't fail the build today because CMakeLists.txt does not pass
+# -Werror) -- all currently have real, pre-existing findings across this
+# tree. Turning any of those on wholesale would fail this CI job against a
+# backlog of findings that are out of scope for a CI/process-only change
+# (see the PR that introduced this file for the full accounting). Growing
+# this list is left as deliberate follow-up work for whoever owns the C++
+# source, once each finding is triaged and fixed or dispositioned.
+Checks: >
+  -*,
+  bugprone-copy-constructor-init,
+  bugprone-dangling-handle,
+  bugprone-forwarding-reference-overload,
+  bugprone-inaccurate-erase,
+  bugprone-infinite-loop,
+  bugprone-integer-division,
+  bugprone-lambda-function-name,
+  bugprone-move-forwarding-reference,
+  bugprone-multiple-statement-macro,
+  bugprone-not-null-terminated-result,
+  bugprone-signed-char-misuse,
+  bugprone-sizeof-expression,
+  bugprone-string-integer-assignment,
+  bugprone-suspicious-memset-usage,
+  bugprone-suspicious-string-compare,
+  bugprone-swapped-arguments,
+  bugprone-terminating-continue,
+  bugprone-undefined-memory-manipulation,
+  bugprone-unused-raii,
+  bugprone-use-after-move,
+  bugprone-virtual-near-miss
+
+WarningsAsErrors: '*'
+
+# Restrict findings surfaced from #included headers to this project's own
+# headers, so third-party FetchContent dependencies (e.g. Catch2, vendored
+# under build/_deps/catch2-src) don't get flagged for patterns in their own
+# code that this project has no control over.
+HeaderFilterRegex: 'include/rcp/'

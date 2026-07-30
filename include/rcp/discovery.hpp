@@ -111,7 +111,7 @@ inline acf::AcfMessageInfo make_discovery_request(uint8_t transaction_num,
 // produces a TSCF-headed frame, so there is no way to misuse it into
 // building the kind of request decode_discovery_request below must drop.
 inline std::vector<uint8_t> encode_discovery_request(const avtp::StreamId& stream_id,
-                                                       uint16_t sequence_num,
+                                                       uint8_t sequence_num,
                                                        uint8_t transaction_num,
                                                        uint16_t read_size = kDiscoveryDefaultReadSize) {
     const auto info = make_discovery_request(transaction_num, read_size);
