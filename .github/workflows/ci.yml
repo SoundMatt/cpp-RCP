@@ -156,8 +156,17 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Run clang-tidy
+        # Only pass tests/*.cpp as translation units: this project's
+        # include/rcp/*.hpp headers are header-only (no standalone compile
+        # command in compile_commands.json for a .hpp on its own), so
+        # invoking clang-tidy directly on a header fails with a
+        # clang-diagnostic-error "file not found" on its own #includes
+        # (no -I flags to resolve them) rather than a real lint finding.
+        # .clang-tidy's HeaderFilterRegex ('include/rcp/') still surfaces
+        # findings from those headers as they're transitively included by
+        # the .cpp translation units below.
         run: |
-          find include tests -name '*.hpp' -o -name '*.cpp' | \
+          find tests -name '*.cpp' | \
             xargs clang-tidy -p build --warnings-as-errors='*'
 
   # ── LCOV coverage ─────────────────────────────────────────────────────────────
