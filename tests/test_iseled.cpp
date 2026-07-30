@@ -20,7 +20,7 @@ TEST_CASE("ISELED's ep_type id is 0x0C", "[iseled][REQ-ISELED-001]") {
     REQUIRE(rcp::endpoint::kEndpointTypeIseled == 0x0C);
 }
 
-// ── Instruction/Address/Data request, Address/Data(/CRC) response shape ─────
+// ── Instruction/Address/Data request, Address/Data response shape ───────────
 
 TEST_CASE("IseledEndpoint::transact records the exact request and response fields",
           "[iseled][REQ-ISELED-002]") {
@@ -32,81 +32,94 @@ TEST_CASE("IseledEndpoint::transact records the exact request and response field
 
     IseledResponse resp;
     resp.address = 0x0102;
-    resp.data    = {0xBE, 0xEF};
-    // no native_crc — optional field left absent
+    resp.data    = 0x0BEF;
 
     REQUIRE_FALSE(ep.transact(req, resp));
     REQUIRE(ep.last_request().instruction == 0x03);
     REQUIRE(ep.last_request().address == 0x0102);
     REQUIRE(ep.last_request().data == std::vector<uint8_t>{0xDE, 0xAD});
     REQUIRE(ep.last_response().address == 0x0102);
-    REQUIRE(ep.last_response().data == std::vector<uint8_t>{0xBE, 0xEF});
-    REQUIRE_FALSE(ep.last_response().native_crc.has_value());
+    REQUIRE(ep.last_response().data == 0x0BEF);
 }
 
-// ── Native CRC: additional to, not a replacement for, the general E2E CRC ───
+// ── 12-bit address / 12-bit data field-width fix ─────────────────────────────
+// Verified against the spec's "iseled request format" (Figure 40) and
+// "iseled response format" (Figure 41): the address field is 12 bits wide
+// in both request and response, and a response's data is a single 12-bit
+// value, not an open byte vector.
 
-TEST_CASE("compute_native_crc8/verify_native_crc round-trip a correct native CRC",
+TEST_CASE("kIseledFieldMask is 12 bits and kIseledInstructionMask is 4 bits",
           "[iseled][REQ-ISELED-003]") {
-    IseledResponse resp;
-    resp.address = 0x00AB;
-    resp.data    = {0x01, 0x02, 0x03};
-    resp.native_crc = compute_native_crc8(crc_coverage_bytes(resp));
-
-    REQUIRE_FALSE(verify_native_crc(resp));
+    REQUIRE(kIseledFieldMask == 0x0FFF);
+    REQUIRE(kIseledInstructionMask == 0x0F);
 }
 
-TEST_CASE("verify_native_crc reports native_crc_mismatch for a tampered native CRC",
+TEST_CASE("validate_request accepts an in-range instruction and address",
           "[iseled][REQ-ISELED-003]") {
-    IseledResponse resp;
-    resp.address = 0x00AB;
-    resp.data    = {0x01, 0x02, 0x03};
-    resp.native_crc = static_cast<uint8_t>(compute_native_crc8(crc_coverage_bytes(resp)) ^ 0xFFu);
-
-    REQUIRE(verify_native_crc(resp) == make_error_code(IseledErrc::native_crc_mismatch));
+    IseledRequest req;
+    req.instruction = kIseledInstructionMask;
+    req.address      = kIseledFieldMask;
+    REQUIRE_FALSE(validate_request(req));
 }
 
-TEST_CASE("verify_native_crc succeeds trivially when native_crc is absent (it is optional)",
-          "[iseled][REQ-ISELED-003]") {
-    IseledResponse resp;
-    resp.address = 0x0001;
-    resp.data    = {0xFF};
-    REQUIRE_FALSE(verify_native_crc(resp));
+TEST_CASE("validate_request rejects an instruction wider than 4 bits", "[iseled][REQ-ISELED-003]") {
+    IseledRequest req;
+    req.instruction = static_cast<uint8_t>(kIseledInstructionMask + 1);
+    REQUIRE(validate_request(req) == make_error_code(IseledErrc::field_out_of_range));
 }
 
-TEST_CASE("IseledEndpoint::transact propagates a native CRC mismatch and fires NativeCrcError",
+TEST_CASE("validate_request rejects an address wider than 12 bits", "[iseled][REQ-ISELED-003]") {
+    IseledRequest req;
+    req.address = static_cast<uint16_t>(kIseledFieldMask + 1);
+    REQUIRE(validate_request(req) == make_error_code(IseledErrc::field_out_of_range));
+}
+
+TEST_CASE("validate_response accepts an in-range address and data", "[iseled][REQ-ISELED-003]") {
+    IseledResponse resp;
+    resp.address = kIseledFieldMask;
+    resp.data    = kIseledFieldMask;
+    REQUIRE_FALSE(validate_response(resp));
+}
+
+TEST_CASE("validate_response rejects an address wider than 12 bits", "[iseled][REQ-ISELED-003]") {
+    IseledResponse resp;
+    resp.address = static_cast<uint16_t>(kIseledFieldMask + 1);
+    REQUIRE(validate_response(resp) == make_error_code(IseledErrc::field_out_of_range));
+}
+
+TEST_CASE("validate_response rejects a data value wider than 12 bits", "[iseled][REQ-ISELED-003]") {
+    IseledResponse resp;
+    resp.data = static_cast<uint16_t>(kIseledFieldMask + 1);
+    REQUIRE(validate_response(resp) == make_error_code(IseledErrc::field_out_of_range));
+}
+
+TEST_CASE("IseledEndpoint::transact rejects an out-of-range field without recording it",
           "[iseled][REQ-ISELED-003]") {
     IseledEndpoint ep;
-    ep.triggers().enable(iseled_signal_id(IseledSignal::TransferComplete));
-    ep.triggers().enable(iseled_signal_id(IseledSignal::NativeCrcError));
-
     IseledRequest req;
+    req.address = static_cast<uint16_t>(kIseledFieldMask + 1);
+
     IseledResponse resp;
-    resp.address = 0x0010;
-    resp.data    = {0x22};
-    resp.native_crc = static_cast<uint8_t>(compute_native_crc8(crc_coverage_bytes(resp)) ^ 0x01u);
+    resp.address = 0x0001;
+    resp.data    = 0x0001;
 
     auto ec = ep.transact(req, resp);
-    REQUIRE(ec == make_error_code(IseledErrc::native_crc_mismatch));
-
-    auto drained = ep.triggers().drain();
-    REQUIRE(drained.size() == 1);
-    REQUIRE(drained[0] == iseled_signal_id(IseledSignal::NativeCrcError));
+    REQUIRE(ec == make_error_code(IseledErrc::field_out_of_range));
+    // Nothing recorded, and no trigger fired for a rejected transaction.
+    REQUIRE_FALSE(ep.triggers().has_pending());
 }
 
 // ── Trigger signals ───────────────────────────────────────────────────────────
 
-TEST_CASE("IseledEndpoint::transact fires only TransferComplete on a clean transaction",
+TEST_CASE("IseledEndpoint::transact fires TransferComplete on a valid transaction",
           "[iseled][REQ-ISELED-004]") {
     IseledEndpoint ep;
     ep.triggers().enable(iseled_signal_id(IseledSignal::TransferComplete));
-    ep.triggers().enable(iseled_signal_id(IseledSignal::NativeCrcError));
 
     IseledRequest req;
     IseledResponse resp;
     resp.address = 0x0010;
-    resp.data    = {0x22};
-    resp.native_crc = compute_native_crc8(crc_coverage_bytes(resp));
+    resp.data    = 0x0022;
 
     REQUIRE_FALSE(ep.transact(req, resp));
 
@@ -118,7 +131,7 @@ TEST_CASE("IseledEndpoint::transact fires only TransferComplete on a clean trans
 // ── IseledErrc category sanity ────────────────────────────────────────────────
 
 TEST_CASE("IseledErrc reports a non-empty message in its own category", "[iseled][REQ-ISELED-005]") {
-    auto ec = make_error_code(IseledErrc::native_crc_mismatch);
+    auto ec = make_error_code(IseledErrc::field_out_of_range);
     REQUIRE(ec.category() == iseled_category());
     REQUIRE_FALSE(ec.message().empty());
 }

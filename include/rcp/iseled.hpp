@@ -5,48 +5,58 @@
 // fusa:req REQ-ISELED-005
 
 // ISELED endpoint (ep_type 0x0C) — the OPEN Alliance TC18 Remote Control
-// Protocol Specification v0.5.1_RC's native ISELED daisy-chain framing: an
-// Instruction/Address/Data request shape and an Address/Data/optional-
-// native-CRC response shape (extraction §5.12).
+// Protocol Specification v0.5.1_RC's native ISELED daisy-chain framing: a
+// 4-bit Instruction / 12-bit Address / variable-length Data request shape
+// and a 12-bit Address / 12-bit Data response shape (extraction §5.12).
 //
 // ROADMAP.md milestone 51, "Remaining Endpoint Types — LIN, CAN (incl. CAN
-// XL), ISELED, MDIO, Wakeup Control (v2.7.0)": the point the roadmap calls
-// out explicitly for ISELED is that its own native CRC (the optional
-// trailing field in the response shape below) is ADDITIONAL to, not a
-// replacement for, the general RCP-level end-to-end CRC rcp/e2e.hpp already
-// implements (v2.6.0). This header has no dependency on rcp/e2e.hpp and does
-// not call into it: rcp/e2e.hpp's CRC covers the whole ACF message
-// (stream_id + avtp_timestamp + ACF header + payload) regardless of
-// endpoint type, and continues to do so unmodified around an ISELED
-// request/response exactly as it does around every other endpoint type's
-// payload — ISELED's native CRC below is a second, independent, narrower
-// check scoped only to the Address/Data content of one daisy-chain
-// response, layered on top of that outer coverage rather than folded into
-// or substituted for it.
+// XL), ISELED, MDIO, Wakeup Control (v2.7.0)".
 //
-// The ISELED daisy-chain protocol itself (its addressing scheme, its actual
-// native CRC polynomial/width, its per-device propagation timing) is
-// defined by the ISELED standard, not by TC18 RCP, and no such external
-// specification is reproduced or matched exactly here — `compute_native_crc8`
-// below computes a CRC-8 of this implementation's own choosing, present so
-// this header's encode/decode/verify round-trip has a concrete algorithm to
-// exercise, not a claim of bit-exact conformance with any particular ISELED
-// silicon's real CRC.
+// Wire-format fix (issue #71, cpp-RCP-02): this header previously modeled
+// IseledResponse::address as a full uint16_t, IseledResponse::data as an
+// open-ended std::vector<uint8_t>, and carried an invented 8-bit CRC
+// (polynomial 0x07) the header's own prior comment admitted was not from
+// the ISELED standard. Verified against the OPEN Alliance TC18 Remote
+// Control Protocol Specification's "iseled request format" (Figure 40) and
+// "iseled response format" (Figure 41) figures, §13.7.12.3: the address
+// field is 12 bits wide (both in the request and, per Figure 41, again in
+// the response), and a response's data is a single 12-bit value
+// ("Data[11:0]"), not an open byte vector. kIseledFieldMask below is that
+// shared 12-bit width, applied to IseledRequest::address,
+// IseledResponse::address, and IseledResponse::data via validate_request/
+// validate_response. IseledRequest::data is left as std::vector<uint8_t>:
+// unlike the response's single Data[11:0] value, the request's data is
+// realistic-payload-length-dependent (Figure 40 shows Data1/Data2/Data3/...
+// plus padding), so a byte vector remains the right shape there — only the
+// response's fixed-width fields were wrong.
+//
+// This header's invented CRC-8 (polynomial 0x07) is removed outright rather
+// than replaced with a differently-sized invented polynomial: the real
+// ISELED-standard CRC algorithm and its optional-4-bit-trailer width (per
+// Figure 41's "CRC (optional)" field) are not sourced anywhere in this
+// codebase or in the TC18 spec extract this header is built from — the
+// spec explicitly defers the ISELED CRC's own definition to the separate
+// ISELED standard, which this repository does not have a verified copy of
+// — so inventing a differently-sized polynomial here would repeat the same
+// mistake this fix is for. IseledErrc::field_out_of_range takes over the
+// error category in its place: it is a direct consequence of the same
+// width fix (rejecting an instruction/address/data value that does not fit
+// its documented field width), not a new invented protocol behavior.
+// IseledSignal::NativeCrcError is removed along with it, leaving
+// IseledSignal::TransferComplete as the endpoint's only trigger signal.
 //
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
-// text from that document is reproduced here. The concrete request/response
-// field widths, the native-CRC algorithm, and the trigger-signal id
-// encoding chosen in this file are this implementation's own, same as the
-// equivalent disclaimers in rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
-// and rcp/e2e.hpp.
+// text from that document is reproduced here. The concrete request `data`
+// vector representation and trigger-signal id encoding chosen in this file
+// are this implementation's own, same as the equivalent disclaimers in
+// rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp, and rcp/e2e.hpp.
 #pragma once
 
 #include <rcp/endpoint.hpp>
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -54,53 +64,31 @@
 namespace rcp {
 namespace iseled {
 
+// ── Field widths ──────────────────────────────────────────────────────────────
+// 12-bit address/data field width shared by the request's Address field and
+// the response's Address/Data[11:0] fields (Figures 40/41, §13.7.12.3); 4-bit
+// instruction field width (Figure 40).
+
+constexpr uint16_t kIseledFieldMask       = 0x0FFFu; // 12 bits: address, and response data
+constexpr uint8_t  kIseledInstructionMask = 0x0Fu;   // 4 bits: request instruction
+
 // ── Request / response shapes ────────────────────────────────────────────────
 
 struct IseledRequest {
-    uint8_t               instruction = 0;
-    uint16_t               address     = 0; // this implementation's own width for a chain-position + register address
-    std::vector<uint8_t>   data;
+    uint8_t               instruction = 0; // 4-bit instruction (kIseledInstructionMask), per Figure 40
+    uint16_t               address     = 0; // 12-bit address (kIseledFieldMask), per Figure 40
+    std::vector<uint8_t>   data; // variable-length data bytes (Data1/Data2/Data3/... + padding), per Figure 40
 };
 
 struct IseledResponse {
-    uint16_t                address    = 0;
-    std::vector<uint8_t>    data;
-    std::optional<uint8_t>  native_crc; // optional, per the response shape's own "optional-native-CRC" naming
+    uint16_t address = 0; // 12-bit address (kIseledFieldMask), per Figure 41
+    uint16_t data     = 0; // 12-bit data value ("Data[11:0]"), per Figure 41 — a single field, not a byte vector
 };
-
-// ── Native CRC (this implementation's own algorithm — see header comment) ───
-
-constexpr uint8_t kNativeCrcPoly = 0x07; // CRC-8/CCITT-shaped choice; not a claim of matching real ISELED silicon
-
-inline uint8_t compute_native_crc8(const std::vector<uint8_t>& bytes) noexcept {
-    uint8_t crc = 0;
-    for (uint8_t b : bytes) {
-        crc = static_cast<uint8_t>(crc ^ b);
-        for (int bit = 0; bit < 8; ++bit) {
-            crc = (crc & 0x80u) ? static_cast<uint8_t>((crc << 1) ^ kNativeCrcPoly)
-                                 : static_cast<uint8_t>(crc << 1);
-        }
-    }
-    return crc;
-}
-
-// crc_coverage_bytes assembles exactly the bytes compute_native_crc8 covers
-// for a response: the 2-byte big-endian address followed by the data field,
-// matching how verify_native_crc below reconstructs the same buffer to
-// check a response's optional native_crc.
-inline std::vector<uint8_t> crc_coverage_bytes(const IseledResponse& resp) {
-    std::vector<uint8_t> buf;
-    buf.reserve(2 + resp.data.size());
-    buf.push_back(static_cast<uint8_t>(resp.address >> 8));
-    buf.push_back(static_cast<uint8_t>(resp.address & 0xFFu));
-    buf.insert(buf.end(), resp.data.begin(), resp.data.end());
-    return buf;
-}
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 enum class IseledErrc : int {
-    native_crc_mismatch = 1, // response carried a native_crc that does not match its own address+data
+    field_out_of_range = 1, // instruction/address/data exceeds its documented wire field width
 };
 
 inline const std::error_category& iseled_category() noexcept {
@@ -108,8 +96,8 @@ inline const std::error_category& iseled_category() noexcept {
         const char* name() const noexcept override { return "rcp.iseled"; }
         std::string message(int ev) const override {
             switch (static_cast<IseledErrc>(ev)) {
-            case IseledErrc::native_crc_mismatch:
-                return "rcp/iseled: response native CRC does not match its address+data";
+            case IseledErrc::field_out_of_range:
+                return "rcp/iseled: instruction/address/data exceeds its wire field width";
             default:
                 return "rcp/iseled: unknown error";
             }
@@ -123,25 +111,28 @@ inline std::error_code make_error_code(IseledErrc e) noexcept {
     return {static_cast<int>(e), iseled_category()};
 }
 
-// verify_native_crc is a no-op success when response.native_crc is not
-// present (the field is optional per the response shape) and otherwise
-// recomputes compute_native_crc8 over crc_coverage_bytes(response) and
-// compares. This check is independent of, and has no effect on, the
-// separate general RCP-level E2E CRC that rcp/e2e.hpp applies around the
-// whole ACF message — see header comment.
-inline std::error_code verify_native_crc(const IseledResponse& response) noexcept {
-    if (!response.native_crc.has_value()) return {};
-    const uint8_t expected = compute_native_crc8(crc_coverage_bytes(response));
-    if (expected != *response.native_crc) return make_error_code(IseledErrc::native_crc_mismatch);
+// validate_request rejects an instruction wider than 4 bits or an address
+// wider than 12 bits (Figure 40).
+inline std::error_code validate_request(const IseledRequest& req) noexcept {
+    if (req.instruction > kIseledInstructionMask) return make_error_code(IseledErrc::field_out_of_range);
+    if (req.address > kIseledFieldMask) return make_error_code(IseledErrc::field_out_of_range);
+    return {};
+}
+
+// validate_response rejects an address or data value wider than 12 bits
+// (Figure 41).
+inline std::error_code validate_response(const IseledResponse& resp) noexcept {
+    if (resp.address > kIseledFieldMask) return make_error_code(IseledErrc::field_out_of_range);
+    if (resp.data > kIseledFieldMask) return make_error_code(IseledErrc::field_out_of_range);
     return {};
 }
 
 // ── Trigger signals ───────────────────────────────────────────────────────────
-// One TransferComplete/NativeCrcError pair per IseledEndpoint instance, built
-// on rcp/endpoint.hpp's generic TriggerRegistry, same primitive
+// One TransferComplete signal per IseledEndpoint instance, built on
+// rcp/endpoint.hpp's generic TriggerRegistry, same primitive
 // rcp/i2c.hpp's and rcp/spi.hpp's transfer-complete signals use.
 
-enum class IseledSignal : uint8_t { TransferComplete = 0, NativeCrcError = 1 };
+enum class IseledSignal : uint8_t { TransferComplete = 0 };
 
 constexpr endpoint::TriggerRegistry::SignalId iseled_signal_id(IseledSignal sig) noexcept {
     return static_cast<endpoint::TriggerRegistry::SignalId>(sig);
@@ -150,20 +141,20 @@ constexpr endpoint::TriggerRegistry::SignalId iseled_signal_id(IseledSignal sig)
 // ── IseledEndpoint ────────────────────────────────────────────────────────────
 // Mirrors rcp::spi::SpiEndpoint's/rcp::i2c::I2cEndpoint's shape: one
 // request-dispatch entry point per daisy-chain transaction, recording the
-// exact Instruction/Address/Data request and Address/Data/optional-CRC
-// response (supplied together by the caller — this header models the
-// request/response and trigger-signal shape of one ISELED transaction, not
-// an actual daisy-chain driver or its per-device propagation timing).
+// exact Instruction/Address/Data request and Address/Data response
+// (supplied together by the caller — this header models the request/
+// response and trigger-signal shape of one ISELED transaction, not an
+// actual daisy-chain driver or its per-device propagation timing). A
+// request or response whose fields do not fit their documented wire widths
+// is rejected without being recorded.
 class IseledEndpoint {
 public:
     std::error_code transact(IseledRequest request, IseledResponse response) {
-        last_request_ = std::move(request);
-        auto ec = verify_native_crc(response);
+        if (auto ec = validate_request(request)) return ec;
+        if (auto ec = validate_response(response)) return ec;
+
+        last_request_  = std::move(request);
         last_response_ = std::move(response);
-        if (ec) {
-            triggers_.notify(iseled_signal_id(IseledSignal::NativeCrcError));
-            return ec;
-        }
         triggers_.notify(iseled_signal_id(IseledSignal::TransferComplete));
         return {};
     }

@@ -7,26 +7,50 @@
 // fusa:req REQ-PWM-007
 
 // PWM_OUT (ep_type 0x07) and PWM_IN (ep_type 0x08) endpoints — the shared
-// period/active-duration two-field payload shape, PWM_OUT's 8-way
-// write-semantics reuse from GPIO, PWM_IN's response-only read model and
-// PWM_IN_NO_SIGNAL error path, and the mid-pulse trigger signal used to key
-// ADC sampling cadence (extraction §5.5, §5.6).
+// period/active-duration two-field payload shape, PWM_OUT's fixed 4-byte
+// wire payload, PWM_IN's response-only read model and PWM_IN_NO_SIGNAL
+// error path, and the mid-pulse trigger signal used to key ADC sampling
+// cadence (extraction §5.5, §5.6).
 //
 // ROADMAP.md milestone 48, "Basic Endpoint Types II — I2C, UART, ADC,
 // PWM_OUT, PWM_IN (v2.4.0)": kept in one header, mirroring how
 // rcp/endpoint.hpp is shared scaffolding for rcp/gpio.hpp and rcp/spi.hpp
 // rather than each having its own copy — PWM_OUT and PWM_IN share one
 // payload struct (PwmValue) and differ only in read/write direction and
-// trigger-signal behavior. PWM_OUT reuses rcp/endpoint.hpp's
-// WriteSemantics/apply_bitmask_write directly (including the
-// saturating-add/subtract rule it already implements generically), the
-// same primitive rcp/gpio.hpp's GpioEndpoint builds on, rather than
-// re-deriving its own combinator. PWM_OUT defines no Reconfigure target of
-// its own (unlike GPIO's pin-direction retarget) — the extraction does not
-// name one for PWM_OUT, so a Reconfigure write is left to
-// apply_bitmask_write's own built-in rejection
-// (EndpointErrc::non_combinable_write_semantics) rather than this header
-// inventing a meaning for it.
+// trigger-signal behavior.
+//
+// Wire-format fix (issue #70, cpp-RCP-01): PWM_OUT/PWM_IN's payload is a
+// fixed 4 bytes on the wire — two big-endian 16-bit words, PWM_Period
+// followed by PWM_active, verified against the OPEN Alliance TC18 Remote
+// Control Protocol Specification's "pwmo request format" figure (§13.7.5.3)
+// — not the open-ended 8-byte uint32_t pair this header modeled before.
+// `period`/`active_duration` are narrowed to uint16_t and encode_pwm_payload/
+// decode_pwm_payload below produce/consume exactly that 4-byte, period-then-
+// active big-endian layout, reusing rcp/avtp.hpp's own put_u16/get_u16
+// helpers the same way rcp/gpio.hpp's encode_gpio_payload/
+// decode_gpio_payload already reuse its put_u32/get_u32 for GPIO's 4-byte
+// payload, rather than re-deriving byte order here. The field *order* in
+// PwmValue (period first, then active_duration) was already correct and is
+// unchanged — only the two fields' width and the addition of an explicit
+// wire codec are new.
+//
+// PWM_OUT write-semantics fix (issue #70, cpp-RCP-01, second half): this
+// header previously layered rcp/gpio.hpp's/rcp/endpoint.hpp's generic
+// 8-way evt[2:0] bitmask/saturating-write combinator
+// (rcp::endpoint::apply_bitmask_write) onto PWM_OUT's period/active pair.
+// The specification's own PWM_OUT request-handling section describes only
+// one write behavior: a request supplies both values and they take effect
+// directly (a request with PWM_Period of 0 stops generation; the whole
+// point of Add/Or/Xor-style combination — bitwise OR/AND/XOR or saturating
+// add/subtract against the *previous* period/active values — is never
+// described for this endpoint type, and does not obviously make sense for
+// a period/duty-cycle pair the way it does for GPIO's independent pin
+// bits). PwmOutEndpoint::handle_write below therefore no longer calls
+// apply_bitmask_write at all: WriteSemantics::Replace applies the request
+// directly, and every other semantics (Or/And/Xor/Add/Subtract/Reserved/
+// Reconfigure) is rejected via the same
+// EndpointErrc::non_combinable_write_semantics sentinel Reconfigure already
+// used, without reusing apply_bitmask_write's combinator logic itself.
 //
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
@@ -38,8 +62,10 @@
 // and rcp/gpio.hpp.
 #pragma once
 
+#include <rcp/avtp.hpp>
 #include <rcp/endpoint.hpp>
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <system_error>
@@ -50,12 +76,39 @@ namespace pwm {
 // ── Shared period/active-duration payload shape ───────────────────────────────
 // `period` and `active_duration` share one implementation-defined tick unit
 // (extraction §5.5, §5.6); this header does not itself fix that unit to a
-// physical time value.
+// physical time value. Both fields are 16 bits wide on the wire — the
+// PWM_OUT/PWM_IN payload is a fixed 4 bytes total (verified against the
+// spec's "pwmo request format" figure, §13.7.5.3), not an open-ended
+// 32-bit-per-field pair.
 
 struct PwmValue {
-    uint32_t period          = 0;
-    uint32_t active_duration = 0;
+    uint16_t period          = 0;
+    uint16_t active_duration = 0;
 };
+
+// ── Wire codec ────────────────────────────────────────────────────────────────
+// Fixed 4-byte payload: PWM_Period (big-endian 16 bit) followed by PWM_active
+// (big-endian 16 bit), per the spec's "pwmo request format" figure
+// (§13.7.5.3) — a request not having exactly four bytes is rejected there
+// with INVALID_PARAMETER, which decode_pwm_payload below surfaces as
+// avtp::AvtpErrc::short_buffer for a too-short buffer.
+
+constexpr size_t kPwmPayloadLen = 4;
+using PwmWireBytes              = std::array<uint8_t, kPwmPayloadLen>;
+
+inline PwmWireBytes encode_pwm_payload(const PwmValue& value) noexcept {
+    PwmWireBytes buf{};
+    avtp::detail::put_u16(&buf[0], value.period);
+    avtp::detail::put_u16(&buf[2], value.active_duration);
+    return buf;
+}
+
+inline std::error_code decode_pwm_payload(const uint8_t* buf, size_t len, PwmValue& out) noexcept {
+    if (len < kPwmPayloadLen) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    out.period          = avtp::detail::get_u16(&buf[0]);
+    out.active_duration = avtp::detail::get_u16(&buf[2]);
+    return {};
+}
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
@@ -82,27 +135,20 @@ inline std::error_code make_error_code(PwmErrc e) noexcept {
 }
 
 // ── PwmOutEndpoint (ep_type 0x07) ────────────────────────────────────────────
-// Applies one of GPIO's 8 write semantics independently to `period` and to
-// `active_duration` — each field is combined against its own current value
-// (this implementation's own choice: the extraction does not itself say
-// whether the two fields share one combinator application or each combines
-// independently, and independent combination is what this header
-// implements). Reuses rcp::endpoint::apply_bitmask_write directly, so the
-// saturating add/subtract rule endpoint.hpp already implements generically
-// applies to both fields without PWM_OUT re-deriving it.
+// handle_write applies WriteSemantics::Replace directly (the only write
+// behavior the spec's PWM_OUT request-handling section describes) and
+// rejects every other write semantics as non-combinable — see the header
+// comment above for why this no longer reuses
+// rcp::endpoint::apply_bitmask_write's generic bitmask/saturating-write
+// combinator the way rcp/gpio.hpp does.
 class PwmOutEndpoint {
 public:
     std::error_code handle_write(endpoint::WriteSemantics op, PwmValue operand,
                                   PwmValue& out_value) noexcept {
-        uint32_t period_out = 0;
-        auto ec = endpoint::apply_bitmask_write(op, state_.period, operand.period, period_out);
-        if (ec) return ec;
-        uint32_t duration_out = 0;
-        ec = endpoint::apply_bitmask_write(op, state_.active_duration, operand.active_duration,
-                                            duration_out);
-        if (ec) return ec;
-        state_.period          = period_out;
-        state_.active_duration = duration_out;
+        if (op != endpoint::WriteSemantics::Replace) {
+            return endpoint::make_error_code(endpoint::EndpointErrc::non_combinable_write_semantics);
+        }
+        state_    = operand;
         out_value = state_;
         return {};
     }

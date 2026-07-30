@@ -5,30 +5,65 @@
 // fusa:req REQ-MDIO-005
 
 // MDIO endpoint (ep_type 0x0D) — the OPEN Alliance TC18 Remote Control
-// Protocol Specification v0.5.1_RC's Clause-22/Clause-45-style mode-selected
-// PHY register access (extraction §5.13).
+// Protocol Specification v0.5.1_RC's mdio_mode-selected register access
+// (extraction §5.13).
 //
 // ROADMAP.md milestone 51, "Remaining Endpoint Types — LIN, CAN (incl. CAN
-// XL), ISELED, MDIO, Wakeup Control (v2.7.0)": two points the roadmap calls
-// out explicitly for MDIO. First, this endpoint type is fully specified in
-// the source document but is not named in that document's own informative
-// "ten interfaces" scope-summary list (extraction §1.2) — this
+// XL), ISELED, MDIO, Wakeup Control (v2.7.0)": this endpoint type is fully
+// specified in the source document but is not named in that document's own
+// informative "ten interfaces" scope-summary list (extraction §1.2) — this
 // implementation treats that as an editorial omission in the summary list,
 // not as evidence MDIO is actually out of scope, and builds it anyway.
-// Second, MDIO carries essentially no type-specific functional
-// configuration beyond rcp/regmap.hpp's already-existing generic/functional
-// endpoint config split (v2.1.0) — unlike rcp/gpio.hpp (which layers a
-// pin-direction-plus-edge-mask block on top of that split), this header
-// defines no MDIO-specific functional-config encode/decode pair at all,
-// because the extraction does not call for one; MdioRequest/MdioResponse
-// below are the entire type-specific surface.
+//
+// Addressing-model fix (issue #72, cpp-RCP-03): this header previously
+// modeled MDIO addressing as an invented IEEE 802.3 Clause 22/Clause
+// 45-style PHY-address scheme (a 5-bit PHY address, a Clause22 register /
+// Clause45 device-address field, and an MdioClause selector) that has no
+// basis in the TC18 spec's own MDIO section. Verified against the OPEN
+// Alliance TC18 Remote Control Protocol Specification's "mdio request
+// format" figure and Table 57 (§13.7.13.3): the real addressing model is a
+// 2-bit mdio_mode selector, an mdio_address field ("as per IEEE & OA SPI
+// spec" — i.e. opaque to this header, not decomposed into a PHY/device/
+// register split of this header's own invention), and an mdio_payload whose
+// width mdio_mode (and, for one mode, which MMS device is addressed)
+// determines. The Clause 22/Clause 45 abstraction (MdioClause,
+// phy_address, device_or_reg, register_address, kMaxPhyAddress,
+// kMaxDeviceOrRegField) is removed entirely and rebuilt around
+// mdio_mode/mdio_address/mdio_payload below.
+//
+// mdio_mode's four values, per Table 57:
+//   00b: MMD, single word access   (16-bit payload)
+//   01b: MMD, multiple byte access (16-bit payload)
+//   10b: MMS, single word access   (16-bit payload)
+//   11b: MMS, multiple (double) word access (32-bit payload, but only when
+//        the addressed MMS device is MMS0 or MMS1 — any other MMS device
+//        number still uses a 16-bit payload even in this mode)
+// Table 57 itself prints "01b" for both the first two rows (MMD single word
+// and MMD multiple byte access), which cannot both be correct in a 2-bit
+// field with four otherwise-unambiguous rows (10b and 11b are printed once
+// each, for the two MMS rows) — this is treated as a transcription defect
+// in the v0.5.1_RC table, not as evidence of a 3-value field. By
+// elimination (00b is the only 2-bit value the table's other three rows
+// leave unclaimed), MMD single word access is 00b and MMD multiple byte
+// access is 01b, below.
+//
+// mdio_payload's width, per Table 57 ("for MMD, data fields are 16 bits.
+// for MMS0 & 1: data fields are 32 bits. For other MMS, data fields are 16
+// bits"): always 16 bits for MMD (either sub-mode) and for MMS single word
+// access; 32 bits for MMS multiple (double) word access specifically when
+// the addressed MMS device is MMS0 or MMS1, 16 bits otherwise. Which MMS
+// device number mdio_address addresses is part of the external IEEE 802.3 /
+// OPEN Alliance SPI addressing scheme Table 57 itself defers to (mdio
+// address: "As per IEEE & OA SPI spec") and is not decoded by this header;
+// MdioRequest::mms_is_0_or_1 below is the caller-supplied fact
+// payload_width_bits needs for the MmsMultiWord case.
 //
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
-// text from that document is reproduced here. The concrete request/response
-// field widths and register-key composition chosen in this file are this
-// implementation's own, same as the equivalent disclaimers in rcp/avtp.hpp,
-// rcp/regmap.hpp, and rcp/endpoint.hpp.
+// text from that document is reproduced here. The concrete register-key
+// composition chosen in this file is this implementation's own, same as the
+// equivalent disclaimers in rcp/avtp.hpp, rcp/regmap.hpp, and
+// rcp/endpoint.hpp.
 #pragma once
 
 #include <rcp/endpoint.hpp>
@@ -41,34 +76,42 @@
 namespace rcp {
 namespace mdio {
 
-// ── Clause selection ─────────────────────────────────────────────────────────
-// Clause 22's addressing is a flat 5-bit register address within a PHY;
-// Clause 45 adds a device (MMD) address plus a wider 16-bit register address
-// within that device (extraction §5.13).
+// ── mdio_mode ─────────────────────────────────────────────────────────────────
+// See header comment for the 00b/01b elimination reasoning.
 
-enum class MdioClause : uint8_t { Clause22 = 0, Clause45 = 1 };
+enum class MdioMode : uint8_t {
+    MmdSingleWord = 0b00,
+    MmdMultiWord  = 0b01,
+    MmsSingleWord = 0b10,
+    MmsMultiWord  = 0b11,
+};
 
-constexpr uint8_t  kMaxPhyAddress        = 0x1Fu; // 5-bit field
-constexpr uint8_t  kMaxDeviceOrRegField  = 0x1Fu; // 5-bit field: Clause22 register addr, or Clause45 MMD device addr
+// payload_width_bits returns the mdio_payload width Table 57 assigns for
+// `mode`, given whether the addressed MMS device (relevant only for
+// MmsMultiWord) is MMS0 or MMS1.
+constexpr uint8_t payload_width_bits(MdioMode mode, bool mms_is_0_or_1) noexcept {
+    if (mode == MdioMode::MmsMultiWord && mms_is_0_or_1) return 32;
+    return 16;
+}
+
+// ── Request / response shapes ────────────────────────────────────────────────
 
 struct MdioRequest {
-    MdioClause clause           = MdioClause::Clause22;
-    uint8_t    phy_address      = 0; // 5-bit PHY address
-    uint8_t    device_or_reg    = 0; // Clause22: register address; Clause45: MMD device address
-    uint16_t   register_address = 0; // Clause45 only: 16-bit register within the MMD; unused for Clause22
-    bool       is_write         = false;
-    uint16_t   write_value      = 0; // meaningful only when is_write is true
+    MdioMode mode          = MdioMode::MmdSingleWord;
+    uint16_t mdio_address  = 0; // opaque per IEEE 802.3 / OA SPI addressing (Table 57); not decoded here
+    bool     mms_is_0_or_1 = false; // only meaningful when mode == MmsMultiWord; see payload_width_bits
+    bool     is_write      = false;
+    uint32_t mdio_payload  = 0; // width per payload_width_bits(mode, mms_is_0_or_1)
 };
 
 struct MdioResponse {
-    uint16_t value = 0;
+    uint32_t mdio_payload = 0;
 };
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 enum class MdioErrc : int {
-    phy_address_out_of_range     = 1,
-    device_or_reg_out_of_range   = 2,
+    payload_exceeds_mode_width = 1, // mdio_payload does not fit payload_width_bits(mode, mms_is_0_or_1)
 };
 
 inline const std::error_category& mdio_category() noexcept {
@@ -76,10 +119,8 @@ inline const std::error_category& mdio_category() noexcept {
         const char* name() const noexcept override { return "rcp.mdio"; }
         std::string message(int ev) const override {
             switch (static_cast<MdioErrc>(ev)) {
-            case MdioErrc::phy_address_out_of_range:
-                return "rcp/mdio: PHY address exceeds its 5-bit range";
-            case MdioErrc::device_or_reg_out_of_range:
-                return "rcp/mdio: device/register address exceeds its 5-bit range";
+            case MdioErrc::payload_exceeds_mode_width:
+                return "rcp/mdio: mdio_payload exceeds the width mdio_mode assigns it";
             default:
                 return "rcp/mdio: unknown error";
             }
@@ -94,9 +135,9 @@ inline std::error_code make_error_code(MdioErrc e) noexcept {
 }
 
 inline std::error_code validate_request(const MdioRequest& req) noexcept {
-    if (req.phy_address > kMaxPhyAddress) return make_error_code(MdioErrc::phy_address_out_of_range);
-    if (req.device_or_reg > kMaxDeviceOrRegField)
-        return make_error_code(MdioErrc::device_or_reg_out_of_range);
+    const uint8_t width = payload_width_bits(req.mode, req.mms_is_0_or_1);
+    const uint64_t max_value = (width == 32) ? 0xFFFFFFFFull : 0xFFFFull;
+    if (req.mdio_payload > max_value) return make_error_code(MdioErrc::payload_exceeds_mode_width);
     return {};
 }
 
@@ -112,10 +153,11 @@ constexpr endpoint::TriggerRegistry::SignalId mdio_signal_id(MdioSignal sig) noe
 }
 
 // ── MdioEndpoint ──────────────────────────────────────────────────────────────
-// register_key folds (clause, phy_address, device_or_reg[, register_address
-// for Clause45 only]) into one lookup key so Clause22's flat address space
-// and Clause45's device+register address space never collide with each
-// other, even for identical phy_address/device_or_reg bit patterns.
+// register_key folds (mode, mdio_address) into one lookup key, so the four
+// mdio_mode values never collide with each other even for an identical
+// mdio_address bit pattern (mirroring how the register spaces of, e.g.,
+// MMD vs. MMS access are logically distinct on real MDIO-manageable
+// devices, per the spec's own MMD/MMS split in Table 57).
 class MdioEndpoint {
 public:
     std::error_code handle_request(MdioRequest req, MdioResponse& out) {
@@ -125,11 +167,11 @@ public:
         last_request_ = req;
         const uint64_t key = register_key(req);
         if (req.is_write) {
-            registers_[key] = req.write_value;
-            out.value = req.write_value;
+            registers_[key] = req.mdio_payload;
+            out.mdio_payload = req.mdio_payload;
         } else {
             const auto it = registers_.find(key);
-            out.value = (it != registers_.end()) ? it->second : uint16_t{0};
+            out.mdio_payload = (it != registers_.end()) ? it->second : uint32_t{0};
         }
         triggers_.notify(mdio_signal_id(MdioSignal::TransferComplete));
         return {};
@@ -140,16 +182,12 @@ public:
 
 private:
     static uint64_t register_key(const MdioRequest& req) noexcept {
-        uint64_t key = (static_cast<uint64_t>(req.clause) << 40) |
-                       (static_cast<uint64_t>(req.phy_address) << 32) |
-                       (static_cast<uint64_t>(req.device_or_reg) << 16);
-        if (req.clause == MdioClause::Clause45) key |= req.register_address;
-        return key;
+        return (static_cast<uint64_t>(req.mode) << 16) | req.mdio_address;
     }
 
-    endpoint::TriggerRegistry            triggers_;
-    MdioRequest                          last_request_;
-    std::unordered_map<uint64_t, uint16_t> registers_;
+    endpoint::TriggerRegistry              triggers_;
+    MdioRequest                            last_request_;
+    std::unordered_map<uint64_t, uint32_t> registers_;
 };
 
 } // namespace mdio
