@@ -65,7 +65,7 @@ TEST_CASE("request_reading rejects a zero-valued averaging config field", "[adc]
     AdcEndpoint ep;
     AdcAveragingConfig cfg;
     cfg.adc_avg_intervals_per_request = 0;
-    auto take_sample = []() -> std::optional<uint16_t> { return 1; };
+    auto take_sample = []() -> std::optional<uint16_t> { return uint16_t{1}; };
 
     uint16_t out_value = 0;
     auto ec = ep.request_reading(cfg, take_sample, out_value);
@@ -115,7 +115,7 @@ TEST_CASE("request_reading_from_trigger_queue implements the ExternalTrigger cad
     cfg.adc_avg_intervals_per_request = 2;
     cfg.adc_combine_avg_values        = 2;
 
-    std::vector<std::optional<uint16_t>> queue{10u, 20u, 30u, 40u, 999u}; // one extra entry left over
+    std::vector<std::optional<uint16_t>> queue{uint16_t{10}, uint16_t{20}, uint16_t{30}, uint16_t{40}, uint16_t{999}}; // one extra entry left over
 
     uint16_t out_value = 0;
     auto ec = ep.request_reading_from_trigger_queue(cfg, queue, out_value);
@@ -132,7 +132,7 @@ TEST_CASE("request_reading_from_trigger_queue reports no_signal on queue underru
     cfg.adc_avg_intervals_per_request = 2;
     cfg.adc_combine_avg_values        = 2;
 
-    std::vector<std::optional<uint16_t>> queue{1u, 2u}; // fewer than the 4 needed
+    std::vector<std::optional<uint16_t>> queue{uint16_t{1}, uint16_t{2}}; // fewer than the 4 needed
     uint16_t out_value = 0;
     auto ec = ep.request_reading_from_trigger_queue(cfg, queue, out_value);
     REQUIRE(ec == make_error_code(AdcErrc::no_signal));
@@ -145,7 +145,7 @@ TEST_CASE("request_reading_from_trigger_queue reports no_signal on a missing-cap
     cfg.adc_avg_intervals_per_request = 2;
     cfg.adc_combine_avg_values        = 1;
 
-    std::vector<std::optional<uint16_t>> queue{10u, std::nullopt}; // trigger occurred, no valid capture
+    std::vector<std::optional<uint16_t>> queue{uint16_t{10}, std::nullopt}; // trigger occurred, no valid capture
     uint16_t out_value = 0;
     auto ec = ep.request_reading_from_trigger_queue(cfg, queue, out_value);
     REQUIRE(ec == make_error_code(AdcErrc::no_signal));
