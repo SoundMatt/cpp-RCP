@@ -3,7 +3,7 @@
 **Project:** cpp-RCP  
 **Version:** 0.1.0  
 **DAL/ASIL/SIL:** DAL-B  
-**Generated:** 2026-07-29T04:45:54Z  
+**Generated:** 2026-07-30T19:16:24Z  
 
 ## Checklist
 
@@ -15,7 +15,7 @@
 | Check report | 11.15 | absent | `check-report.json` |
 | Cybersecurity analysis | 11.15 | absent | `cyber-report.json` |
 | FMEA | 11.15 | present | `fmea.json` |
-| TARA | 11.15 | present | `tara.json` |
+| TARA | 11.15 | absent | `tara.json` |
 | Safety case | 11.15 | present | `safety-case.json` |
 | Qualification report | 12.2 | present | `qualify-report.json` |
 | SBOM | 11.16 | present | `sbom.json` |
@@ -30,4 +30,4 @@
 | HARA | 11.9 | present | `.fusa-hara.json` |
 | Dispositions | 11.15 | absent | `.fusa-dispositions.json` |
 
-**Present: 15 / 20**
+**Present: 14 / 20**

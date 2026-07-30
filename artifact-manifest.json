@@ -2,7 +2,7 @@
   "artifacts": [
     {
       "path": ".fusa-hara.json",
-      "sha256": "d91cb15711f716459308dc685c55e6531e2f9fe3ef3e93d06a968a425d5c0f33"
+      "sha256": "db7d379efab5ef19101135d41abcbf14a837d1d1aabbb82d1d6662dfdbeffabe"
     },
     {
       "path": ".fusa-problems.json",
@@ -10,7 +10,7 @@
     },
     {
       "path": ".fusa-reqs.json",
-      "sha256": "ca678103b34537b0238d1c0d1e26a614d6dc869b96e01ad6a9c68ddede74087a"
+      "sha256": "4e7baa43e0b12c82ec8d6ff6e722e5393b52da2fab9965a4cfc78db40aa21f25"
     },
     {
       "path": ".fusa.json",
@@ -18,43 +18,43 @@
     },
     {
       "path": "artifact-manifest.json",
-      "sha256": "7ea0419da5fdbf15156b9fcdd06e387c58b517ca746a230e569c350a154657de"
+      "sha256": "d239d3a0620618c7f25890bc60de933d28683ce56312a9413c4fa69455bab506"
     },
     {
       "path": "do178-gap-report.json",
-      "sha256": "508a2c4bf6c7f958567f529409e18c5adb0683572d25da83771b53ef5a27b915"
+      "sha256": "c298d6fd5fe97274f9a6619b3080877541ea36b23a2b7a281b973ac0755073ee"
     },
     {
       "path": "fmea.csv",
-      "sha256": "83f9291d1929ee1aba7214290eab2fb8d3fd89876af7b776ec5b163d5fcd72ae"
+      "sha256": "cc1ce7ef35651c8a3d789edfbc1182d01da10d266fffe5cd4154bcf15991c961"
     },
     {
       "path": "fmea.json",
-      "sha256": "930539cfb3e6055405740ba733091e3a3122f7b55e441625f79d06f28ad7c561"
+      "sha256": "0f071cd390c41fd20365ab830608d07beff1684b2b5e4942010bb99af16dd85b"
     },
     {
       "path": "iec61508-gap-report.json",
-      "sha256": "681f76fc2c7ebcf390252e3e1c2cc5db116e01444f71e1e3f5e1a57699113a32"
+      "sha256": "f7546806aaf4e395d5f744ded02cc4ced05e23d3a1ea794fbb702f8580195223"
     },
     {
       "path": "iso26262-gap-report.json",
-      "sha256": "e51b879cd1d56e79f3c9542e8efdbe992b5c01ef730b38ebfc9162a3debc9139"
+      "sha256": "952738e1b2d634364580ab0effd16435449ae8cc05d295048e570fce2f1f3d43"
     },
     {
       "path": "provenance.json",
-      "sha256": "ea4e10eb1a621b191de56cd97c72bd1479411ca3fedba18c2884f548401e9bae"
+      "sha256": "b841a4c6c4a1c7234e5e0336793d22d45d143f5d894bcfd2ae5e99f1baf65570"
     },
     {
       "path": "qualify-report.json",
-      "sha256": "abae524daae257c37ac1a3985707d063bf57dfce9954328ec7c5acd5d1f9c70b"
+      "sha256": "e8ec603d2a4c5f31c2a150e4796434cec5157b9d2895c1b7e5e915ffc7270767"
     },
     {
       "path": "safety-case.json",
-      "sha256": "eb6ad4eb1b12800c12de43ae6d5dad96cd12ee136603ca1e6c49ba8ef4970b4d"
+      "sha256": "470a553c35e0d141fb239560e7f4c1590ec859b05033aec676f032656046671d"
     },
     {
       "path": "safety-case.md",
-      "sha256": "441a1e8dc3d352562c55a5967a1f8db3f4b5542f3f3b3baf46eff9e1dc132d38"
+      "sha256": "c7c9856f8ba0821c529a6c5bbd1b25bc34798f99cb6c9b1809aad0d477d9635b"
     },
     {
       "path": "safety-case.mermaid",
@@ -62,22 +62,14 @@
     },
     {
       "path": "sbom.json",
-      "sha256": "ee7d2c730caf90f152e3eee064736b2c7bc639daf8e3dd4d4a6fd59bdd28ec79"
-    },
-    {
-      "path": "tara.json",
-      "sha256": "83687a70940e5370b238e8784e4e8fa04c26ded1ff2e6c902f50ddc2e3f5482f"
-    },
-    {
-      "path": "tara.md",
-      "sha256": "49952b4e6e6e8e692db8ce242aee95c717fea4cf7bdf3660e0042d554c0510a7"
+      "sha256": "844b72229cf31f34b975258630caf53d18780f76861ca76f45e31591a1cbbcea"
     }
   ],
   "format": "x-FuSa manifest v1",
-  "generatedAt": "2026-07-29T04:45:54Z",
+  "generatedAt": "2026-07-30T19:16:24Z",
   "kind": "artifact-manifest",
   "language": "cpp",
-  "schemaVersion": "1.15.0",
+  "schemaVersion": "1.15.2",
   "tool": "cpp-FuSa",
   "toolVersion": "0.17.0"
 }

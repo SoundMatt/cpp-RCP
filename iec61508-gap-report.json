@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-07-29T04:45:54Z",
+  "generatedAt": "2026-07-30T19:16:24Z",
   "objectives": [
     {
       "clause": "§7.1",
       "id": "1-7.1",
       "part": "Part 1",
-      "status": "gap",
+      "status": "partial",
       "title": "Safety lifecycle"
     },
     {
@@ -19,14 +19,14 @@
       "clause": "§8.1",
       "id": "1-8.1",
       "part": "Part 1",
-      "status": "gap",
+      "status": "partial",
       "title": "Safety requirements specification"
     },
     {
       "clause": "§8.2",
       "id": "1-8.2",
       "part": "Part 1",
-      "status": "gap",
+      "status": "satisfied",
       "title": "Safety requirements allocation"
     },
     {
@@ -40,7 +40,7 @@
       "clause": "§7.2",
       "id": "3-7.2",
       "part": "Part 3",
-      "status": "gap",
+      "status": "partial",
       "title": "Software architecture design"
     },
     {
@@ -117,7 +117,7 @@
       "clause": "§7.1",
       "id": "2-7.1",
       "part": "Part 2",
-      "status": "gap",
+      "status": "partial",
       "title": "Hardware safety requirements"
     },
     {
@@ -131,9 +131,9 @@
   "project": "cpp-RCP",
   "sil": "SIL-2",
   "summary": {
-    "gaps": 11,
-    "partial": 4,
-    "satisfied": 3,
+    "gaps": 6,
+    "partial": 8,
+    "satisfied": 4,
     "total": 18
   }
 }

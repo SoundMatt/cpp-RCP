@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-29T04:45:54Z",
+  "generatedAt": "2026-07-30T19:16:23Z",
   "kind": "tara-report",
   "language": "cpp",
   "project": "cpp-RCP",
   "projectRoot": "/home/runner/work/cpp-RCP/cpp-RCP",
-  "schemaVersion": "1.15.0",
+  "schemaVersion": "1.15.2",
   "standard": "iso21434",
   "summary": {
     "assetInventoryMethod": "assetsInProject counts the distinct `asset` values named in this TARA's own hand-curated scenario catalogue. cpp-FuSa does not yet perform automated asset discovery (e.g. from CMake targets, SBOM components, or data-flow analysis), so this metric shows internal consistency of the catalogue (every named asset has at least one scenario), not an independently measured attack surface — the honest gap this leaves open is any project asset the catalogue's author simply never listed.",
@@ -25,6 +25,8 @@
         "safety": "major"
       },
       "mitigations": [
+        "sign — HMAC-SHA256 artifact signing",
+        "SLSA provenance verification (slsa command)",
         "Release workflow requires branch-protected, reviewed PRs before tagging"
       ],
       "risk": "medium",
@@ -64,6 +66,7 @@
       },
       "mitigations": [
         "audit-pack — hashed manifest over every evidence artifact",
+        "sign --verify re-checks HMAC signatures before submission",
         "sci — Software Configuration Index records a per-file sha256 at release time"
       ],
       "risk": "medium",
@@ -71,7 +74,7 @@
       "treatment": "mitigate"
     },
     {
-      "asset": "Third-party CMake dependencies (FetchContent: Catch2)",
+      "asset": "Third-party CMake dependencies (FetchContent: CLI11, nlohmann/json, Catch2)",
       "attackFeasibility": "very-low",
       "attackVector": "Supply-chain compromise of an upstream GitHub repository or its release tags fetched by FetchDeps.cmake.",
       "id": "TARA-004",

@@ -1,7 +1,7 @@
 # Safety Case — cpp-RCP
 
 **Standard:** iso26262  
-**Generated:** 2026-07-29T04:45:54Z  
+**Generated:** 2026-07-30T19:16:23Z  
 
 ## Goals
 
@@ -26,7 +26,7 @@
 | A1 | assumption |  | The compiler toolchain used to build cpp-RCP is itself qualified or independently trusted for its intended use |
 | J1 | justification |  | §1.6.1's FUSA-STUB001/002 heuristics are an automatable proxy for content quality, not a substitute for a human reviewer's judgement — hence §1.6.2's attestation mechanism rather than a purely mechanical gate |
 
-## Evidence (15 files)
+## Evidence (13 files)
 
 - `.fusa.json`
 - `.fusa-reqs.json`
@@ -41,5 +41,3 @@
 - `provenance.json`
 - `artifact-manifest.json`
 - `qualify-report.json`
-- `tara.json`
-- `tara.md`
