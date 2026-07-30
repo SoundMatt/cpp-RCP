@@ -9,11 +9,16 @@
 // Verifies that cpp-RCP satisfies the mandatory RELAY-conformance requirements
 // as enumerated in Appendix A of the RELAY spec.
 //
-// ROADMAP.md milestone 60 (v2.16.0): the §10.3/§15.7.5 sections below
-// (Adapt(), endpoint-id round trips) are entirely rewritten against
-// rcp/adapt.hpp's v2.16.0 RequestFn-based redesign — see that header's own
-// comment. The general §3/§5/§14/§18.2/§19.4 relay:: conformance sections
-// above them are unaffected by this milestone and unchanged.
+// cpp-RCP-05/#74: kRelaySpecVersion bumped 1.11 -> 2.0 (the breaking RCP
+// revision, RELAY spec §15.5). cpp-RCP-FS-01/#84: the retired
+// Zone/Command/Status model — including rcp::StatusChannel, which aliased
+// relay::Channel<Status> — is gone, so the §18.2 StatusChannel case below is
+// removed along with it; rcp::Context's §18.2 alias is unaffected and still
+// covered. cpp-RCP-FS-05/#88: endpoint_id_to_relay_id()/
+// relay_id_to_endpoint_id()/response_to_message()/message_to_request() are
+// rebound to the plain decimal ByteBusID id RELAY spec §15.7.5 actually
+// specifies (no stream_key folded in) — see rcp/adapt.hpp's own header
+// comment.
 #include <catch2/catch_test_macros.hpp>
 
 #include <rcp/acf.hpp>
@@ -28,8 +33,8 @@ using namespace std::chrono_literals;
 
 // ── §19.4: SpecVersion constant ───────────────────────────────────────────────
 
-TEST_CASE("relay: kRelaySpecVersion is 1.11", "[relay][conformance]") {
-    REQUIRE(relay::kRelaySpecVersion == "1.11");
+TEST_CASE("relay: kRelaySpecVersion is 2.0", "[relay][conformance]") {
+    REQUIRE(relay::kRelaySpecVersion == "2.0");
 }
 
 // ── §3: Protocol enum ─────────────────────────────────────────────────────────
@@ -78,15 +83,13 @@ TEST_CASE("relay: rcp::ErrBusy maps to relay::ErrTimeout", "[relay][conformance]
 }
 
 TEST_CASE("relay: rcp::ErrNotFound maps to relay::ErrNotConnected", "[relay][conformance]") {
+    // RELAY spec §5.4 (v2.0): "RCP | ErrNotFound | ErrNotConnected |
+    // Message.ID does not parse to a valid ByteBusID (0-255)".
     REQUIRE(rcp::ErrNotFound == relay::ErrNotConnected);
 }
 
-TEST_CASE("relay: rcp::ErrZoneMismatch maps to relay::ErrNotConnected", "[relay][conformance]") {
-    REQUIRE(rcp::ErrZoneMismatch == relay::ErrNotConnected);
-}
-
 TEST_CASE("relay: rcp::ErrAlreadyExists is standalone (no relay sentinel)", "[relay][conformance]") {
-    // Per RELAY spec §5.4 update: ErrAlreadyExists is not a relay sentinel.
+    // Per RELAY spec §5.4: ErrAlreadyExists is not a relay sentinel.
     REQUIRE(rcp::ErrAlreadyExists != relay::ErrClosed);
     REQUIRE(rcp::ErrAlreadyExists != relay::ErrNotConnected);
     REQUIRE(rcp::ErrAlreadyExists != relay::ErrTimeout);
@@ -100,22 +103,6 @@ TEST_CASE("relay: rcp::Context is relay::Context", "[relay][conformance]") {
         "rcp::Context must be an alias for relay::Context (§18.2)");
     auto ctx = rcp::Context::with_timeout(100ms);
     REQUIRE_FALSE(ctx.done());
-}
-
-// ── §18.2: StatusChannel aliased from relay::Channel<Status> ─────────────────
-
-TEST_CASE("relay: rcp::StatusChannel is relay::Channel<rcp::Status>", "[relay][conformance]") {
-    static_assert(
-        std::is_same<rcp::StatusChannel, relay::Channel<rcp::Status>>::value,
-        "rcp::StatusChannel must be relay::Channel<rcp::Status> (§18.2)");
-    auto ch = std::make_shared<rcp::StatusChannel>(4);
-    rcp::Status s;
-    s.zone    = rcp::Zone::FrontLeft;
-    s.healthy = true;
-    REQUIRE(ch->push(s));
-    auto got = ch->try_recv();
-    REQUIRE(got.has_value());
-    REQUIRE(got->zone == rcp::Zone::FrontLeft);
 }
 
 // ── §14: BackPressurePolicy default is drop_newest ───────────────────────────
@@ -184,7 +171,7 @@ TEST_CASE("relay: Adapt() call() sends a request and returns the response", "[re
 
     relay::Message req;
     req.protocol = relay::Protocol::RCP;
-    req.id       = rcp::endpoint_id_to_relay_id(0, rcp::mock::kGpioByteBusId);
+    req.id       = rcp::endpoint_id_to_relay_id(rcp::mock::kGpioByteBusId);
     req.meta["rcp.op"] = "read";
 
     auto ctx = relay::Context::with_timeout(1s);
@@ -211,7 +198,7 @@ TEST_CASE("relay: Adapt() send() succeeds", "[relay][adapt]") {
     auto caller = rcp::Adapt(mock_request_fn(make_configured_mock_server()));
 
     relay::Message msg;
-    msg.id             = rcp::endpoint_id_to_relay_id(0, rcp::mock::kSpiByteBusId);
+    msg.id             = rcp::endpoint_id_to_relay_id(rcp::mock::kSpiByteBusId);
     msg.meta["rcp.op"] = "write";
 
     auto ctx = relay::Context::with_timeout(1s);
@@ -236,25 +223,44 @@ TEST_CASE("relay: Adapt() close() idempotent", "[relay][adapt]") {
 }
 
 // ── §15.7.5: endpoint_id_to_relay_id / relay_id_to_endpoint_id round-trips ───
+// cpp-RCP-FS-05/#88: Message.ID for RCP is just the decimal ByteBusID string
+// (0-255) — the StreamID is not part of it (§8.5: one StreamID per Caller
+// instance).
 
-TEST_CASE("relay: server+endpoint id round-trips through relay ID", "[relay][conform]") {
-    for (auto pair : {std::pair<uint64_t, rcp::avtp::ByteBusId>{uint64_t{0}, rcp::avtp::ByteBusId{1}},
-                       std::pair<uint64_t, rcp::avtp::ByteBusId>{uint64_t{0x1122334455667788ULL}, rcp::avtp::ByteBusId{2}},
-                       std::pair<uint64_t, rcp::avtp::ByteBusId>{uint64_t{42}, rcp::avtp::ByteBusId{255}}}) {
-        auto id = rcp::endpoint_id_to_relay_id(pair.first, pair.second);
-        uint64_t stream_key = 0;
-        rcp::avtp::ByteBusId byte_bus_id = 0;
-        REQUIRE(rcp::relay_id_to_endpoint_id(id, stream_key, byte_bus_id));
-        REQUIRE(stream_key == pair.first);
-        REQUIRE(byte_bus_id == pair.second);
+TEST_CASE("relay: byte_bus_id round-trips through relay ID as a plain decimal string",
+          "[relay][conform]") {
+    for (rcp::avtp::ByteBusId bus_id : {rcp::avtp::ByteBusId{0}, rcp::avtp::ByteBusId{9},
+                                          rcp::avtp::ByteBusId{255}}) {
+        auto id = rcp::endpoint_id_to_relay_id(bus_id);
+        rcp::avtp::ByteBusId decoded = 0;
+        REQUIRE(rcp::relay_id_to_endpoint_id(id, decoded));
+        REQUIRE(decoded == bus_id);
     }
+}
+
+TEST_CASE("relay: endpoint_id_to_relay_id(9) is the plain decimal string \"9\" (spec example)",
+          "[relay][conform]") {
+    // RELAY spec §15.7.5's own worked example: `ID` | `ByteBusID` | Decimal
+    // string, e.g. "9".
+    REQUIRE(rcp::endpoint_id_to_relay_id(9) == "9");
+}
+
+TEST_CASE("relay: relay_id_to_endpoint_id rejects the pre-#88 \"<hex>:<decimal>\" form",
+          "[relay][conform]") {
+    rcp::avtp::ByteBusId byte_bus_id = 0;
+    REQUIRE_FALSE(rcp::relay_id_to_endpoint_id("0000000000000000:1", byte_bus_id));
 }
 
 TEST_CASE("relay: relay_id_to_endpoint_id rejects the pre-v2.16.0 zone-name form",
           "[relay][conform]") {
-    uint64_t stream_key = 0;
     rcp::avtp::ByteBusId byte_bus_id = 0;
-    REQUIRE_FALSE(rcp::relay_id_to_endpoint_id("FrontLeft", stream_key, byte_bus_id));
+    REQUIRE_FALSE(rcp::relay_id_to_endpoint_id("FrontLeft", byte_bus_id));
+}
+
+TEST_CASE("relay: relay_id_to_endpoint_id rejects a byte_bus_id above 255",
+          "[relay][conform]") {
+    rcp::avtp::ByteBusId byte_bus_id = 0;
+    REQUIRE_FALSE(rcp::relay_id_to_endpoint_id("256", byte_bus_id));
 }
 
 // ── §15.7.5: response_to_message / message_to_request mapping ────────────────
@@ -273,10 +279,10 @@ TEST_CASE("relay: response_to_message carries the endpoint id, payload, and resp
     resp.rsp         = true;
     resp.op          = false; // ReadResponse
 
-    auto msg = rcp::response_to_message(0x2A, resp, {0x01, 0x02});
+    auto msg = rcp::response_to_message(resp, {0x01, 0x02});
 
     REQUIRE(static_cast<int>(msg.protocol) == 5); // relay.RCP
-    REQUIRE(msg.id == "000000000000002a:7");
+    REQUIRE(msg.id == "7");
     REQUIRE(msg.payload == std::vector<uint8_t>{0x01, 0x02});
     REQUIRE(msg.meta.at("rcp.err") == "false");
     REQUIRE(msg.meta.at("rcp.response_kind") ==
@@ -285,16 +291,14 @@ TEST_CASE("relay: response_to_message carries the endpoint id, payload, and resp
 
 TEST_CASE("relay: message_to_request decodes op/evt_op from meta", "[relay][conformance]") {
     relay::Message msg;
-    msg.id                   = rcp::endpoint_id_to_relay_id(9, 3);
+    msg.id                   = rcp::endpoint_id_to_relay_id(3);
     msg.meta["rcp.op"]        = "write";
     msg.meta["rcp.evt_op"]    = "5";
     msg.payload                = {0xAA};
 
-    uint64_t stream_key = 0;
     rcp::acf::AcfMessageInfo req;
     std::vector<uint8_t> payload;
-    REQUIRE(rcp::message_to_request(msg, stream_key, req, payload));
-    REQUIRE(stream_key == 9);
+    REQUIRE(rcp::message_to_request(msg, req, payload));
     REQUIRE(req.byte_bus_id == 3);
     REQUIRE(req.op == true);
     REQUIRE(req.evt_op == 5);

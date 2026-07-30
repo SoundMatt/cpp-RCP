@@ -58,7 +58,7 @@ Phase 13-16 work are appended as H-011/SG-011.
 | SG-006 | Transport authentication (mTLS on the UDP/IP variant, or link-layer authentication on native Ethernet) and per-endpoint access policy shall be enforced on every external RC Server connection. | ASIL-B | `tls::SecureClient`/`SecureServer`, `authz::AccessPolicy`, `discovery::DiscoveryClaim` |
 | SG-007 | An RC Server that stops responding shall be detected as unreachable within the configured liveness deadline. | ASIL-B | `deadline::Monitor`/`LivenessTracker` |
 | SG-008 | An RC Server shall only be treated as operational after its lifecycle state machine reports RCP_CONFIGURED following a successful wake sequence. | ASIL-B | `lifecycle::ServerLifecycle`, `powerstate::PowerManager` |
-| SG-009 | Fault injection rules shall not persist beyond the lifetime of the injecting process. | ASIL-A | `faultinject::Controller` in-process state only |
+| SG-009 | Fault injection rules shall not persist beyond the lifetime of the injecting process. | ASIL-A | `faultinject::Interceptor` in-process state only |
 | SG-010 | A stream's watchdog/safe-state status shall be deterministically derivable from its own kick/overflow/latch history alone. | ASIL-B | `e2e::RxWatchdog`, `watchdog::StreamWatchdog` deterministic state |
 | SG-011 | A request whose computed E2E CRC does not match its received trailer shall be rejected, and a stream configured with rx_enforce_e2e shall latch safe state on the first such failure until explicitly reset. | ASIL-B | `e2e::verify_crc`, `e2e::RxStreamGuard` |
 

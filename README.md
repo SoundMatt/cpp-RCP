@@ -1,8 +1,8 @@
 # cpp-RCP
 
-A C++17 library implementing the Remote Control Protocol (RCP) for zonal control in automotive systems.
+A C++17 library implementing the OPEN Alliance TC18 Remote Control Protocol (RCP) Specification v0.5.1_RC for zonal control in automotive systems.
 
-RCP connects a high-performance central computer to distributed Ethernet-based zone controllers, keeping application logic centralised while remote zones provide access to local I/O, sensors, CAN/LIN gateways, and actuators.
+RCP connects a high-performance central computer (an RC Client) to distributed Ethernet-based RC Servers over IEEE 1722 AVTPDU/ACF framing, keeping application logic centralised while remote Endpoints provide access to local I/O, sensors, CAN/LIN gateways, and actuators.
 
 Feature and API equivalent of [go-RCP](https://github.com/SoundMatt/go-RCP).
 
@@ -21,11 +21,15 @@ reference.
 
 | Header | Description |
 |---|---|
-| `<rcp/rcp.hpp>` | Core interfaces: `Controller`, `Registry`, `Command`, `Response`, `Status`, `Zone`, `Context`, `StatusChannel` |
-| `<rcp/adapt.hpp>` | `Adapt()` — the RELAY §10.3 entry point, wraps a `RequestFn` (a client-side send-equivalent call) as a `relay::Caller`; `response_to_message`/`message_to_request` conversions, keyed by a server+endpoint identifier (ROADMAP.md v2.16.0) |
+| `<rcp/avtp.hpp>` | TC18 wire codec, framing half — IEEE 1722 AVTPDU (NTSCF/TSCF) header framing, `StreamId`, `ByteBusId` |
+| `<rcp/acf.hpp>` | TC18 wire codec, message half — ACF_ABB/ACF_GBB message format, `AcfMessageInfo` |
+| `<rcp/regmap.hpp>` | RC Server register-map model (generic + functional config, EP0) |
+| `<rcp/lifecycle.hpp>` | RC Server lifecycle state machine |
+| `<rcp/request.hpp>` | Conditional-request taxonomy (compound, triggered, timed, chained, ...) and sequencers |
+| `<rcp/rcp.hpp>` | Shared primitives used codebase-wide: the `Errc` sentinel error category, `Context` (a `relay::Context` alias), and `Loan` (a generic RAII buffer-loan holder) |
+| `<rcp/adapt.hpp>` | `Adapt()` — the RELAY §10.3 entry point, wraps a `RequestFn` (a client-side send-equivalent call) as a `relay::Caller`; `response_to_message`/`message_to_request` conversions, addressed by the endpoint's `byte_bus_id` (RELAY spec §15.7.5) |
 | `<relay/relay.hpp>` | `relay::` namespace types (§18.2): `Protocol`, `Message`, `Errc` sentinels, `Channel<T>`, `Context`, `Node`, `Caller` |
 | `<rcp/mock.hpp>` | In-process TC18 RC Server simulator (lifecycle + register map + GPIO/SPI) — zero I/O, default for unit tests (ROADMAP.md v2.12.0) |
-| `<rcp/legacy_mock.hpp>` | Pre-replacement in-process `Controller`/`Registry`, kept only for the one old-model dependent not yet rebound to the new request model (`config.hpp`) |
 | `<rcp/cli.hpp>` | RELAY-conformant CLI (§11/§12): `version`/`capabilities`/`status`/`send`; `send` addresses an RC Server endpoint via `--server`/`--endpoint` against the `<rcp/mock.hpp>` demo backend; `cli/main.cpp` is a thin wrapper around it (ROADMAP.md v2.16.0) |
 | `<rcp/version.hpp>` | Binary version string — single source of truth for the CLI |
 | `<rcp/capi.h>` / `<rcp/capi_impl.hpp>` | C ABI / FFI surface for RTOS/bare-metal targets (Zephyr/FreeRTOS): server+endpoint addressing, a caller-supplied `rcp_request_fn_t` callback, no heap allocation (ROADMAP.md v2.16.0) |
@@ -34,40 +38,40 @@ reference.
 
 | Header | Description |
 |---|---|
-| `<rcp/canbr.hpp>` | CAN / CAN-FD bridge — maps RCP commands to CAN frames via SocketCAN |
-| `<rcp/linbr.hpp>` | LIN bridge — maps RCP commands to LIN master-frame requests |
-| `<rcp/ddsbr.hpp>` | DDS bridge — publishes RCP commands as DDS typed topics |
-| `<rcp/mqttbr.hpp>` | MQTT bridge — publishes commands to MQTT topics |
-| `<rcp/someipbr.hpp>` | SOME/IP bridge — routes commands over SOME/IP service discovery |
-| `<rcp/restbridge.hpp>` | REST/HTTP bridge — maps commands to `POST /zones/{zone}/command` |
+| `<rcp/ddsbr.hpp>` | DDS bridge — publishes RCP requests as DDS typed topics |
+| `<rcp/mqttbr.hpp>` | MQTT bridge — publishes requests to MQTT topics |
+| `<rcp/someipbr.hpp>` | SOME/IP bridge — routes requests over SOME/IP service discovery |
+| `<rcp/restbridge.hpp>` | REST/HTTP bridge — maps requests to `POST /endpoints/{byte_bus_id}/request` |
 | `<rcp/grpcbridge.hpp>` | gRPC bridge — translates RCP wire frames to gRPC unary/streaming RPCs |
 | `<rcp/doipbr.hpp>` | DoIP (ISO 13400) bridge — encapsulates UDS requests over TCP/IP |
-| `<rcp/udsbr.hpp>` | UDS (ISO 14229) bridge — wraps RCP commands as UDS service requests |
+| `<rcp/udsbr.hpp>` | UDS (ISO 14229) bridge — wraps RCP requests as UDS service requests |
+
+CAN and LIN are native TC18 Endpoint types (see `<rcp/can.hpp>`/`<rcp/lin.hpp>`), not bridge targets, so this package carries no `canbr.hpp`/`linbr.hpp`.
 
 ### RCP control-plane concerns
 
 | Header | Description |
 |---|---|
-| `<rcp/authz.hpp>` | Command-level access control (ISO 21434 / IEC 62443 SL-2) |
+| `<rcp/authz.hpp>` | Request-level access control (ISO 21434 / IEC 62443 SL-2) |
 | `<rcp/e2e.hpp>` | End-to-end communication protection (ISO 26262 Part 7 E2E profile) |
-| `<rcp/deadline.hpp>` | Liveness deadline monitor for zone controller Status streams |
-| `<rcp/watchdog.hpp>` | Watchdog keeper — periodic `CommandType::Watchdog` kicks (ASIL-B) |
-| `<rcp/federation.hpp>` | Multi-HPC federation: cross-HPC zone forwarding with lease-based ownership |
-| `<rcp/redundancy.hpp>` | Hot-standby registry and HPC failover for ASIL-B fault tolerance |
-| `<rcp/firmware.hpp>` | Zone controller OTA firmware update session |
-| `<rcp/faultinject.hpp>` | Structured fault injection for validating safety mechanisms |
-| `<rcp/config.hpp>` | Zone registry loader from JSON/YAML configuration files |
-| `<rcp/admin.hpp>` | In-process Admin API: zone listing, SSE events, Prometheus metrics |
-| `<rcp/ratelimit.hpp>` | Per-zone token-bucket admission control against command flooding |
-| `<rcp/powerstate.hpp>` | Zone controller power state manager (Sleep/Wake) |
-| `<rcp/prioqueue.hpp>` | Per-zone priority queue honouring `Priority::Critical` > `High` > `Normal` |
-| `<rcp/proxy.hpp>` | Transparent zone proxy for cascaded zonal topologies |
-| `<rcp/zonegroup.hpp>` | Atomic multi-zone command broadcast with typed zone group sets |
+| `<rcp/deadline.hpp>` | Liveness deadline monitor for RC Server connections |
+| `<rcp/watchdog.hpp>` | Watchdog keeper — periodic per-stream kicks (ASIL-B) |
+| `<rcp/redundancy.hpp>` | Hot-standby primary/standby failover for ASIL-B fault tolerance, over a pair of `RequestFn`s |
+| `<rcp/faultinject.hpp>` | Structured fault injection for validating safety mechanisms, wrapping a `RequestFn` |
+| `<rcp/config.hpp>` | RC Server/endpoint topology manifest loader from JSON/YAML configuration files, bootstrapping an `rcp::shmem::Registry` |
+| `<rcp/admin.hpp>` | In-process Admin API: stream listing, SSE events, Prometheus metrics, over an `rcp::shmem::Registry` |
+| `<rcp/ratelimit.hpp>` | Per-target token-bucket admission control against request flooding |
+| `<rcp/powerstate.hpp>` | RC Server power state manager (Sleep/Wake) |
 | `<rcp/dyndata.hpp>` | Runtime schema registry and dynamic payload encoding |
 | `<rcp/loan.hpp>` | `loan::BufferPool` — zero-copy payload loaning via a pre-allocated pool, for AVTPDU/ACF request-building (ROADMAP.md v2.14.0) |
 | `<rcp/record.hpp>` | Binary record and replay of RC-Client-level request/response traffic (ROADMAP.md v2.14.0) |
 | `<rcp/observe.hpp>` | OpenTelemetry-style observability: spans and counters around a client-side send-equivalent call (ROADMAP.md v2.14.0) |
 | `<rcp/mdns.hpp>` | mDNS/DNS-SD host:port discovery (RFC 6762/6763), scoped to the UDP/IP transport variant (ROADMAP.md v2.14.0) |
+
+Multi-HPC federation, a transparent zone-proxy, atomic multi-zone broadcast,
+client-side priority queuing, and OTA firmware update were part of the
+retired pre-TC18 model and have no TC18 analog (see ROADMAP.md's Satellite
+Package Disposition table); their headers were removed rather than adapted.
 
 ### Transports
 
@@ -77,8 +81,6 @@ reference.
 | `<rcp/tls.hpp>` | Secure-channel option for the UDP/IP transport variant (DTLS/application-layer, `SecureClient`/`SecureServer`); the specification's own preferred link security is MACsec (802.1AE) at layer 2, which this package does not address (ROADMAP.md v2.14.0) |
 | `<rcp/shmem.hpp>` | Zero-copy in-process request `Channel`/`Registry`, keyed by opaque stream_key (ROADMAP.md v2.14.0) |
 | `<rcp/tsn.hpp>` | IEEE 802.1p PCP-priority hint (`apply_priority`) keyed off `rcp::request::RequestCategory`'s execution-priority ordering; prefer genuine IEEE 1722 stream reservation where available (ROADMAP.md v2.14.0) |
-| `<rcp/avtp.hpp>` | TC18 wire codec, framing half — IEEE 1722 AVTPDU (NTSCF/TSCF) header framing (ROADMAP.md v2.0.0) |
-| `<rcp/acf.hpp>` | TC18 wire codec, message half — ACF_ABB/ACF_GBB message format (ROADMAP.md v2.0.0) |
 | `<rcp/sim.hpp>` | Timing-realistic RC Server simulator for SiL/HIL testing — wraps `<rcp/mock.hpp>` with latency/jitter and Fault/Recover controls, watchdog wired via `<rcp/watchdog.hpp>` (ROADMAP.md v2.12.0) |
 
 ## Build
@@ -93,61 +95,46 @@ ctest --test-dir build --output-on-failure
 
 ## Quick start
 
-The example below uses `<rcp/legacy_mock.hpp>`'s pre-replacement
-`Controller`/`Registry` pair, since `rcp/rcp.hpp`'s `Zone`/`Command`/
-`Response` model is itself still pre-replacement (see ROADMAP.md's
-Satellite Package Disposition table). For a TC18-shaped in-process server,
-see `<rcp/mock.hpp>`'s `mock::Server` instead.
-
 ```cpp
-#include <rcp/rcp.hpp>
-#include <rcp/legacy_mock.hpp>
+#include <rcp/acf.hpp>
+#include <rcp/adapt.hpp>
+#include <rcp/mock.hpp>
 #include <cassert>
 
 int main() {
-    auto reg = rcp::legacy_mock::new_registry();
-
-    std::shared_ptr<rcp::Controller> ctrl;
-    reg->lookup(rcp::Zone::FrontLeft, ctrl);
-
-    rcp::Command cmd;
-    cmd.id       = 1;
-    cmd.zone     = rcp::Zone::FrontLeft;
-    cmd.type     = rcp::CommandType::Set;
-    cmd.priority = rcp::Priority::Normal;
-    cmd.payload  = {0x01, 0x02};
-
-    rcp::Response resp;
-    auto ec = ctrl->send(rcp::Context::background(), cmd, resp);
+    // rcp::mock::Server is an in-process TC18 RC Server simulator — no I/O,
+    // suitable for tests and this example alike. A real deployment dials
+    // rcp::udp::Client (or another transport) instead and wraps its own
+    // send-equivalent call the same way.
+    rcp::mock::Server server;
+    auto ec = server.advance_to_rcp_configured();
     assert(!ec);
-    assert(resp.status == rcp::ResponseStatus::OK);
 
-    reg->close();
+    // RequestFn is the "client-side send-equivalent call" every transport
+    // and control-plane decorator in this library standardizes on.
+    rcp::RequestFn request_fn = [&server](const rcp::Context&,
+                                           const rcp::acf::AcfMessageInfo& req,
+                                           const std::vector<uint8_t>& payload,
+                                           rcp::acf::AcfMessageInfo& out,
+                                           std::vector<uint8_t>& out_payload) {
+        return server.dispatch(/*client=*/0, req, payload, out, out_payload);
+    };
+
+    // Adapt() wraps any RequestFn as a relay::Caller (RELAY spec §10.3), so
+    // application code can address the RC Server through the
+    // protocol-agnostic relay::Node/relay::Caller interface.
+    auto caller = rcp::Adapt(request_fn);
+
+    relay::Message req;
+    req.protocol       = relay::Protocol::RCP;
+    req.id             = rcp::endpoint_id_to_relay_id(rcp::mock::kGpioByteBusId);
+    req.meta["rcp.op"] = "read";
+
+    auto [resp, call_ec] = caller->call(relay::Context::with_timeout(std::chrono::seconds(1)), req);
+    assert(!call_ec);
+    assert(resp.protocol == relay::Protocol::RCP);
 }
 ```
-
-## Zones
-
-| Constant | Value | Description |
-|---|---|---|
-| `Zone::Unknown` | 0 | Zero value / uninitialized |
-| `Zone::FrontLeft` | 1 | Front-left zone controller |
-| `Zone::FrontRight` | 2 | Front-right zone controller |
-| `Zone::RearLeft` | 3 | Rear-left zone controller |
-| `Zone::RearRight` | 4 | Rear-right zone controller |
-| `Zone::Central` | 5 | Central zone controller |
-
-## Command types
-
-| Constant | Value | Description |
-|---|---|---|
-| `CommandType::Noop` | 0 | No-op / keepalive |
-| `CommandType::Set` | 1 | Set an output or actuator state |
-| `CommandType::Get` | 2 | Query current state |
-| `CommandType::Reset` | 3 | Reset zone controller |
-| `CommandType::Watchdog` | 4 | Watchdog kick |
-| `CommandType::Sleep` | 5 | Request zone controller to enter low-power sleep |
-| `CommandType::Wake` | 6 | Request zone controller to exit sleep |
 
 ## Error codes
 
@@ -155,12 +142,11 @@ Errors are returned as `std::error_code` values in the `rcp` category.
 
 | Sentinel | Description |
 |---|---|
-| `rcp::ErrClosed` | Controller or registry is closed |
-| `rcp::ErrNotFound` | Zone not found in registry |
-| `rcp::ErrAlreadyExists` | Zone already registered |
-| `rcp::ErrTimeout` | Command timed out or context expired |
-| `rcp::ErrBusy` | Zone controller busy (rate limit hit) |
-| `rcp::ErrZoneMismatch` | Command addressed to wrong zone |
+| `rcp::ErrClosed` | Connection or resource is closed |
+| `rcp::ErrNotFound` | Requested resource (e.g. a registry entry) not found |
+| `rcp::ErrAlreadyExists` | Resource already registered |
+| `rcp::ErrTimeout` | Request timed out or context expired |
+| `rcp::ErrBusy` | Resource busy (e.g. rate limit hit) |
 
 ## Safety
 

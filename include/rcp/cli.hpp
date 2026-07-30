@@ -105,7 +105,7 @@ inline std::string capabilities_json() {
         + "\"commands\":[\"version\",\"capabilities\",\"status\",\"send\"],"
         + "\"transports\":[\"udp\",\"shmem\",\"mock\"],"
         + "\"features\":[\"gpio\",\"spi\",\"i2c\",\"uart\",\"adc\",\"pwm\",\"lin\",\"can\","
-          "\"iseled\",\"mdio\",\"wakeup\",\"loaning\"],"
+          "\"iseled\",\"mdio\",\"wakeup\"],"
         + "\"interfaces\":[\"Node\",\"Caller\"],"
         + "\"optional_interfaces\":[],"
         + "\"adapt\":true"
@@ -418,11 +418,17 @@ inline int send_one(const std::vector<std::string>& args, bool json,
         return kInvalidArgs;
     }
 
+    // --server is validated for shape but, per rcp/adapt.hpp's #88 fix, no
+    // longer folded into the constructed relay::Message.id (RELAY spec
+    // §15.7.5: Message.ID for RCP is just the decimal ByteBusID). In a
+    // multi-server deployment --server would select which Adapt()-wrapped
+    // connection to dispatch through; this CLI's demo backend has only one.
     std::uint64_t stream_key = 0;
     if (!parse_u64(server_flag, stream_key)) {
         err << "error: invalid --server '" << server_flag << "'\n";
         return kInvalidArgs;
     }
+    (void)stream_key;
     avtp::ByteBusId byte_bus_id = 0;
     if (!parse_byte_bus_id(endpoint_flag, byte_bus_id)) {
         err << "error: invalid --endpoint '" << endpoint_flag << "'\n";
@@ -460,7 +466,7 @@ inline int send_one(const std::vector<std::string>& args, bool json,
     acf::AcfMessageInfo resp;
     std::vector<std::uint8_t> resp_payload;
     auto ec = dispatch_endpoint(srv, req, payload, resp, resp_payload);
-    std::string addr = endpoint_id_to_relay_id(stream_key, byte_bus_id);
+    std::string addr = endpoint_id_to_relay_id(byte_bus_id);
     if (ec) {
         err << "send: " << addr << ": send failed\n";
         return kError;
@@ -500,10 +506,9 @@ inline int send_stream(std::istream& in, std::ostream& out, std::ostream& err) {
             err << "send: skipping malformed message\n";
             continue;
         }
-        std::uint64_t stream_key = 0;
         acf::AcfMessageInfo req;
         std::vector<std::uint8_t> payload;
-        if (!message_to_request(msg, stream_key, req, payload)) {
+        if (!message_to_request(msg, req, payload)) {
             err << "send: skipping message with unparseable id '" << msg.id << "'\n";
             continue;
         }
@@ -511,7 +516,7 @@ inline int send_stream(std::istream& in, std::ostream& out, std::ostream& err) {
         std::vector<std::uint8_t> resp_payload;
         auto ec = dispatch_endpoint(srv, req, payload, resp, resp_payload);
         if (ec) {
-            err << "send: " << endpoint_id_to_relay_id(stream_key, req.byte_bus_id)
+            err << "send: " << endpoint_id_to_relay_id(req.byte_bus_id)
                 << ": send failed\n";
             continue;
         }

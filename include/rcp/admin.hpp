@@ -7,19 +7,27 @@
 // fusa:req REQ-ADMIN-007
 // fusa:req REQ-ADMIN-008
 
-// In-process Admin API: zone listing, SSE events, Prometheus metrics (v0.26.0).
+// In-process Admin API: stream listing, SSE events, Prometheus metrics (v0.26.0).
 //
 // AdminServer is a lightweight in-process interface: callers can query
-// zone state, subscribe to events (SSE-style push channel), and snapshot
-// Prometheus-format text metrics.  An actual HTTP binding is out of scope;
-// use a libmicrohttpd or Asio adapter to expose the HTTP surface.
+// which streams are registered, subscribe to events (SSE-style push
+// channel), and snapshot Prometheus-format text metrics. An actual HTTP
+// binding is out of scope; use a libmicrohttpd or Asio adapter to expose
+// the HTTP surface.
+//
+// Rebound (cpp-RCP-FS-03, #86): this used to report `rcp::Registry`'s
+// registered Zones. `Zone`/`rcp::Registry` are retired (cpp-RCP-FS-01, #84);
+// AdminServer is now bound to `rcp::shmem::Registry` (rcp/shmem.hpp), the
+// TC18-shaped in-process registry keyed by opaque stream_key, and reports
+// streams instead of zones.
 #pragma once
 
 #include "rcp.hpp"
+#include "shmem.hpp"
 
 #include <chrono>
+#include <cstdint>
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -29,21 +37,21 @@
 namespace rcp {
 namespace admin {
 
-// ── ZoneInfo ──────────────────────────────────────────────────────────────────
+// ── StreamInfo ────────────────────────────────────────────────────────────────
 
-struct ZoneInfo {
-    Zone        zone;
+struct StreamInfo {
+    uint64_t    stream_key;
     bool        registered;
     std::string extra; // JSON-encoded metadata blob, optional
 };
 
 // ── Event ─────────────────────────────────────────────────────────────────────
 
-enum class EventType : uint8_t { ZoneRegistered = 1, ZoneDeregistered = 2, StatusUpdate = 3 };
+enum class EventType : uint8_t { StreamRegistered = 1, StreamDeregistered = 2, StatusUpdate = 3 };
 
 struct Event {
     EventType                             type;
-    Zone                                  zone;
+    uint64_t                              stream_key;
     std::chrono::system_clock::time_point ts;
 };
 
@@ -61,15 +69,15 @@ struct Counter {
 
 class AdminServer {
 public:
-    explicit AdminServer(rcp::Registry& reg) : reg_(reg) {}
+    explicit AdminServer(shmem::Registry& reg) : reg_(reg) {}
 
-    // zones returns a snapshot of all registered zones.
-    std::vector<ZoneInfo> zones() const {
-        auto ctrls = reg_.controllers();
-        std::vector<ZoneInfo> out;
-        out.reserve(ctrls.size());
-        for (auto& c : ctrls) {
-            out.push_back({c->zone(), true, {}});
+    // streams returns a snapshot of all registered streams.
+    std::vector<StreamInfo> streams() const {
+        auto channels = reg_.channels();
+        std::vector<StreamInfo> out;
+        out.reserve(channels.size());
+        for (auto& ch : channels) {
+            out.push_back({ch->stream_key(), true, {}});
         }
         return out;
     }
@@ -110,10 +118,10 @@ public:
     }
 
 private:
-    rcp::Registry&                           reg_;
-    mutable std::mutex                        mu_;
-    std::vector<EventCallback>                subscribers_;
-    std::unordered_map<std::string, Counter>  counters_;
+    shmem::Registry&                         reg_;
+    mutable std::mutex                       mu_;
+    std::vector<EventCallback>               subscribers_;
+    std::unordered_map<std::string, Counter> counters_;
 };
 
 } // namespace admin
