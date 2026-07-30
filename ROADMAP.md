@@ -1825,6 +1825,58 @@ corrected to match, without any behavior change:
   real cross-repo architectural difference, not a naming issue, and is
   intentionally left unresolved here — see issue #45.
 
+### Post-hoc wire-format fix pass (issues #70, #71, #72, #77)
+
+A conformance audit of the milestone 48 (v2.4.0) and milestone 51 (v2.7.0)
+endpoint types found four wire-format/error-identity defects, each verified
+directly against the OPEN Alliance TC18 Remote Control Protocol
+Specification's own figures/tables rather than against the extraction
+summaries milestone 48/51 above were written from:
+
+- `rcp/pwm.hpp` (issue #70): PWM_OUT/PWM_IN's `PwmValue::period`/
+  `active_duration` were `uint32_t` (an 8-byte payload); the spec's "pwmo
+  request format" figure (§13.7.5.3) shows a fixed 4-byte payload — two
+  big-endian 16-bit words, period then active (the milestone 48 field
+  *order* was already correct). Both fields are now `uint16_t`, and
+  `encode_pwm_payload`/`decode_pwm_payload` implement the exact 4-byte wire
+  codec. Separately, `PwmOutEndpoint::handle_write` no longer reuses
+  `rcp::endpoint::apply_bitmask_write`'s GPIO-style 8-way bitmask/
+  saturating-write combinator — the spec's PWM_OUT request-handling section
+  describes only direct value application, not combination against the
+  endpoint's previous state, so only `WriteSemantics::Replace` is honored
+  now; every other write semantics is rejected as non-combinable.
+- `rcp/iseled.hpp` (issue #71): `IseledResponse::address` was a full
+  `uint16_t`, `IseledResponse::data` was an open `std::vector<uint8_t>`, and
+  the header carried an invented 8-bit CRC (polynomial `0x07`) its own prior
+  comment admitted was not from the ISELED standard. The spec's "iseled
+  response format" figure (Figure 41, §13.7.12.3) is explicit: a 12-bit
+  address, a 12-bit `Data[11:0]` value, and an *optional* CRC whose own
+  algorithm/width the ISELED standard (not TC18) defines. `address`/`data`
+  are now range-validated to 12 bits (`kIseledFieldMask`); the invented CRC
+  is removed outright rather than replaced with a differently-sized
+  invented one, since no verified ISELED-standard CRC algorithm is
+  available in this codebase — see issue #71 discussion.
+- `rcp/mdio.hpp` (issue #72): the header modeled an invented IEEE 802.3
+  Clause 22/Clause 45 PHY-addressing scheme with no basis in the spec's own
+  MDIO section. Rebuilt around the spec's actual `mdio_mode`/
+  `mdio_address`/`mdio_payload` model (Figure 42 + Table 57, §13.7.13.3):
+  a 2-bit mode selector, an opaque address field ("as per IEEE & OA SPI
+  spec"), and a payload whose width is 16 bits except for MMS
+  multiple-(double-)word access to MMS0/MMS1, which is 32 bits.
+- `rcp/adc.hpp` (issue #77): ADC sample/result values were `uint32_t`
+  throughout; the spec caps ADC resolution at 16 bits and its response
+  figures show "16 bit ADC value" fields (§13.7.9.1, Figure 32/34) — narrowed
+  to `uint16_t` throughout `AdcEndpoint`/`compute_average`. Separately, the
+  no-signal condition's diagnostic message previously rendered as
+  "ADC_NO_SIGNAL", implying a TC18-defined error code; Table 27 ("Error
+  codes in responses", §12.9.6) has no ADC-specific no-signal entry (the
+  only `*_NO_SIGNAL` code, `PWM_IN_NO_SIGNAL` = 9, belongs to PWM_IN) — the
+  message no longer claims that identity.
+
+None of these four are wire-format changes to any *other* endpoint type or
+to the shared AVTPDU/ACF framing; `rcp/endpoint.hpp`,
+`rcp/regmap.hpp`, and every other endpoint header are unmodified.
+
 ---
 ### Appendix A — Legacy Roadmap (v0.1.0–v1.11, superseded)
 ---
