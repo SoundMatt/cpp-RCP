@@ -35,9 +35,8 @@
     },
     {
       "clause": "11.15",
-      "evidence": "tara.json",
       "item": "TARA",
-      "present": true
+      "present": false
     },
     {
       "clause": "11.15",
@@ -117,14 +116,14 @@
     }
   ],
   "dal": "DAL-B",
-  "generatedAt": "2026-07-29T04:45:54Z",
+  "generatedAt": "2026-07-30T19:16:24Z",
   "kind": "sas",
   "language": "cpp",
   "project": "cpp-RCP",
   "projectRoot": "/home/runner/work/cpp-RCP/cpp-RCP",
-  "schemaVersion": "1.15.0",
+  "schemaVersion": "1.15.2",
   "summary": {
-    "present": 15,
+    "present": 14,
     "total": 20
   },
   "tool": "cpp-FuSa",

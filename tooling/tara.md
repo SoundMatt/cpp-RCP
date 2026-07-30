@@ -1,7 +1,7 @@
 # TARA — cpp-RCP
 
 Standard: iso21434  
-Generated: 2026-07-29T04:45:54Z  
+Generated: 2026-07-30T19:16:23Z  
 Coverage: 8/8 assets (100.0%)
 
 | ID | Asset | Threat | Feasibility | Risk | Treatment |
@@ -9,7 +9,7 @@ Coverage: 8/8 assets (100.0%)
 | TARA-001 | cpp-RCP release binary | Attacker replaces a signed release binary with a trojaned build that suppresses safety findings before it reaches a downstream project's CI. | low | medium | mitigate |
 | TARA-002 | .fusa.json / .fusa-hara.json project config | Attacker (or careless commit) weakens the configured ASIL or replaces genuine hazard analysis with a stale/placeholder template, silently lowering the safety bar a downstream project believes it is held to. | medium | high | mitigate |
 | TARA-003 | Generated evidence artifacts (fmea.json, tara.json, safety-case.json, check-report.json) | Insider or compromised CI step edits a generated evidence artifact after generation to hide a known defect from a certification reviewer. | low | medium | mitigate |
-| TARA-004 | Third-party CMake dependencies (FetchContent: Catch2) | A compromised upstream dependency introduces malicious code that runs inside cpfusa's own analysis process, potentially tampering with the findings it produces. | very-low | medium | mitigate |
+| TARA-004 | Third-party CMake dependencies (FetchContent: CLI11, nlohmann/json, Catch2) | A compromised upstream dependency introduces malicious code that runs inside cpfusa's own analysis process, potentially tampering with the findings it produces. | very-low | medium | mitigate |
 | TARA-005 | qualify-report.json tool-qualification evidence | Attacker modifies qualify-report.json to hide a failing qualification case, making an unqualified tool appear qualified for its intended safety use (ISO 26262-8 Clause 11). | low | medium | mitigate |
 | TARA-006 | CI pipeline (ci.yml / release.yml) | Attacker disables or bypasses the `check` gate step in CI, allowing a change with open ERROR findings to merge and release. | medium | high | mitigate |
 | TARA-007 | Source requirement annotations (//fusa:req, //fusa:test) | Developer removes or mistypes an annotation to hide a requirement-traceability gap from `trace`'s coverage gate. | medium | medium | mitigate |
@@ -18,6 +18,8 @@ Coverage: 8/8 assets (100.0%)
 ## Impact (SFOP) & Mitigations
 
 - **TARA-001** — safety=major financial=moderate operational=moderate privacy=negligible
+  - sign — HMAC-SHA256 artifact signing
+  - SLSA provenance verification (slsa command)
   - Release workflow requires branch-protected, reviewed PRs before tagging
 - **TARA-002** — safety=major financial=moderate operational=negligible privacy=negligible
   - FUSA-STUB001 deny-list scan flags untouched hazard/goal templates (§1.6.1)
@@ -25,6 +27,7 @@ Coverage: 8/8 assets (100.0%)
   - hara --format json's completeness block surfaces missing ASIL/fssrRefs
 - **TARA-003** — safety=major financial=moderate operational=moderate privacy=negligible
   - audit-pack — hashed manifest over every evidence artifact
+  - sign --verify re-checks HMAC signatures before submission
   - sci — Software Configuration Index records a per-file sha256 at release time
 - **TARA-004** — safety=major financial=moderate operational=moderate privacy=negligible
   - vuln — scans CMake dependency manifests for known vulnerabilities
