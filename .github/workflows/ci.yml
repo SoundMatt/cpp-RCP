@@ -57,7 +57,7 @@ jobs:
 
       - name: Set up MSVC environment (Windows)
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
       - name: Configure
         shell: bash
@@ -93,10 +93,17 @@ jobs:
       - name: Checkout cpp-RCP
         uses: actions/checkout@v4
 
+      # Pinned to the latest tagged RELAY release rather than floating on the
+      # default branch (issue #83 / cpp-RCP-15): an unpinned checkout means
+      # this job's pass/fail can change with no cpp-RCP-side change at all
+      # whenever RELAY's main branch moves, which is not reproducible CI.
+      # Bump this SHA/tag deliberately (in its own commit) when cpp-RCP is
+      # ready to validate against a newer RELAY conformance ruleset.
       - name: Checkout RELAY (authoritative conformance validator)
         uses: actions/checkout@v4
         with:
           repository: SoundMatt/RELAY
+          ref: 3344b3d1a6a4d870d26c81c6f3c3ff5ca2930e16 # v2.0.2
           path: RELAY
 
       - name: Set up Go
@@ -149,9 +156,18 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Run clang-tidy
+        # Only pass tests/*.cpp as translation units: this project's
+        # include/rcp/*.hpp headers are header-only (no standalone compile
+        # command in compile_commands.json for a .hpp on its own), so
+        # invoking clang-tidy directly on a header fails with a
+        # clang-diagnostic-error "file not found" on its own #includes
+        # (no -I flags to resolve them) rather than a real lint finding.
+        # .clang-tidy's HeaderFilterRegex ('include/rcp/') still surfaces
+        # findings from those headers as they're transitively included by
+        # the .cpp translation units below.
         run: |
-          find include tests -name '*.hpp' -o -name '*.cpp' | \
-            xargs clang-tidy -p build --warnings-as-errors='*' || true
+          find tests -name '*.cpp' | \
+            xargs clang-tidy -p build --warnings-as-errors='*'
 
   # ── ASan/UBSan (regmap) ───────────────────────────────────────────────────────
   # Scoped to test_regmap: rcp/regmap.hpp's Ep0 does raw std::vector<T>
@@ -226,12 +242,28 @@ jobs:
 
       - name: Collect LCOV data
         run: |
+          # --rc lcov_branch_coverage=1 must be passed to BOTH the --capture
+          # and --remove invocations below (lcov re-reads/rewrites the .info
+          # file's branch records on every invocation, so omitting it on
+          # either step silently drops branch data even if the other step
+          # collected it). Without it, totalBranches/hitBranches downstream
+          # in coverage-report.json are always 0/0 -- a vacuous "nothing
+          # failed" rather than a genuine 100%-branch-coverage result against
+          # this project's declared DAL-B target (see issues #67/#68).
           lcov --capture \
             --directory build-cov \
             --gcov-tool gcov-12 \
+            --rc lcov_branch_coverage=1 \
             --output-file coverage.info
+          # /usr/include/* excludes STL/toolchain system headers, which
+          # otherwise dominate the file-entry count (confirmed: 101/153 file
+          # entries and ~5979/9034 lines were system headers, dragging
+          # blended line coverage down to ~68.8% vs. ~91.5% for actual
+          # project files alone -- see issue #67/#68).
           lcov --remove coverage.info \
             '*/tests/*' '*/catch2/*' '*/FetchContent/*' '*/cmake-build*/*' \
+            '/usr/include/*' \
+            --rc lcov_branch_coverage=1 \
             --output-file coverage.info
 
       - name: Upload coverage report
@@ -393,7 +425,11 @@ jobs:
       - name: Traceability check (all requirements traced)
         run: /tmp/cpfusa/build/cpfusa trace
 
-      - name: Traceability gaps report
+      # Informational only, not a gate: this dumps the gap detail for human
+      # review. The actual gate for this job is the "Enforce 100% requirement
+      # coverage" step below, which runs without `|| true` and fails the job
+      # for real.
+      - name: Traceability gaps report (informational, non-gating)
         run: /tmp/cpfusa/build/cpfusa trace --gaps || true
 
       # RELAY §20.1: every requirement MUST be traced AND tested (100%).
@@ -538,16 +574,46 @@ jobs:
           name: coverage-info
           path: .
 
-      - name: LCOV structural coverage report (DO-178C)
+      # Artifact generation only, not a gate: this project's stub bridge
+      # implementations cannot reach the 100%-branch DAL-B threshold this
+      # command grades against, so `cpfusa coverage` exits non-zero by
+      # design today (same reasoning as release.yml's gap-report steps).
+      # `|| true` is intentional here so the job can still produce and
+      # upload coverage-report.json for inspection; it does not mean "DAL-B
+      # coverage is enforced". The step immediately below is what actually
+      # gates on this job's data (issues #67/#68).
+      - name: LCOV structural coverage report (DO-178C, artifact only — non-gating)
         run: /tmp/cpfusa/build/cpfusa coverage --profile coverage.info --dal DAL-B --output coverage-report.json || true
 
-      - name: Full compliance report (JSON)
+      # Real gate (issues #67/#68): a coverage report with totalBranches==0
+      # is not "100% branch coverage met", it's "no branch data was
+      # collected at all" -- a 0/0 ratio that would otherwise vacuously
+      # satisfy any branch-coverage threshold check. Fail hard if that
+      # happens, independent of whether the DAL-B step above is gating.
+      - name: Assert branch coverage data is non-vacuous
+        run: |
+          total_branches=$(jq '.summary.totalBranches' coverage-report.json)
+          echo "coverage-report.json summary.totalBranches=${total_branches}"
+          if [ "$total_branches" -le 0 ]; then
+            echo "::error::coverage-report.json reports totalBranches=${total_branches} — no branch coverage data was collected, so any branch-coverage threshold is being met vacuously (0/0), not genuinely. See issues #67/#68."
+            exit 1
+          fi
+
+      # Artifact generation only, not a gate: these convert the aggregated
+      # findings (already gated individually by the cpfusa-check / -lint /
+      # -cyber / -trace / -verify jobs this job `needs:`) into downloadable
+      # JSON/SARIF report formats. `|| true` reflects that intent, not a
+      # bug — there is nothing pass/fail-shaped about a format conversion.
+      - name: Full compliance report (JSON, artifact only — non-gating)
         run: /tmp/cpfusa/build/cpfusa report --format json --output report.json || true
 
-      - name: Full compliance report (SARIF)
+      - name: Full compliance report (SARIF, artifact only — non-gating)
         run: /tmp/cpfusa/build/cpfusa report --format sarif --output results.sarif || true
 
-      - name: Safety metrics snapshot
+      # Artifact generation only, not a gate: records a point-in-time safety
+      # metrics snapshot for trend tracking. There is no pass/fail threshold
+      # associated with recording a snapshot.
+      - name: Safety metrics snapshot (artifact only — non-gating)
         run: /tmp/cpfusa/build/cpfusa metrics record || true
 
       - name: Upload compliance report

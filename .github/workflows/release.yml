@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   regenerate-safety-artifacts:
@@ -45,15 +46,25 @@ jobs:
       - name: Build project
         run: cmake --build build-cov --parallel
 
+      # Kept in sync with ci.yml's `coverage` job (issues #67/#68): branch
+      # coverage collection and /usr/include system-header exclusion were
+      # both missing here too, since this step duplicates the same lcov
+      # invocation. Without --rc lcov_branch_coverage=1 on both the
+      # --capture and --remove calls, coverage-report.json's
+      # totalBranches/hitBranches are always 0/0, vacuously "passing" any
+      # branch-coverage threshold rather than genuinely meeting it.
       - name: Run tests and collect coverage
         run: |
           ctest --test-dir build-cov --output-on-failure -j1
           lcov --capture \
             --directory build-cov \
             --gcov-tool gcov-12 \
+            --rc lcov_branch_coverage=1 \
             --output-file coverage.info
           lcov --remove coverage.info \
             '*/tests/*' '*/catch2/*' '*/FetchContent/*' \
+            '/usr/include/*' \
+            --rc lcov_branch_coverage=1 \
             --output-file coverage.info
 
       - name: Regenerate dFMEA (with cybersecurity analysis)
@@ -62,8 +73,23 @@ jobs:
       - name: Regenerate safety case (GSN)
         run: /tmp/cpfusa/build/cpfusa safety-case
 
-      - name: Regenerate TARA (ISO 21434 Ch. 9)
-        run: /tmp/cpfusa/build/cpfusa tara
+      # issues #78/#79 (cpp-RCP-10/11): `cpfusa tara` analyzes cpp-FuSa's OWN
+      # tooling/CI/supply-chain surface (release binary, .fusa.json, CMake
+      # deps) — it is not a protocol-level TARA for RCP itself. The real
+      # product-level TARA is the hand-authored TARA-ANALYSIS.md. Having
+      # both an ISO-21434-labeled `tara.json`/`tara.md` and TARA-ANALYSIS.md
+      # at the repo root with no distinguishing signal made it ambiguous
+      # which a certification reviewer should trust, so `cpfusa tara`'s
+      # output is relocated under tooling/ immediately after generation
+      # (cpfusa itself has no --output flag for this command, so the file is
+      # moved rather than generated in place) to make its tooling-only scope
+      # self-evident and keep that distinction stable across every future
+      # regeneration on a tag, not just this one.
+      - name: Regenerate TARA (ISO 21434 Ch. 9, cpp-FuSa tooling-process TARA — not the product TARA)
+        run: |
+          /tmp/cpfusa/build/cpfusa tara
+          mv tara.json tooling/tara.json
+          mv tara.md tooling/tara.md
 
       - name: Regenerate SBOM, provenance, and artifact manifest
         run: /tmp/cpfusa/build/cpfusa release
@@ -74,25 +100,29 @@ jobs:
       # design — but the workflow's job is to GENERATE the report artifact, not
       # to gate on it (gating lives in ci.yml). `|| true` keeps the artifact
       # while letting the report record the gaps.
-      - name: Regenerate ISO 26262 gap report (ASIL-B)
+      #
+      # (issue #81 / cpp-RCP-13: the step names below spell out
+      # "artifact only — non-gating" explicitly, so this intent doesn't rely
+      # solely on the comment above surviving future edits.)
+      - name: Regenerate ISO 26262 gap report (ASIL-B, artifact only — non-gating)
         run: |
           /tmp/cpfusa/build/cpfusa iso26262 \
             --asil ASIL-B \
             --output iso26262-gap-report.json || true
 
-      - name: Regenerate IEC 61508 gap report (SIL-2)
+      - name: Regenerate IEC 61508 gap report (SIL-2, artifact only — non-gating)
         run: |
           /tmp/cpfusa/build/cpfusa iec61508 \
             --sil SIL-2 \
             --output iec61508-gap-report.json || true
 
-      - name: Regenerate DO-178C gap report (DAL-B)
+      - name: Regenerate DO-178C gap report (DAL-B, artifact only — non-gating)
         run: |
           /tmp/cpfusa/build/cpfusa do178 \
             --dal DAL-B \
             --output do178-gap-report.json || true
 
-      - name: Regenerate structural coverage report (DO-178C)
+      - name: Regenerate structural coverage report (DO-178C, artifact only — non-gating)
         run: |
           /tmp/cpfusa/build/cpfusa coverage \
             --profile coverage.info \
@@ -111,7 +141,9 @@ jobs:
       - name: Generate safety badge (Shields.io SVG)
         run: /tmp/cpfusa/build/cpfusa badge
 
-      - name: Generate full compliance report
+      # Artifact only — non-gating (issue #81): format conversion of already
+      # -generated findings, nothing pass/fail-shaped about it.
+      - name: Generate full compliance report (JSON + HTML, artifact only — non-gating)
         run: |
           /tmp/cpfusa/build/cpfusa report --format json --output report.json || true
           /tmp/cpfusa/build/cpfusa report --format html --output report.html || true
@@ -124,13 +156,25 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Commit regenerated artifacts
+      # issue #82 / cpp-RCP-14: this used to `git push origin HEAD:refs/heads/main`
+      # directly as github-actions[bot] with `[skip ci]`, landing regenerated
+      # evidence on main with no review and no CI run. Several of this
+      # repo's own docs (AUDIT_PACK.md, sas.md, safety-case.md, tara.md) point
+      # at these files by their root-level path and ROADMAP.md's milestone-61
+      # entry explicitly relies on release.yml's regeneration commit landing
+      # on main on every tag (see e.g. commit e7a8178, the v2.17.0
+      # regeneration) — so these files are relied on being live in the tree
+      # at main HEAD, ruling out artifact-upload-only as a fix. Instead, the
+      # regenerated evidence now lands on a dedicated branch and goes through
+      # a normal reviewed PR (opened in the next step) rather than a direct
+      # unreviewed bot push, while still ending up on main once merged.
+      - name: Commit regenerated artifacts to a review branch
         run: |
           TAG="${{ github.ref_name }}"
           git add \
             fmea.csv fmea.json \
             safety-case.json safety-case.md safety-case.mermaid \
-            tara.json tara.md \
+            tooling/tara.json tooling/tara.md \
             sbom.json provenance.json artifact-manifest.json \
             iso26262-gap-report.json \
             iec61508-gap-report.json \
@@ -145,11 +189,43 @@ jobs:
             || true
           if git diff --cached --quiet; then
             echo "No artifact changes for $TAG — nothing to commit."
+            echo "ARTIFACTS_CHANGED=false" >> "$GITHUB_ENV"
           else
+            BRANCH="safety-artifacts/${TAG}"
+            git checkout -B "$BRANCH"
             git commit \
-              -m "chore: regenerate safety artifacts for $TAG [skip ci]" \
+              -m "chore: regenerate safety artifacts for $TAG" \
               -m "Signed-off-by: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
-            git push origin HEAD:refs/heads/main
+            git push --force origin "$BRANCH"
+            echo "ARTIFACTS_CHANGED=true" >> "$GITHUB_ENV"
+            echo "ARTIFACTS_BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          fi
+
+      - name: Open review PR for regenerated artifacts
+        if: env.ARTIFACTS_CHANGED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          BRANCH="${{ env.ARTIFACTS_BRANCH }}"
+          if gh pr view "$BRANCH" --json url >/dev/null 2>&1; then
+            echo "PR for $BRANCH already exists, skipping create."
+          else
+            {
+              echo "Automated regeneration of cpp-FuSa safety/compliance evidence artifacts"
+              echo "(FMEA, safety case, TARA, SBOM, gap reports, coverage report, SAS/SCI,"
+              echo "audit pack, badge, compliance report, qualification report) for release"
+              echo "${TAG}."
+              echo ""
+              echo "This PR is opened by \`release.yml\`'s \`regenerate-safety-artifacts\` job"
+              echo "instead of pushing directly to \`main\`, so a human reviews the diff (and"
+              echo "CI runs against it) before these files land -- see issue #82 / cpp-RCP-14."
+            } > "$RUNNER_TEMP/pr-body.md"
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: regenerate safety artifacts for $TAG" \
+              --body-file "$RUNNER_TEMP/pr-body.md"
           fi
 
       - name: Upload release artifacts
@@ -159,7 +235,7 @@ jobs:
           path: |
             fmea.json
             safety-case.json
-            tara.json
+            tooling/tara.json
             sbom.json
             provenance.json
             artifact-manifest.json

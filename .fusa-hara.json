@@ -46,7 +46,7 @@
         "severity": "S3",
         "exposure": "E4",
         "controllability": "C2",
-        "asil": "ASIL-B"
+        "asil": "ASIL-C"
       },
       "safetyGoals": [
         "SG-001"
@@ -231,7 +231,7 @@
     {
       "id": "SG-001",
       "description": "Requests to safety-critical endpoints shall be delivered within the configured watchdog period or a fault shall be signalled.",
-      "asil": "ASIL-B"
+      "asil": "ASIL-C"
     },
     {
       "id": "SG-002",
@@ -241,7 +241,7 @@
     {
       "id": "SG-003",
       "description": "A per-stream watchdog kick shall be recorded for every accepted inbound request, regardless of request kind or safety tag.",
-      "asil": "ASIL-B"
+      "asil": "ASIL-C"
     },
     {
       "id": "SG-004",
@@ -261,7 +261,7 @@
     {
       "id": "SG-007",
       "description": "An RC Server that stops responding shall be detected as unreachable within the configured liveness deadline.",
-      "asil": "ASIL-B"
+      "asil": "ASIL-C"
     },
     {
       "id": "SG-008",
