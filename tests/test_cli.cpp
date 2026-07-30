@@ -17,6 +17,13 @@
 // `status` coverage is unchanged in shape, per this milestone's own scope
 // note, with `capabilities`'s transports/features assertions refreshed to
 // the v2.16.0 field values.
+//
+// cpp-RCP-05/#74: spec_version assertion bumped 1.11 -> 2.0.
+// cpp-RCP-FS-05/#88: relay.Message ids below are the plain decimal
+// ByteBusID string (RELAY spec v2.0 §15.7.5), not the old
+// "<16-hex-stream_key>:<decimal>" form.
+// cpp-RCP-07/#75: capabilities no longer reports "loaning" — no
+// LoaningController is wired into the CLI-exposed surface.
 #include <catch2/catch_test_macros.hpp>
 
 #include <rcp/cli.hpp>
@@ -94,7 +101,7 @@ TEST_CASE("cli: version --format json has all required fields", "[cli][conforman
         REQUIRE(has_key(s, k));
     }
     REQUIRE(s.find("\"language\":\"cpp\"") != std::string::npos);
-    REQUIRE(s.find("\"spec_version\":\"1.11\"") != std::string::npos);
+    REQUIRE(s.find("\"spec_version\":\"2.0\"") != std::string::npos);
     REQUIRE(s.find("\"protocol_int\":5") != std::string::npos);
 }
 
@@ -142,7 +149,17 @@ TEST_CASE("cli: capabilities transports/features reflect the v2.16.0 rebuild",
     REQUIRE(s.find("\"gpio\"") != std::string::npos);
     REQUIRE(s.find("\"spi\"") != std::string::npos);
     REQUIRE(s.find("\"can\"") != std::string::npos);
-    REQUIRE(s.find("\"loaning\"") != std::string::npos);
+}
+
+TEST_CASE("cli: capabilities does not claim \"loaning\" (no LoaningController is wired up)",
+          "[cli][conformance][REQ-CLI-002]") {
+    // cpp-RCP-07/#75: the RELAY conformance gate checks self-reported
+    // capabilities against what's actually wired up; Adapt() has taken a
+    // plain RequestFn (not a LoaningController) since v2.16.0.
+    int code = 0;
+    auto s = capture({"capabilities"}, code);
+    REQUIRE(code == rcp::cli::kOk);
+    REQUIRE(s.find("\"loaning\"") == std::string::npos);
 }
 
 // ── §12.3 status ──────────────────────────────────────────────────────────────
@@ -171,13 +188,14 @@ TEST_CASE("cli: send is declared in capabilities", "[cli][conformance][REQ-CLI-0
 
 TEST_CASE("cli: send --format json publishes each NDJSON message", "[cli][conformance][REQ-CLI-005]") {
     // Three well-formed relay.Message lines addressed to the mock GPIO/SPI
-    // endpoints (byte_bus_id 1 and 2) via the v2.16.0 "<16 hex>:<decimal>" id.
-    // SPI (endpoint 2) accepts any payload length, unlike GPIO's fixed
-    // 4-byte bitmask, so short payloads are addressed there.
+    // endpoints (byte_bus_id 1 and 2) via the plain decimal ByteBusID id
+    // (RELAY spec v2.0 §15.7.5; cpp-RCP-FS-05/#88). SPI (endpoint 2) accepts
+    // any payload length, unlike GPIO's fixed 4-byte bitmask, so short
+    // payloads are addressed there.
     const std::string nd =
-        "{\"protocol\":5,\"id\":\"0000000000000000:2\",\"payload\":\"AQ==\",\"meta\":{\"rcp.op\":\"write\"}}\n"
-        "{\"protocol\":5,\"id\":\"0000000000000000:2\",\"seq\":7}\n"
-        "{\"protocol\":5,\"id\":\"0000000000000000:1\",\"meta\":{\"rcp.op\":\"read\"}}\n";
+        "{\"protocol\":5,\"id\":\"2\",\"payload\":\"AQ==\",\"meta\":{\"rcp.op\":\"write\"}}\n"
+        "{\"protocol\":5,\"id\":\"2\",\"seq\":7}\n"
+        "{\"protocol\":5,\"id\":\"1\",\"meta\":{\"rcp.op\":\"read\"}}\n";
     int code = 0;
     auto out = capture_in({"send", "--format", "json"}, nd, code);
     REQUIRE(code == rcp::cli::kOk);
@@ -188,10 +206,11 @@ TEST_CASE("cli: send skips malformed and undeliverable lines without aborting",
           "[cli][conformance][REQ-CLI-005]") {
     const std::string nd =
         "not json\n"
-        "{\"id\":\"0000000000000000:1\"}\n"     // deliverable (GPIO)
-        "{\"id\":\"0000000000000000:99\"}\n"    // unregistered endpoint -> skipped
-        "{\"id\":\"not-a-valid-id\"}\n"          // unparseable id -> skipped
-        "\n";                                     // blank -> skipped
+        "{\"id\":\"1\"}\n"                       // deliverable (GPIO)
+        "{\"id\":\"99\"}\n"                       // unregistered endpoint -> skipped
+        "{\"id\":\"0000000000000000:1\"}\n"       // pre-#88 stream_key:byte_bus_id form -> skipped
+        "{\"id\":\"not-a-valid-id\"}\n"            // unparseable id -> skipped
+        "\n";                                       // blank -> skipped
     int code = 0;
     std::string errout;
     auto out = capture_in({"send", "--format", "json"}, nd, code, &errout);
@@ -212,7 +231,7 @@ TEST_CASE("cli: send base64 payload decodes into the published request",
     // "AQID" -> bytes {1,2,3}; SPI (endpoint 2) accepts any payload length.
     int code = 0;
     auto out = capture_in({"send", "--format", "json"},
-                          "{\"id\":\"0000000000000000:2\",\"payload\":\"AQID\","
+                          "{\"id\":\"2\",\"payload\":\"AQID\","
                           "\"meta\":{\"rcp.op\":\"write\"}}\n",
                           code);
     REQUIRE(code == rcp::cli::kOk);
@@ -226,7 +245,8 @@ TEST_CASE("cli: send --server --endpoint --op read dispatches a single request (
     int code = 0;
     auto s = capture({"send", "--server", "0", "--endpoint", "1", "--op", "read"}, code);
     REQUIRE(code == rcp::cli::kOk);
-    REQUIRE(s.find("0000000000000000:1") != std::string::npos);
+    // --server is validated but no longer folded into the id (#88).
+    REQUIRE(s.find("sent to 1 ") != std::string::npos);
 }
 
 TEST_CASE("cli: send --server --endpoint --op write --payload dispatches (json)",
@@ -236,7 +256,7 @@ TEST_CASE("cli: send --server --endpoint --op write --payload dispatches (json)"
                       "--payload", "0102", "--format", "json"}, code);
     REQUIRE(code == rcp::cli::kOk);
     REQUIRE(s.find("\"sent\":true") != std::string::npos);
-    REQUIRE(s.find("\"id\":\"000000000000002a:2\"") != std::string::npos);
+    REQUIRE(s.find("\"id\":\"2\"") != std::string::npos);
 }
 
 TEST_CASE("cli: send missing --op returns invalid-args (2)",

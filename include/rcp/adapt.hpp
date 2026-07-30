@@ -19,7 +19,7 @@
 //   };
 //   auto caller = rcp::Adapt(fn);            // relay::Caller*
 //   relay::Message req;
-//   req.id = rcp::endpoint_id_to_relay_id(stream_key, byte_bus_id);
+//   req.id = rcp::endpoint_id_to_relay_id(byte_bus_id);
 //   auto [resp, ec] = caller->call(ctx, req);
 //
 // ROADMAP.md milestone 60, "C ABI & CLI Rebuild (v2.16.0)": this header is
@@ -28,7 +28,7 @@
 // rcp.hpp's pre-replacement Zone/Command/Controller model to the ACF
 // request/response shape (rcp/acf.hpp, v2.0.0) established through v2.15.0.
 // relay::Message addressing moves from a PascalCase zone name in
-// relay::Message.id to a server+endpoint identifier there instead (see
+// relay::Message.id to a plain decimal ByteBusID there instead (see
 // endpoint_id_to_relay_id/relay_id_to_endpoint_id below); relay/relay.hpp
 // itself needs no change, per this milestone's own scope note. Adapt() now
 // takes a RequestFn — the same "client-side send-equivalent call" shape
@@ -42,6 +42,16 @@
 // StatusChannel method already made at v2.15.0 — it belonged to
 // rcp::Controller's status-telemetry push model, which the target
 // specification's request/response shape has no equivalent of.
+//
+// Message.id encoding (cpp-RCP-FS-05, #88): RELAY spec v2.0 §15.7.5 defines
+// relay.Message.ID for RCP as just the decimal ByteBusID string (0-255) on
+// its own; a Caller (and the Adapt() wrapping it) already presents one fixed
+// StreamID identity per §8.5, so the stream/server identity is carried by
+// the RequestFn's own binding (e.g. whatever connection or in-process server
+// it closes over) rather than folded into Message.id. Prior to this fix,
+// this file encoded "<stream_key as 16 lowercase hex digits>:<byte_bus_id>"
+// into Message.id, which does not match the spec's plain decimal-string
+// form and would have broken interop with anything expecting it.
 #pragma once
 
 #include <rcp/acf.hpp>
@@ -62,50 +72,27 @@
 
 namespace rcp {
 
-// ── server+endpoint ↔ relay::Message.ID helpers (§15.7.5) ────────────────────
-// relay::Message carries a single string `id` field; a server+endpoint
-// address (stream_key, byte_bus_id — the pair every Phase 14/15 header has
-// keyed on since v2.10.0) is encoded into it as
-// "<stream_key as 16 lowercase hex digits>:<byte_bus_id as decimal>" — this
-// implementation's own encoding, not something the target specification or
-// the RELAY spec mandates a shape for.
+// ── byte_bus_id ↔ relay::Message.ID helpers (§15.7.5) ─────────────────────────
+// relay.Message.ID for RCP is just the decimal ByteBusID string (0-255) —
+// the StreamID is not part of it (§15.7.5, §8.5: one StreamID per Caller
+// instance).
 
-// endpoint_id_to_relay_id encodes (stream_key, byte_bus_id) into a
-// relay::Message.id string.
-inline std::string endpoint_id_to_relay_id(uint64_t stream_key, avtp::ByteBusId byte_bus_id) {
-    static const char* kHex = "0123456789abcdef";
-    std::string out(16, '0');
-    for (int i = 15; i >= 0; --i) {
-        out[static_cast<std::size_t>(i)] = kHex[stream_key & 0xF];
-        stream_key >>= 4;
-    }
-    out += ':';
-    out += std::to_string(static_cast<unsigned>(byte_bus_id));
-    return out;
+// endpoint_id_to_relay_id encodes a byte_bus_id into a relay::Message.id
+// string.
+inline std::string endpoint_id_to_relay_id(avtp::ByteBusId byte_bus_id) {
+    return std::to_string(static_cast<unsigned>(byte_bus_id));
 }
 
 // relay_id_to_endpoint_id decodes a relay::Message.id string produced by
-// endpoint_id_to_relay_id back into (stream_key, byte_bus_id). Returns false
-// — leaving both outputs unspecified — for anything that doesn't match the
-// "<16 hex digits>:<decimal>" shape, including the pre-v2.16.0 PascalCase
-// zone-name form this replaces.
-inline bool relay_id_to_endpoint_id(const std::string& id, uint64_t& out_stream_key,
-                                     avtp::ByteBusId& out_byte_bus_id) {
-    auto colon = id.find(':');
-    if (colon == std::string::npos || colon != 16) return false;
-
-    uint64_t stream_key = 0;
-    auto [p1, ec1] = std::from_chars(id.data(), id.data() + colon, stream_key, 16);
-    if (ec1 != std::errc{} || p1 != id.data() + colon) return false;
-
+// endpoint_id_to_relay_id back into a byte_bus_id. Returns false — leaving
+// the output unspecified — for anything that isn't a bare decimal integer
+// in [0, 255], including the pre-#88 "<16 hex digits>:<decimal>" form this
+// replaces and the pre-v2.16.0 PascalCase zone-name form before that.
+inline bool relay_id_to_endpoint_id(const std::string& id, avtp::ByteBusId& out_byte_bus_id) {
+    if (id.empty()) return false;
     unsigned bus_id = 0;
-    const char* rest_begin = id.data() + colon + 1;
-    const char* rest_end   = id.data() + id.size();
-    if (rest_begin == rest_end) return false;
-    auto [p2, ec2] = std::from_chars(rest_begin, rest_end, bus_id, 10);
-    if (ec2 != std::errc{} || p2 != rest_end || bus_id > 0xFF) return false;
-
-    out_stream_key  = stream_key;
+    auto [p, ec] = std::from_chars(id.data(), id.data() + id.size(), bus_id, 10);
+    if (ec != std::errc{} || p != id.data() + id.size() || bus_id > 0xFF) return false;
     out_byte_bus_id = static_cast<avtp::ByteBusId>(bus_id);
     return true;
 }
@@ -131,13 +118,13 @@ inline uint8_t evt_op_from_meta(const std::map<std::string, std::string>& meta) 
 
 // ── ToMessage / FromMessage (§15.7.5) ────────────────────────────────────────
 
-// response_to_message converts an ACF response (rcp/acf.hpp) plus the
-// stream_key it arrived on into a relay::Message (call direction).
-inline relay::Message response_to_message(uint64_t stream_key, const acf::AcfMessageInfo& resp,
+// response_to_message converts an ACF response (rcp/acf.hpp) into a
+// relay::Message (call direction).
+inline relay::Message response_to_message(const acf::AcfMessageInfo& resp,
                                            const std::vector<uint8_t>& payload) {
     relay::Message msg;
     msg.protocol  = relay::Protocol::RCP;
-    msg.id        = endpoint_id_to_relay_id(stream_key, resp.byte_bus_id);
+    msg.id        = endpoint_id_to_relay_id(resp.byte_bus_id);
     msg.payload   = payload;
     msg.timestamp = std::chrono::system_clock::now();
     msg.meta["rcp.response_kind"] = std::to_string(static_cast<int>(acf::response_kind_of(resp)));
@@ -147,11 +134,11 @@ inline relay::Message response_to_message(uint64_t stream_key, const acf::AcfMes
 
 // message_to_request converts a relay::Message into an ACF standard request
 // (call/send direction). Returns false — leaving all outputs unspecified —
-// if msg.id does not decode as a server+endpoint identifier.
-inline bool message_to_request(const relay::Message& msg, uint64_t& out_stream_key,
+// if msg.id does not decode as a byte_bus_id.
+inline bool message_to_request(const relay::Message& msg,
                                 acf::AcfMessageInfo& out_info, std::vector<uint8_t>& out_payload) {
     avtp::ByteBusId byte_bus_id = 0;
-    if (!relay_id_to_endpoint_id(msg.id, out_stream_key, byte_bus_id)) return false;
+    if (!relay_id_to_endpoint_id(msg.id, byte_bus_id)) return false;
     out_info             = acf::AcfMessageInfo{};
     out_info.byte_bus_id = byte_bus_id;
     out_info.op          = op_from_meta(msg.meta);
@@ -182,10 +169,9 @@ public:
     // send maps relay::Message → ACF request, discards the response (§10.6).
     std::error_code send(relay::Context ctx, const relay::Message& msg) override {
         if (!fn_) return std::make_error_code(std::errc::not_connected);
-        uint64_t stream_key = 0;
         acf::AcfMessageInfo req;
         std::vector<uint8_t> payload;
-        if (!message_to_request(msg, stream_key, req, payload))
+        if (!message_to_request(msg, req, payload))
             return std::make_error_code(std::errc::invalid_argument);
         acf::AcfMessageInfo out_info;
         std::vector<uint8_t> out_payload;
@@ -196,16 +182,15 @@ public:
     std::pair<relay::Message, std::error_code>
         call(relay::Context ctx, const relay::Message& req_msg) override {
         if (!fn_) return {{}, std::make_error_code(std::errc::not_connected)};
-        uint64_t stream_key = 0;
         acf::AcfMessageInfo req;
         std::vector<uint8_t> payload;
-        if (!message_to_request(req_msg, stream_key, req, payload))
+        if (!message_to_request(req_msg, req, payload))
             return {{}, std::make_error_code(std::errc::invalid_argument)};
         acf::AcfMessageInfo out_info;
         std::vector<uint8_t> out_payload;
         auto ec = fn_(ctx, req, payload, out_info, out_payload);
         if (ec) return {{}, ec};
-        return {response_to_message(stream_key, out_info, out_payload), {}};
+        return {response_to_message(out_info, out_payload), {}};
     }
 
     // subscribe: no analog in the target specification's request/response
@@ -230,10 +215,12 @@ private:
 
 // Adapt wraps a RequestFn as a relay::Caller. The returned relay::Caller
 // also satisfies relay::Node. Does NOT block or connect; wraps `fn`
-// immediately. Each relay::Message passed to send()/call() carries its own
-// full server+endpoint address in Message.id (see endpoint_id_to_relay_id
-// above), so one adapter can address any number of distinct endpoints
-// through the same underlying RequestFn.
+// immediately. Per §8.5/§15.7.5, one Adapt()-wrapped Caller presents a
+// single fixed StreamID identity — `fn` itself owns that binding (e.g. a
+// connection it closes over) — and each relay::Message passed to
+// send()/call() addresses one Endpoint on it via Message.id (see
+// endpoint_id_to_relay_id above). An application juggling several RC
+// Servers wraps each with its own Adapt() call (§8.5).
 inline std::unique_ptr<relay::Caller> Adapt(RequestFn fn) {
     return std::make_unique<RcpCallerAdapter>(std::move(fn));
 }

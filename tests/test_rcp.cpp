@@ -1,6 +1,3 @@
-// fusa:test REQ-PRI-001
-// fusa:test REQ-PRI-002
-// fusa:test REQ-PRI-003
 // fusa:test REQ-ERR-001
 // fusa:test REQ-ERR-002
 // fusa:test REQ-ERR-003
@@ -11,127 +8,27 @@
 // fusa:test REQ-ERR-008
 // fusa:test REQ-ERR-009
 // fusa:test REQ-ERR-010
-// fusa:test REQ-ERR-011
-// fusa:test REQ-CMDSTRUCT-001
-// fusa:test REQ-CMDSTRUCT-002
-// fusa:test REQ-RESP-003
-// fusa:test REQ-STAT-005
-
+// fusa:test REQ-LOAN-007
+//
+// Rebound (cpp-RCP-FS-04, #87): this file used to certify the retired
+// Zone/Priority/CommandType/Command/Response/Status model's exact numeric
+// values and zero-value defaults (Zone::FrontLeft==1, CommandType::Set==1,
+// Priority ordering, etc). That model is retired (cpp-RCP-FS-01, #84); those
+// cases are replaced below with conformance coverage for what rcp.hpp
+// actually still defines — the rcp::Errc sentinel category, rcp::Context,
+// and rcp::Loan — plus a couple of real assertions about the TC18 surface
+// (rcp/avtp.hpp's ByteBusId, rcp/acf.hpp's AcfMessageInfo default value)
+// that a reader coming from the old Zone/Command certification tests would
+// otherwise have no equivalent for.
 #include <catch2/catch_test_macros.hpp>
+#include <rcp/acf.hpp>
+#include <rcp/avtp.hpp>
 #include <rcp/rcp.hpp>
-#include <set>
-#include <string>
+#include <limits>
 #include <thread>
+#include <type_traits>
 
 using namespace rcp;
-
-// ── Zone constants ────────────────────────────────────────────────────────────
-
-TEST_CASE("Zone::to_string returns unique non-empty name", "[zone]") {
-    const std::vector<Zone> zones{
-        Zone::FrontLeft, Zone::FrontRight,
-        Zone::RearLeft,  Zone::RearRight,
-        Zone::Central,
-    };
-    std::set<std::string> seen;
-    for (auto z : zones) {
-        auto s = to_string(z);
-        REQUIRE_FALSE(s.empty());
-        REQUIRE(seen.find(s) == seen.end());
-        seen.insert(s);
-    }
-}
-
-TEST_CASE("Zone constants have correct numeric values", "[zone]") {
-    REQUIRE(static_cast<uint8_t>(Zone::Unknown)    == 0);
-    REQUIRE(static_cast<uint8_t>(Zone::FrontLeft)  == 1);
-    REQUIRE(static_cast<uint8_t>(Zone::FrontRight) == 2);
-    REQUIRE(static_cast<uint8_t>(Zone::RearLeft)   == 3);
-    REQUIRE(static_cast<uint8_t>(Zone::RearRight)  == 4);
-    REQUIRE(static_cast<uint8_t>(Zone::Central)    == 5);
-}
-
-TEST_CASE("All Zone constants are distinct", "[zone]") {
-    const std::vector<Zone> zones{
-        Zone::FrontLeft, Zone::FrontRight,
-        Zone::RearLeft,  Zone::RearRight,
-        Zone::Central,
-    };
-    for (size_t i = 0; i < zones.size(); ++i) {
-        for (size_t j = 0; j < zones.size(); ++j) {
-            if (i != j) REQUIRE(zones[i] != zones[j]);
-        }
-    }
-}
-
-// ── Priority constants ────────────────────────────────────────────────────────
-
-TEST_CASE("Priority constants have correct ordering", "[priority][REQ-PRI-001][REQ-PRI-002][REQ-PRI-003]") {
-    REQUIRE(static_cast<uint8_t>(Priority::Normal)   == 0);
-    REQUIRE(Priority::High     > Priority::Normal);
-    REQUIRE(Priority::Critical > Priority::High);
-}
-
-// ── CommandType constants ─────────────────────────────────────────────────────
-
-TEST_CASE("CommandType constants have correct numeric values", "[cmdtype]") {
-    REQUIRE(static_cast<uint16_t>(CommandType::Noop)     == 0);
-    REQUIRE(static_cast<uint16_t>(CommandType::Set)      == 1);
-    REQUIRE(static_cast<uint16_t>(CommandType::Get)      == 2);
-    REQUIRE(static_cast<uint16_t>(CommandType::Reset)    == 3);
-    REQUIRE(static_cast<uint16_t>(CommandType::Watchdog) == 4);
-    REQUIRE(static_cast<uint16_t>(CommandType::Sleep)    == 5);
-    REQUIRE(static_cast<uint16_t>(CommandType::Wake)     == 6);
-}
-
-TEST_CASE("All CommandType constants are distinct", "[cmdtype]") {
-    const std::vector<CommandType> cmds{
-        CommandType::Noop, CommandType::Set, CommandType::Get,
-        CommandType::Reset, CommandType::Watchdog,
-    };
-    for (size_t i = 0; i < cmds.size(); ++i) {
-        for (size_t j = 0; j < cmds.size(); ++j) {
-            if (i != j) REQUIRE(cmds[i] != cmds[j]);
-        }
-    }
-}
-
-// ── ResponseStatus constants ──────────────────────────────────────────────────
-
-TEST_CASE("ResponseStatus::to_string returns unique non-empty name", "[status]") {
-    const std::vector<ResponseStatus> statuses{
-        ResponseStatus::OK, ResponseStatus::Error,
-        ResponseStatus::Timeout, ResponseStatus::Busy,
-        ResponseStatus::Unknown,
-    };
-    std::set<std::string> seen;
-    for (auto s : statuses) {
-        auto str = to_string(s);
-        REQUIRE_FALSE(str.empty());
-        REQUIRE(seen.find(str) == seen.end());
-        seen.insert(str);
-    }
-}
-
-TEST_CASE("ResponseStatus constants have correct numeric values", "[status]") {
-    REQUIRE(static_cast<uint8_t>(ResponseStatus::OK)      == 0);
-    REQUIRE(static_cast<uint8_t>(ResponseStatus::Error)   == 1);
-    REQUIRE(static_cast<uint8_t>(ResponseStatus::Timeout) == 2);
-    REQUIRE(static_cast<uint8_t>(ResponseStatus::Busy)    == 3);
-}
-
-TEST_CASE("All ResponseStatus constants are distinct", "[status]") {
-    const std::vector<ResponseStatus> statuses{
-        ResponseStatus::OK, ResponseStatus::Error,
-        ResponseStatus::Timeout, ResponseStatus::Busy,
-        ResponseStatus::Unknown,
-    };
-    for (size_t i = 0; i < statuses.size(); ++i) {
-        for (size_t j = 0; j < statuses.size(); ++j) {
-            if (i != j) REQUIRE(statuses[i] != statuses[j]);
-        }
-    }
-}
 
 // ── Sentinel error codes ──────────────────────────────────────────────────────
 
@@ -141,19 +38,16 @@ TEST_CASE("Sentinel errors are truthy (non-null)", "[errors][REQ-ERR-001][REQ-ER
     REQUIRE(ErrAlreadyExists == make_error_code(Errc::already_exists));
     REQUIRE(ErrTimeout       == make_error_code(Errc::timeout));
     REQUIRE(ErrBusy          == make_error_code(Errc::busy));
-    REQUIRE(ErrZoneMismatch  == make_error_code(Errc::zone_mismatch));
     REQUIRE(ErrClosed);
     REQUIRE(ErrNotFound);
     REQUIRE(ErrAlreadyExists);
     REQUIRE(ErrTimeout);
     REQUIRE(ErrBusy);
-    REQUIRE(ErrZoneMismatch);
 }
 
 TEST_CASE("All sentinel errors are mutually distinct", "[errors][REQ-ERR-006]") {
     const std::vector<std::error_code> sentinels{
-        ErrClosed, ErrNotFound, ErrAlreadyExists,
-        ErrTimeout, ErrBusy, ErrZoneMismatch,
+        ErrClosed, ErrNotFound, ErrAlreadyExists, ErrTimeout, ErrBusy,
     };
     for (size_t i = 0; i < sentinels.size(); ++i) {
         for (size_t j = 0; j < sentinels.size(); ++j) {
@@ -162,42 +56,13 @@ TEST_CASE("All sentinel errors are mutually distinct", "[errors][REQ-ERR-006]") 
     }
 }
 
-TEST_CASE("Sentinel errors belong to the rcp category", "[errors][REQ-ERR-007][REQ-ERR-008][REQ-ERR-009][REQ-ERR-010][REQ-ERR-011]") {
+TEST_CASE("Sentinel errors belong to the rcp category", "[errors][REQ-ERR-007][REQ-ERR-008][REQ-ERR-009][REQ-ERR-010]") {
     const std::vector<std::error_code> sentinels{
-        ErrClosed, ErrNotFound, ErrAlreadyExists,
-        ErrTimeout, ErrBusy, ErrZoneMismatch,
+        ErrClosed, ErrNotFound, ErrAlreadyExists, ErrTimeout, ErrBusy,
     };
     for (auto& ec : sentinels) {
         REQUIRE(&ec.category() == &rcp_category());
     }
-}
-
-TEST_CASE("ErrZoneMismatch is distinct from all other sentinels", "[errors][REQ-ERR-011]") {
-    REQUIRE(ErrZoneMismatch != ErrClosed);
-    REQUIRE(ErrZoneMismatch != ErrNotFound);
-    REQUIRE(ErrZoneMismatch != ErrAlreadyExists);
-    REQUIRE(ErrZoneMismatch != ErrTimeout);
-    REQUIRE(ErrZoneMismatch != ErrBusy);
-}
-
-// ── Struct zero values ────────────────────────────────────────────────────────
-
-TEST_CASE("Zero-value Command has safe defaults", "[command][REQ-CMDSTRUCT-001][REQ-CMDSTRUCT-002]") {
-    Command cmd;
-    REQUIRE(cmd.zone     == Zone::Unknown);
-    REQUIRE(cmd.type     == CommandType::Noop);
-    REQUIRE(cmd.priority == Priority::Normal);
-    REQUIRE(cmd.payload.empty());
-}
-
-TEST_CASE("Zero-value Response has StatusOK", "[response][REQ-RESP-003]") {
-    Response r;
-    REQUIRE(r.status == ResponseStatus::OK);
-}
-
-TEST_CASE("Status with empty payload is valid", "[status][REQ-STAT-005]") {
-    Status s;
-    REQUIRE(s.payload.empty());
 }
 
 // ── Context ───────────────────────────────────────────────────────────────────
@@ -218,4 +83,59 @@ TEST_CASE("Context::with_deadline before now is immediately done", "[context]") 
     auto past = std::chrono::steady_clock::now() - std::chrono::seconds(1);
     auto ctx  = Context::with_deadline(past);
     REQUIRE(ctx.done());
+}
+
+// ── Loan ──────────────────────────────────────────────────────────────────────
+
+TEST_CASE("Loan invokes its release function exactly once on destruction",
+          "[loan][REQ-LOAN-007]") {
+    int released = 0;
+    {
+        Loan l({0x01, 0x02}, [&] { ++released; });
+        REQUIRE(released == 0);
+        REQUIRE(l.payload.size() == 2);
+    }
+    REQUIRE(released == 1);
+}
+
+TEST_CASE("Loan::ret() releases immediately and destruction does not release again",
+          "[loan][REQ-LOAN-007]") {
+    int released = 0;
+    {
+        Loan l({}, [&] { ++released; });
+        l.ret();
+        REQUIRE(released == 1);
+    } // destructor must not double-release
+    REQUIRE(released == 1);
+}
+
+TEST_CASE("A default-constructed Loan releases nothing on destruction", "[loan][REQ-LOAN-007]") {
+    Loan l; // no release function bound — must not crash on destruction
+    REQUIRE(l.payload.empty());
+}
+
+// ── TC18 surface: rcp/avtp.hpp's ByteBusId, rcp/acf.hpp's AcfMessageInfo ──────
+// A couple of real assertions about the TC18-based model that replaced the
+// retired Zone/Command surface above — see rcp/acf.hpp/rcp/avtp.hpp (not
+// modified by this change) for the full conformance suites (test_acf.cpp,
+// test_avtp.cpp).
+
+TEST_CASE("avtp::ByteBusId spans the full single-byte endpoint address range",
+          "[tc18][bytebusid]") {
+    static_assert(std::is_same<avtp::ByteBusId, uint8_t>::value,
+        "ByteBusId must be a single byte (RELAY spec §15.5)");
+    REQUIRE(static_cast<unsigned>(std::numeric_limits<avtp::ByteBusId>::min()) == 0);
+    REQUIRE(static_cast<unsigned>(std::numeric_limits<avtp::ByteBusId>::max()) == 255);
+}
+
+TEST_CASE("Zero-value AcfMessageInfo has safe read/request defaults", "[tc18][acf]") {
+    acf::AcfMessageInfo info;
+    REQUIRE(info.acf_msg_type == acf::kAcfMsgTypeAbb);
+    REQUIRE(info.byte_bus_id == 0);
+    REQUIRE(info.transaction_num == 0);
+    REQUIRE_FALSE(info.op);  // false = read, the non-mutating default
+    REQUIRE_FALSE(info.rsp);
+    REQUIRE_FALSE(info.err);
+    REQUIRE_FALSE(info.ms);
+    REQUIRE_FALSE(info.evt_ack);
 }

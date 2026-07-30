@@ -1,14 +1,20 @@
 // Command latency safety-timing test (GSN argument for ASIL-B timing budget).
 //
-// Runs a 30-second workload against the mock controller and records P50/P99/
+// Runs a 30-second workload against the mock RC Server and records P50/P99/
 // P999/Max latency. Writes results to COMMAND_LATENCY.md in the build directory
 // (relative to CWD) so cpfusa trace can include it as a safety artifact.
 //
 // Pass/fail gate: P99 < 500 ms and Max < 2 s, uniformly across environments
 // (wide enough to absorb OS/VM scheduler jitter on any shared, virtualized, or
 // sandboxed host, not only hosts with CI=1 set).
+//
+// Rebound (cpp-RCP-FS-01/#84): this used to drive legacy_mock::Controller
+// against the retired Zone/Command/Response model. That model is retired;
+// rcp::mock::Server (rcp/mock.hpp), the TC18-shaped in-process RC Server
+// simulator, is the transport actually under timing evidence now.
 #include <catch2/catch_test_macros.hpp>
-#include <rcp/legacy_mock.hpp>
+#include <rcp/acf.hpp>
+#include <rcp/mock.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -25,18 +31,20 @@ static int64_t ns(steady_clock::duration d) {
 static double us(int64_t n) { return static_cast<double>(n) / 1000.0; }
 
 TEST_CASE("Command latency P99 < 1ms over 30s workload", "[latency][safety]") {
-    auto ctrl = std::make_shared<legacy_mock::Controller>(Zone::FrontLeft);
-    Command cmd;
-    cmd.zone = Zone::FrontLeft;
+    mock::Server srv;
+    srv.advance_to_rcp_configured();
+    auto req = acf::make_standard_request(mock::kGpioByteBusId, /*transaction_num=*/0,
+                                           /*write=*/false, /*read_size=*/0);
 
     std::vector<int64_t> samples;
     samples.reserve(100'000);
 
     auto deadline = steady_clock::now() + seconds(30);
     while (steady_clock::now() < deadline) {
-        Response resp;
+        acf::AcfMessageInfo resp;
+        std::vector<uint8_t> resp_payload;
         auto t0 = steady_clock::now();
-        auto ec  = ctrl->send(Context::background(), cmd, resp);
+        auto ec  = srv.dispatch(0, req, {}, resp, resp_payload);
         auto t1  = steady_clock::now();
         (void)ec;
         samples.push_back(ns(t1 - t0));
@@ -54,7 +62,7 @@ TEST_CASE("Command latency P99 < 1ms over 30s workload", "[latency][safety]") {
     std::ofstream md("COMMAND_LATENCY.md");
     if (md) {
         md << "# Command Latency Results\n\n"
-           << "Workload: " << n << " sends over 30 s (mock transport)\n\n"
+           << "Workload: " << n << " dispatches over 30 s (mock transport)\n\n"
            << "| Metric | Value |\n"
            << "|--------|-------|\n"
            << "| P50    | " << us(p50)  << " µs |\n"

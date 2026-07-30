@@ -1567,6 +1567,166 @@ architecture is a substantial, separately-scoped task this milestone's own
 text does not name. Milestone #63 (TC18 RCP General Availability, v3.0.0)
 is next and, per its own scope, is the final milestone in this roadmap.
 
+### Retired-model residue cleanup (2026-07-30, v2.19.0 — audit findings cpp-RCP-FS-01..05, cpp-RCP-05, cpp-RCP-07)
+
+Milestone 62's own closing note above named this exact gap and deferred it:
+`rcp/config.hpp` was still the one live compiled dependent of `rcp.hpp`'s
+pre-replacement `Zone`/`Command`/`Response`/`Status`/`Priority`/
+`CommandType`/`Controller`/`LoaningController`/`Registry` model, which kept
+that entire retired surface — plus `rcp/legacy_mock.hpp` and the three
+other headers still built against it — alive as compiled, tested, public
+API. This pass finishes that removal end to end, closing cpp-RCP-FS-01
+through cpp-RCP-FS-05 and the two smaller cpp-RCP-05/cpp-RCP-07 findings
+from the same audit register (cpp-RCP-FS-06 — a canonical `ControlFlags`/
+`Message` type in `rcp/acf.hpp` — is intentionally left to the parallel
+pass already rewriting that file's wire-format code, to avoid two PRs
+touching the same header's bit-packing logic at once).
+
+`rcp/config.hpp` is rebound first, per the dependency `rcp.hpp`'s own
+header comment named: `ZoneManifestEntry`/`Manifest.zones`/`load(json,
+rcp::Registry&)` become `EndpointManifestEntry`/`Manifest.endpoints`/
+`load(json, shmem::Registry&)`, parsing a `stream_key`+`byte_bus_id`
+manifest and bootstrapping one `shmem::Channel` per distinct `stream_key`
+instead of constructing one `legacy_mock::Controller` per zone name — the
+embedding application still owns wiring each `Channel`'s `Handler`, since
+there is no more generic in-process `Controller` this loader can construct
+on the caller's behalf. `tooling/zone_manifest_schema.json` (the retired
+zone-manifest JSON schema) and `rcp/legacy_mock.hpp` itself are then
+deleted outright, along with `tests/test_legacy_mock.cpp`, and `rcp.hpp` is
+stripped down to the three primitives that never depended on the retired
+model: the `Errc` sentinel category (minus `zone_mismatch`/
+`ErrZoneMismatch`, which had no TC18 analog), the `Context` alias, and
+`Loan` (a generic RAII buffer holder — `rcp/loan.hpp`'s `BufferPool` still
+hands these out and is otherwise untouched). `rcp::StatusChannel`
+(`relay::Channel<Status>`) has no meaning once `Status` is gone and is
+removed with it; §18.2's own worked example still names it, which is a
+RELAY-spec-side documentation lag this PR flags rather than tries to fix
+from the cpp-RCP side.
+
+`rcp/faultinject.hpp`, `rcp/redundancy.hpp`, and `rcp/admin.hpp` are
+rebound rather than deleted, since each is a genuine mechanism with no
+TC18-side replacement of its own: `faultinject::Controller` becomes
+`faultinject::Interceptor`, wrapping an `rcp::RequestFn` (rcp/adapt.hpp's
+client-side send-equivalent call, the same shape rcp/record.hpp and
+rcp/observe.hpp already standardize on) instead of decorating
+`rcp::Controller`; the injected "error" case now sets
+`AcfMessageInfo::err` instead of returning the retired
+`ResponseStatus::Error`. `redundancy::RedundantController` becomes
+`redundancy::RedundantRequestFn`, holding a primary/standby pair of
+`RequestFn`s instead of `rcp::Controller`s. `admin::AdminServer` moves
+from reporting `Zone`-keyed `rcp::Registry` state to reporting
+stream-keyed `rcp::shmem::Registry` state (`ZoneInfo`/`Event.zone` become
+`StreamInfo`/`Event.stream_key`). None of the three preserve a `close()`
+or `zone()`/`subscribe()` passthrough that has no analog on a plain
+`RequestFn`; their test suites (`test_faultinject.cpp`,
+`test_redundancy.cpp`, `test_admin.cpp`) are rewritten against
+`rcp::mock::Server`-backed `RequestFn`s and `rcp::shmem::Registry` instead
+of `legacy_mock`, and `test_config.cpp` similarly against the rebound
+loader.
+
+`tests/test_rcp.cpp` (cpp-RCP-FS-04) is purged of its
+`Zone::FrontLeft==1`/`CommandType::Set==1`/`Priority` ordering
+certification cases and now covers what `rcp.hpp` actually still defines
+(`Errc` sentinels, `Context`, `Loan`'s release-exactly-once contract) plus
+two supplementary TC18 conformance checks (`avtp::ByteBusId`'s single-byte
+range, `AcfMessageInfo`'s zero-value defaults) that don't duplicate
+`test_acf.cpp`/`test_avtp.cpp`'s own much larger suites.
+`tests/bench_mock.cpp`/`tests/command_latency_test.cpp` (not named in the
+audit but both compiled directly against `legacy_mock::Controller`) are
+rebound to benchmark/time `rcp::mock::Server::dispatch()` instead — the
+transport their own names already referred to.
+
+`rcp/adapt.hpp` (cpp-RCP-FS-05): `endpoint_id_to_relay_id`/
+`relay_id_to_endpoint_id`/`response_to_message`/`message_to_request` drop
+the `stream_key` parameter entirely. RELAY spec v2.0 §15.7.5 defines
+`relay.Message.ID` for RCP as just the decimal `ByteBusID` string (e.g.
+`"9"`), with the `StreamID` carried by the `Caller`/connection object
+itself (§8.5: one `StreamID` per `Caller` instance) rather than folded
+into the ID — this file previously encoded
+`"<stream_key as 16 lowercase hex digits>:<byte_bus_id>"`, which does not
+round-trip through anything expecting the spec's plain decimal form.
+`rcp/cli.hpp`'s `send` keeps its existing `--server`/`--endpoint` flags
+unchanged for backward CLI compatibility, but `--server` is now validated
+for shape only and no longer folded into the constructed `relay::Message`,
+since this CLI's demo backend was already a single hardcoded
+`mock::Server` regardless of `--server`'s value — the flag never actually
+selected among multiple backends even before this fix, only its string
+representation in `id` changes here.
+
+`relay/relay.hpp`'s `kRelaySpecVersion` (cpp-RCP-05, #74) is bumped
+`"1.11"` → `"2.0"`, the current stable RELAY spec version
+(`spec/version.json`), which retired the placeholder RCP model this PR
+finishes removing and renamed the RCP-facing client interface to
+`Controller` in the process (RELAY spec §8.5 — a distinct, `StreamID`-
+scoped request/response interface, not the deleted `rcp::Controller`;
+introducing that interface itself is out of scope here, since none of the
+findings this PR closes ask for it, and `rcp::RequestFn` already covers
+the same "client-side send-equivalent call" role every decorator in this
+tree already standardizes on). A full re-read of every in-repo RELAY-spec
+`§`-citation against the current spec text (not just the two the finding
+named) turned up only the version-string gap: `avtp.hpp`/`acf.hpp`'s
+`§13.7.2` module-name-registry citations and `rcp.hpp`'s `§18.2`
+Context/StatusChannel citations both still match section content actually
+present in the current v2.0 document, so neither warranted a citation
+fix — recorded here since the finding text itself flagged this as
+unverified and asked for a fresh check.
+
+`rcp/cli.hpp`'s `capabilities_json()` (cpp-RCP-07, #75) drops `"loaning"`
+from its reported `features` array — no `LoaningController` (itself
+deleted with the rest of the retired model) is wired into the CLI-exposed
+`Adapt()` path, so the self-report was overclaiming a capability the
+binary didn't actually expose.
+
+`README.md` — deferred at milestone 62 as "a substantial, separately-
+scoped task" — is rewritten: the Quick Start no longer uses
+`rcp/legacy_mock.hpp`/`Zone`/`CommandType`/`Priority` and instead builds an
+`rcp::mock::Server`, wraps its `dispatch()` as an `rcp::RequestFn`, and
+calls it through `rcp::Adapt()`; the "## Zones" and "## Command types"
+sections and the `legacy_mock.hpp`/`rcp.hpp`-as-Controller-and-Registry
+core-table rows are gone; the error table drops `ErrZoneMismatch`; and the
+protocol-bridge/control-plane module rows for `federation.hpp`,
+`firmware.hpp`, `proxy.hpp`, `zonegroup.hpp`, `canbr.hpp`, `linbr.hpp`, and
+`prioqueue.hpp` — headers already deleted at earlier milestones per the
+Satellite Package Disposition table below, but still documented as if
+present — are removed.
+
+`HARA.md`'s SG-009 row is updated to name `faultinject::Interceptor`
+instead of the now-renamed `faultinject::Controller`; no other hand-
+authored safety/security document is touched, and `.fusa-hara.json`/
+`fmea.*`/`tara.*`/`safety-case.*`/etc. are left for `release.yml`'s
+existing tag-triggered regeneration, per every prior milestone's own
+convention. `.fusa-reqs.json`: the `REQ-PRI-*`/`REQ-CMDSTRUCT-*`/
+`REQ-RESP-*`/`REQ-STAT-*`/`REQ-ERR-011`/`REQ-CTRL-*`/`REQ-REG-*` families
+(54 entries — the placeholder-model requirement groups milestone 62's own
+scope note explicitly left untouched) are removed; `REQ-FI-*`/`REQ-RED-*`/
+`REQ-ADMIN-*`/`REQ-CFG-*`/`REQ-RELAY-001/003/004/005` keep their existing
+ids with text updated to match the rebound behavior; one new id,
+`REQ-LOAN-007`, covers `Loan`'s release-exactly-once contract now that
+`Loan` lives directly in `rcp.hpp`. Every id in the resulting 364-entry
+file has exactly one `fusa:req` and one `fusa:test` tag somewhere in the
+tree (checked by hand pending a real `cpfusa trace` run, since the
+`cpfusa` binary itself isn't available in this environment).
+
+`version.hpp`/`CMakeLists.txt` are bumped to 2.19.0. Full local build
+(GCC 16, C++17, Ninja) and `ctest` (52/52 tests — one target,
+`rcp_legacy_mock`, removed along with the file it built) pass, including
+the 30-second `rcp_latency` safety-timing gate. `clang-tidy` could not be
+run against this repo's own CI invocation as-is: there is no `.clang-tidy`
+config committed, so `clang-tidy -p build --warnings-as-errors='*'` with
+no explicit `--checks` reports "no checks enabled" and exits nonzero
+before analyzing anything (CI's own step already masks this with
+`|| true`, so it has not been gating merges). A representative
+`--checks='clang-diagnostic-*,clang-analyzer-*,bugprone-*,performance-*'`
+run against every file this PR touches found nothing new: the remaining
+hits are Catch2's own `TEST_CASE` static-registration pattern (present
+identically in every test file in the tree) and a couple of
+`bugprone-branch-clone`/`bugprone-std-namespace-modification` hits on
+switch/namespace-specialization shapes carried over unchanged from the
+pre-existing code this PR migrated, not introduced by it. `cpfusa`
+check/lint/trace and RELAY `conform --strict` were not run locally (the
+`cpfusa` binary requires building from its own separate repo, as CI's own
+`cpfusa-build` job does) — flagged for CI to confirm.
+
 ### 63. TC18 RCP — General Availability (v3.0.0)
 
 - First release where cpp-RCP's `RCP` conforms to the OPEN Alliance TC18

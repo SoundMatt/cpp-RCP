@@ -1,9 +1,10 @@
-// RELAY C++ bindings — relay namespace types (RELAY spec §18.2, v0.2).
+// RELAY C++ bindings — relay namespace types (RELAY spec §18.2).
 //
 // Defines the protocol-agnostic relay:: namespace: Protocol, Message, Errc
 // sentinels, Channel<T>, Context, SubscriberOptions, Node, and Caller.
 // cpp-RCP conformance: include this header, then use rcp::Adapt() (adapt.hpp)
-// to wrap a Controller as a relay::Caller.
+// to wrap an rcp::RequestFn (a client-side send-equivalent call) as a
+// relay::Caller.
 #pragma once
 
 #include <chrono>
@@ -24,14 +25,20 @@ namespace relay {
 
 // ── Spec version (§19.4) ─────────────────────────────────────────────────────
 
-constexpr std::string_view kRelaySpecVersion = "1.11";
+constexpr std::string_view kRelaySpecVersion = "2.0";
 
-// NOTE: keep in sync with RELAY spec/version.json. cpp-RCP targets RELAY v1.11
-// (stable). It is core-conformant (§17): version/capabilities/status, canonical
-// types, the §8 interface, lifecycle, and error sentinels. The §11.2 streaming
-// JSON crossbar spoke and the protocol-flags single-message send are provided
-// via the CLI; `convert`/interop (§20.3 tooling-conformance) is not declared.
-// RCP's ToMessage()/FromMessage() mappings are unchanged from v1.0.
+// NOTE: keep in sync with RELAY spec/version.json. cpp-RCP targets RELAY v2.0
+// (stable) — the breaking revision that retired the pre-TC18 placeholder
+// Zone/Command/Response/Status/Priority/CommandType model in favor of the
+// real OPEN Alliance TC18 Remote Control Protocol Specification v0.5.1_RC
+// (§15.5) and renamed the RCP-facing client interface to `Controller`
+// (§8.5); see cpp-RCP-FS-01 (#84) for the corresponding removal from this
+// codebase. It is core-conformant (§17): version/capabilities/status,
+// canonical types, the §8 interface, lifecycle, and error sentinels. The
+// §11.2 streaming JSON crossbar spoke and the protocol-flags single-message
+// send are provided via the CLI; `convert`/interop (§20.3 tooling-
+// conformance) is not declared. RCP's ToMessage()/FromMessage() mappings
+// changed at v2.0 per §15.7.5 (see rcp/adapt.hpp's own #88 fix note).
 
 // ── Protocol identifiers (§3) ────────────────────────────────────────────────
 
