@@ -329,8 +329,33 @@ public:
     // ServerLifecycle::generic_config_locked/functional_config_locked).
     enum class ConfigBlock { Generic, Functional };
 
+    // endpoint_owner_ is the vector every access-control check (below)
+    // bounds a target endpoint against, but the writes those checks gate
+    // land in regs.generic_configs/regs.functional_configs instead — two
+    // vectors this class does not own and cannot force the caller to keep
+    // in sync with endpoint_count. If they are not the same length as
+    // endpoint_count when this object is constructed, size endpoint_owner_
+    // to 0 rather than to the untrustworthy endpoint_count: every non-EP0
+    // access check then fails closed with invalid_parameter instead of
+    // handing out an in-range verdict that a subsequent write turns into an
+    // out-of-bounds write on the shorter/empty config vector (cpp-RCP-N2-01,
+    // issue #64). write_generic_config/write_functional_config additionally
+    // bounds-check against the actual vector being indexed as a second,
+    // independent layer of defense (see below).
     Ep0(RegisterMap& regs, lifecycle::ServerLifecycle& lc) noexcept
-        : regs_(regs), lifecycle_(lc), endpoint_owner_(regs.endpoint_count) {}
+        : regs_(regs), lifecycle_(lc),
+          endpoint_owner_(size_invariant_holds(regs) ? regs.endpoint_count : 0) {}
+
+    // is_endpoint_table_consistent reports whether the size invariant this
+    // class's access checks rely on currently holds (regs_.generic_configs
+    // .size() == regs_.functional_configs.size() == regs_.endpoint_count).
+    // It is false only when the RegisterMap this Ep0 was constructed with
+    // violated the invariant and per-endpoint access has therefore been
+    // fail-closed (endpoint_owner_ sized to 0) until a valid replacement
+    // map is installed via write_whole_map.
+    bool is_endpoint_table_consistent() const noexcept {
+        return size_invariant_holds(regs_) && endpoint_owner_.size() == regs_.endpoint_count;
+    }
 
     // claim_root_client implements the exclusive root-client rule: once a
     // stream holds the root-client slot, a different stream's claim is
@@ -402,23 +427,47 @@ public:
     // call this.
     const RegisterMap& read_whole_map() const noexcept { return regs_; }
 
-    // write_whole_map is the root-client-only half of the same rule.
+    // write_whole_map is the root-client-only half of the same rule. Beyond
+    // the root-client check, it must also keep the size invariant every
+    // access check in this class depends on intact (cpp-RCP-N2-02, issue
+    // #65): a root client could otherwise install a replacement map whose
+    // generic_configs/functional_configs disagree with its own
+    // endpoint_count, or that simply differs in endpoint_count from the map
+    // endpoint_owner_ was last sized against, either of which lets a
+    // subsequent per-endpoint write pass a stale/incorrect bounds check and
+    // land out of bounds on the new vectors. So: reject an internally
+    // inconsistent replacement map outright, and resize endpoint_owner_ to
+    // match the (now validated) new endpoint_count as part of the same
+    // operation, discarding prior per-endpoint owner assignments — they
+    // describe endpoints in the map being replaced, not necessarily the
+    // same endpoints in the new one.
     std::error_code write_whole_map(size_t client, RegisterMap new_map) noexcept {
         if (!is_root_client(client))
             return make_error_code(RegMapErrc::unauthorized_access);
+        if (!size_invariant_holds(new_map))
+            return make_error_code(RegMapErrc::invalid_parameter);
         regs_ = std::move(new_map);
+        endpoint_owner_.assign(regs_.endpoint_count, std::nullopt);
         return {};
     }
 
     // write_generic_config / write_functional_config apply the per-endpoint
     // write-access and per-block lock checks above before mutating the
-    // targeted endpoint's config block in the underlying RegisterMap.
+    // targeted endpoint's config block in the underlying RegisterMap. The
+    // explicit size check against the vector actually being indexed (rather
+    // than trusting check_write_access's endpoint_owner_-based verdict
+    // alone) is a second, independent layer of defense against cpp-RCP-N2-01
+    // (issue #64): even if endpoint_owner_ and the config vectors were ever
+    // to drift apart again, these writes still cannot go out of bounds.
     std::error_code write_generic_config(size_t client, EndpointId target,
                                           EndpointGenericConfig cfg) noexcept {
         if (target == kEp0) return make_error_code(RegMapErrc::invalid_parameter);
         auto ec = check_write_access(client, target, ConfigBlock::Generic);
         if (ec) return ec;
-        regs_.generic_configs[static_cast<size_t>(target - 1)] = std::move(cfg);
+        const auto idx = static_cast<size_t>(target - 1);
+        if (idx >= regs_.generic_configs.size())
+            return make_error_code(RegMapErrc::invalid_parameter);
+        regs_.generic_configs[idx] = std::move(cfg);
         return {};
     }
 
@@ -427,11 +476,25 @@ public:
         if (target == kEp0) return make_error_code(RegMapErrc::invalid_parameter);
         auto ec = check_write_access(client, target, ConfigBlock::Functional);
         if (ec) return ec;
-        regs_.functional_configs[static_cast<size_t>(target - 1)] = std::move(cfg);
+        const auto idx = static_cast<size_t>(target - 1);
+        if (idx >= regs_.functional_configs.size())
+            return make_error_code(RegMapErrc::invalid_parameter);
+        regs_.functional_configs[idx] = std::move(cfg);
         return {};
     }
 
 private:
+    // size_invariant_holds is the shared root-invariant check both the
+    // constructor and write_whole_map enforce: every access-control check
+    // above bounds a target endpoint against endpoint_owner_ (sized from
+    // endpoint_count), but the writes those checks gate land in
+    // regs.generic_configs/regs.functional_configs — this must hold for
+    // that to be safe (cpp-RCP-N2-01/N2-02, issues #64/#65).
+    static bool size_invariant_holds(const RegisterMap& regs) noexcept {
+        return regs.generic_configs.size() == regs.endpoint_count &&
+               regs.functional_configs.size() == regs.endpoint_count;
+    }
+
     RegisterMap&                       regs_;
     lifecycle::ServerLifecycle&        lifecycle_;
     std::optional<size_t>              root_client_;

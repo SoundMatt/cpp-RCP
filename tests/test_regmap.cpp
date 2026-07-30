@@ -349,6 +349,138 @@ TEST_CASE("Assigning an owner to EP0 itself is rejected as INVALID_PARAMETER", "
     REQUIRE(ec == make_error_code(RegMapErrc::invalid_parameter));
 }
 
+// ── Size-invariant enforcement (cpp-RCP-N2-01 / cpp-RCP-N2-02, issues #64/#65) ──
+// Ep0's access checks (check_read_access/check_write_access/set_endpoint_owner)
+// all bound a target endpoint against endpoint_owner_, which is sized from
+// endpoint_count. The actual writes land in regs_.generic_configs /
+// regs_.functional_configs instead. These tests confirm a RegisterMap whose
+// endpoint_count disagrees with those vectors' lengths is rejected/fails
+// closed rather than letting an in-range access check be followed by an
+// out-of-bounds write.
+
+TEST_CASE("A RegisterMap whose config vectors disagree with endpoint_count fails closed instead of allowing OOB access",
+          "[regmap][REQ-REGMAP-013]") {
+    RegisterMap m;
+    m.endpoint_count = 4;
+    // generic_configs / functional_configs deliberately left empty/default
+    // -- exactly the mismatch issue #64 describes.
+    ServerLifecycle lc;
+    Ep0 ep0(m, lc);
+
+    REQUIRE_FALSE(ep0.is_endpoint_table_consistent());
+
+    REQUIRE_FALSE(ep0.claim_root_client(1));
+
+    // Every non-EP0 access check must fail closed (INVALID_PARAMETER), not
+    // report a target in [1, endpoint_count] as valid.
+    auto ec_owner = ep0.set_endpoint_owner(1, 1);
+    REQUIRE(ec_owner);
+    REQUIRE(ec_owner == make_error_code(RegMapErrc::invalid_parameter));
+
+    auto ec_read = ep0.check_read_access(1);
+    REQUIRE(ec_read);
+    REQUIRE(ec_read == make_error_code(RegMapErrc::invalid_parameter));
+
+    EndpointGenericConfig gcfg;
+    auto ec_gwrite = ep0.write_generic_config(1, /*target=*/1, gcfg);
+    REQUIRE(ec_gwrite);
+    REQUIRE(ec_gwrite == make_error_code(RegMapErrc::invalid_parameter));
+
+    EndpointFunctionalConfig fcfg;
+    auto ec_fwrite = ep0.write_functional_config(1, /*target=*/1, fcfg);
+    REQUIRE(ec_fwrite);
+    REQUIRE(ec_fwrite == make_error_code(RegMapErrc::invalid_parameter));
+
+    // EP0 (whole-map) read/write are unaffected -- the invariant only
+    // gates per-endpoint access.
+    REQUIRE_FALSE(ep0.check_read_access(kEp0));
+}
+
+TEST_CASE("A RegisterMap with a smaller mismatch (nonzero but undersized config vectors) also fails closed",
+          "[regmap][REQ-REGMAP-013]") {
+    RegisterMap m;
+    m.endpoint_count = 4;
+    m.generic_configs.resize(1);
+    m.functional_configs.resize(1);
+    ServerLifecycle lc;
+    Ep0 ep0(m, lc);
+
+    REQUIRE_FALSE(ep0.is_endpoint_table_consistent());
+    REQUIRE_FALSE(ep0.claim_root_client(1));
+
+    EndpointGenericConfig cfg;
+    // target=4 would be in-range against endpoint_count (and against the
+    // pre-fix endpoint_owner_.size()==4), but generic_configs only has 1
+    // slot -- this must not be allowed through.
+    auto ec = ep0.write_generic_config(1, /*target=*/4, cfg);
+    REQUIRE(ec);
+    REQUIRE(ec == make_error_code(RegMapErrc::invalid_parameter));
+}
+
+TEST_CASE("write_whole_map rejects a replacement map whose config vectors disagree with its own endpoint_count",
+          "[regmap][REQ-REGMAP-013]") {
+    auto map = make_map(2);
+    ServerLifecycle lc;
+    Ep0 ep0(map, lc);
+    REQUIRE_FALSE(ep0.claim_root_client(1));
+
+    RegisterMap bad;
+    bad.endpoint_count = 3;
+    bad.generic_configs.resize(1);      // mismatched
+    bad.functional_configs.resize(3);
+
+    auto ec = ep0.write_whole_map(1, bad);
+    REQUIRE(ec);
+    REQUIRE(ec == make_error_code(RegMapErrc::invalid_parameter));
+
+    // Rejected write must leave the live map untouched.
+    REQUIRE(ep0.read_whole_map().endpoint_count == 2);
+    REQUIRE(ep0.is_endpoint_table_consistent());
+}
+
+TEST_CASE("write_whole_map with a valid replacement map resizes endpoint_owner_ to match the new endpoint_count",
+          "[regmap][REQ-REGMAP-005]") {
+    auto map = make_map(2);
+    ServerLifecycle lc;
+    Ep0 ep0(map, lc);
+    REQUIRE_FALSE(ep0.set_endpoint_owner(1, 10));
+    REQUIRE_FALSE(ep0.set_endpoint_owner(2, 20));
+    REQUIRE_FALSE(ep0.claim_root_client(1));
+
+    // Grow: install a 4-endpoint replacement. Before the fix, endpoint_owner_
+    // stayed sized at 2, so endpoint 4 could never get an owner (silent
+    // DoS) even though write_generic_config's own bounds check would have
+    // been the thing standing between a client and an OOB write.
+    auto bigger = make_map(4);
+    REQUIRE_FALSE(ep0.write_whole_map(1, bigger));
+    REQUIRE(ep0.is_endpoint_table_consistent());
+
+    // Prior per-endpoint owner assignments are discarded by the whole-map
+    // replacement -- they described endpoints in the old map, not
+    // necessarily the same endpoints in the new one.
+    EndpointGenericConfig cfg;
+    auto ec_stale_owner = ep0.write_generic_config(/*client=*/10, /*target=*/1, cfg);
+    REQUIRE(ec_stale_owner);
+    REQUIRE(ec_stale_owner == make_error_code(RegMapErrc::unauthorized_access));
+
+    // The root client can write any endpoint in the new, larger range,
+    // including endpoint 4, which did not exist under the old map.
+    REQUIRE_FALSE(ep0.write_generic_config(1, /*target=*/4, cfg));
+    REQUIRE(ep0.read_whole_map().generic_configs[3].request_queue_size == cfg.request_queue_size);
+
+    // Shrink: install a 1-endpoint replacement. endpoint 4 must no longer
+    // be accepted as a write target -- this is exactly the stale-bounds
+    // scenario issue #65 describes (endpoint_owner_ too large for the new,
+    // shorter config vectors) if endpoint_owner_ were not resized down too.
+    auto smaller = make_map(1);
+    REQUIRE_FALSE(ep0.write_whole_map(1, smaller));
+    REQUIRE(ep0.is_endpoint_table_consistent());
+
+    auto ec_oob = ep0.write_generic_config(1, /*target=*/4, cfg);
+    REQUIRE(ec_oob);
+    REQUIRE(ec_oob == make_error_code(RegMapErrc::invalid_parameter));
+}
+
 // ── The four mandatory error codes are distinct ─────────────────────────────────
 
 TEST_CASE("The four mandatory register-map error codes are distinct values in their own category",
