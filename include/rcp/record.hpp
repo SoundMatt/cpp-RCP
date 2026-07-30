@@ -173,7 +173,12 @@ private:
             f.read(reinterpret_cast<char*>(encoded.data()), static_cast<std::streamsize>(len));
             if (!f.good()) return std::make_error_code(std::errc::io_error);
         }
-        if (!encoded.empty() && encoded[0] == acf::kAcfMsgTypeGbb) {
+        // acf_msg_type is a 7-bit field, not a whole octet (rcp/acf.hpp
+        // v2.19.0 wire conformance pass, issue cpp-RCP-04) — go through
+        // acf::peek_acf_msg_type() rather than comparing encoded[0]
+        // directly, which would almost never match kAcfMsgTypeGbb now that
+        // byte0's LSB is acf_msg_length's MSB.
+        if (!encoded.empty() && acf::peek_acf_msg_type(encoded.data()) == acf::kAcfMsgTypeGbb) {
             uint64_t ts = 0;
             return acf::decode_acf_gbb(encoded.data(), encoded.size(), info, ts, payload);
         }

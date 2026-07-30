@@ -120,12 +120,16 @@ TEST_CASE("A default-constructed Loan releases nothing on destruction", "[loan][
 // modified by this change) for the full conformance suites (test_acf.cpp,
 // test_avtp.cpp).
 
-TEST_CASE("avtp::ByteBusId spans the full single-byte endpoint address range",
+TEST_CASE("avtp::ByteBusId is wide enough for its 11-bit wire field",
           "[tc18][bytebusid]") {
-    static_assert(std::is_same<avtp::ByteBusId, uint8_t>::value,
-        "ByteBusId must be a single byte (RELAY spec §15.5)");
-    REQUIRE(static_cast<unsigned>(std::numeric_limits<avtp::ByteBusId>::min()) == 0);
-    REQUIRE(static_cast<unsigned>(std::numeric_limits<avtp::ByteBusId>::max()) == 255);
+    // byte_bus_id is an 11-bit field (0-2047) on the wire (see rcp/avtp.hpp's
+    // ByteBusId comment, added by the wire-format conformance fix pass) —
+    // uint16_t is the storage type, not the valid value range, so this only
+    // checks the type is wide enough to hold the full 11-bit range without
+    // truncation, not that every uint16_t value is a valid byte_bus_id.
+    static_assert(std::is_same<avtp::ByteBusId, uint16_t>::value,
+        "ByteBusId must be wide enough for the 11-bit wire field (0-2047)");
+    REQUIRE(static_cast<unsigned>(std::numeric_limits<avtp::ByteBusId>::max()) >= 2047u);
 }
 
 TEST_CASE("Zero-value AcfMessageInfo has safe read/request defaults", "[tc18][acf]") {

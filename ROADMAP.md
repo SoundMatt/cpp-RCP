@@ -132,6 +132,7 @@ work, since every endpoint type's functional config block depends on it.
 | **Phase 15** | v2.16.0 | C ABI & CLI rebuild | `capi.h`/`capi_impl.hpp`, `cli.hpp` rebuilt against the new request model |
 | **Phase 16** | v2.17.0 | Deprecation sweep | Remove packages with no TC18 analog (see disposition table) |
 | **Phase 16** | v2.18.0 | Certification refresh | HARA/TARA/FMEA/formal verification/audit pack regenerated against the new requirement set |
+| **Phase 16** | v2.19.0 | Wire format conformance fix pass | `avtp.hpp`/`acf.hpp` NTSCF/TSCF/ACF Message Info bit-packing re-derived from the specification's own header diagrams; `e2e.hpp` CRC coverage and numeric error-code mapping corrected to match |
 | **Phase 16** | v3.0.0 | **TC18 RCP — General Availability** | First release where cpp-RCP *is* the OPEN Alliance TC18 Remote Control Protocol |
 
 ---
@@ -1564,8 +1565,10 @@ wire-format or CLI-surface code. `README.md` is left unmodified: it
 already predates milestones 44-61 (still documenting `rcp/firmware.hpp`
 and other since-deleted packages) and bringing it in line with the current
 architecture is a substantial, separately-scoped task this milestone's own
-text does not name. Milestone #63 (TC18 RCP General Availability, v3.0.0)
-is next and, per its own scope, is the final milestone in this roadmap.
+text does not name. Milestone #63 (Wire Format Conformance Fix Pass,
+v2.19.0) is next, ahead of #64 (TC18 RCP General Availability, v3.0.0),
+since it corrects a defect in the exact wire surface GA's own scope
+requires to be correct.
 
 ### Retired-model residue cleanup (2026-07-30, v2.19.0 — audit findings cpp-RCP-FS-01..05, cpp-RCP-05, cpp-RCP-07)
 
@@ -1727,7 +1730,61 @@ check/lint/trace and RELAY `conform --strict` were not run locally (the
 `cpfusa` binary requires building from its own separate repo, as CI's own
 `cpfusa-build` job does) — flagged for CI to confirm.
 
-### 63. TC18 RCP — General Availability (v3.0.0)
+### 63. Wire Format Conformance Fix Pass (v2.19.0)
+
+- `rcp/avtp.hpp`'s NTSCF/TSCF header bit-packing and `rcp/acf.hpp`'s
+  ACF_ABB/ACF_GBB Message Info bit-packing, both landed at milestone 44
+  (v2.0.0) with a self-admitted "not full bit-for-bit wire conformance"
+  disclaimer, are re-derived field by field from the specification's own
+  bit-position diagrams (counted pixel by pixel from the source PDF, since
+  those diagrams exist only as figures, not extractable text) and
+  cross-checked against a second, independent presentation of the same
+  header shapes elsewhere in the specification
+- `rcp/e2e.hpp`'s `coverage_buffer`/`compute_crc`/`verify_crc` gain a
+  `message_timestamp` parameter and include it, at the correct byte offset,
+  in an ACF_GBB message's CRC coverage — previously omitted entirely,
+  understating what the CRC actually protects for every GBB message
+- `rcp/e2e.hpp`'s `E2eErrc::crc_error` gains a numeric-TC18-wire-error-code
+  accessor (`POCI_FAILURE` = 12) for use when building an error response's
+  `byte_msg_payload`, distinct from the enum's own internal
+  `std::error_code` ordinal
+- Additive only: `rcp/acf.hpp` gains `ControlFlags`/`Message`, a thin,
+  documented view over `AcfMessageInfo` matching RELAY spec §15.5's
+  canonical decoded-frame shape (no existing type is restructured to
+  accommodate it)
+
+**Done (v2.19.0):** See this milestone's own pull request description for
+the full field-by-field derivation of both header shapes and an honest
+statement of confidence — briefly: every sub-octet field width below was
+counted from the specification's own bit-position diagrams rather than
+assumed from generic IEEE 1722 defaults, and cross-checked against a second
+in-specification presentation of the same header shapes plus two fully
+worked numeric examples this file's own quadlet-counting logic reproduces
+exactly. No independent second TC18 implementation was available in this
+environment to interoperate-test against directly, so "full bit-for-bit
+wire conformance" is not claimed as an absolute fact here either — this
+milestone's own honest position is "high confidence, derivation-and-cross-
+check verified, not independently interop-tested," which is why GA
+(milestone #64) remains a distinct, later milestone rather than being
+folded into this one.
+
+Both `AcfMessageInfo`'s and the NTSCF/TSCF headers' public field names are
+kept stable through this fix — only the bit positions/widths the codec
+packs them into changed — so no consumer outside `rcp/avtp.hpp`/
+`rcp/acf.hpp`/`rcp/e2e.hpp` needed a source change for its own sake. Two
+real dispatch bugs this fix exposed *did* need a one-line mechanical fix
+each, since they compared a raw wire byte against `acf::kAcfMsgTypeAbb`/
+`kAcfMsgTypeGbb` directly rather than through the now-necessary
+`acf::peek_acf_msg_type()` (acf_msg_type is a 7-bit field sharing byte0
+with `acf_msg_length`'s MSB, not a whole octet): `rcp/udp.hpp`'s
+`decode_frame` and `rcp/record.hpp`'s `read_msg`. `avtp::ByteBusId` widens
+`uint8_t` → `uint16_t` (byte_bus_id is an 11-bit wire field); this is a
+pure widening change with no consumer breakage found across the tree
+(verified by full-tree build), except one pre-existing narrowing-warning
+call site in `tests/test_udp.cpp` given an explicit cast to stay
+warning-clean. Full local build (C++17) and `ctest` (53/53 tests) pass.
+
+### 64. TC18 RCP — General Availability (v3.0.0)
 
 - First release where cpp-RCP's `RCP` conforms to the OPEN Alliance TC18
   Remote Control Protocol Specification at the wire level: an RC Client

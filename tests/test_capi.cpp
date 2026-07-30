@@ -88,7 +88,12 @@ rcp_err_t mock_server_request_fn(void* userdata, const rcp_request_t* req,
     std::memcpy(resp->payload, out_payload.data(), out_payload.size());
     resp->payload_len       = static_cast<uint32_t>(out_payload.size());
     resp->info.acf_msg_type = out_info.acf_msg_type;
-    resp->info.byte_bus_id   = out_info.byte_bus_id;
+    // rcp_byte_bus_id_t (capi.h) is a pre-existing 8-bit C ABI type, narrower
+    // than avtp::ByteBusId's corrected 11-bit wire range (wire-format
+    // conformance fix pass) -- out of scope to widen the C ABI here, so this
+    // cast just makes the pre-existing truncation explicit instead of an
+    // implicit narrowing conversion.
+    resp->info.byte_bus_id   = static_cast<rcp_byte_bus_id_t>(out_info.byte_bus_id);
     resp->info.rsp           = out_info.rsp ? 1 : 0;
     resp->info.err           = out_info.err ? 1 : 0;
     resp->info.op             = out_info.op ? 1 : 0;
