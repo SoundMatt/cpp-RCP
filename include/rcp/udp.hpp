@@ -150,6 +150,13 @@ inline std::error_code decode_frame(const uint8_t* b, size_t len, Frame& out) {
         out.timestamp_valid = hdr.timestamp_valid;
         out.avtp_timestamp  = hdr.avtp_timestamp;
         acf_off = avtp::kTscfHeaderLen;
+        // control_data_length integrity check (issue cpp-RCP-A3): the
+        // header's own declared ACF byte length must match what's actually
+        // left in the buffer, or a receiver trusting it for anything else
+        // (e.g. finding where a *next* AVTPDU starts in a larger buffer)
+        // would be silently misled by a corrupt/spoofed length field.
+        if (static_cast<size_t>(hdr.control_data_length) != len - acf_off)
+            return avtp::make_error_code(avtp::AvtpErrc::length_mismatch);
     } else {
         avtp::NtscfHeader hdr;
         if (auto ec = avtp::decode_ntscf_header(b, len, hdr)) return ec;
@@ -158,6 +165,8 @@ inline std::error_code decode_frame(const uint8_t* b, size_t len, Frame& out) {
         out.timestamp_valid = false;
         out.avtp_timestamp  = 0;
         acf_off = avtp::kNtscfHeaderLen;
+        if (static_cast<size_t>(hdr.control_data_length) != len - acf_off)
+            return avtp::make_error_code(avtp::AvtpErrc::length_mismatch);
     }
 
     if (len < acf_off + 1) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
@@ -174,15 +183,105 @@ inline std::error_code decode_frame(const uint8_t* b, size_t len, Frame& out) {
     return acf::decode_acf_abb(b + acf_off, len - acf_off, out.info, out.payload);
 }
 
+// ── MultiFrame — multiple ACF requests in one AVTPDU (extraction §12.9.1.1; issue cpp-RCP-04-fresh) ──
+// "An RC Server shall support to handle multiple requests in one frame and
+// check each of them individually if to be processed or not ... The RC
+// Server shall support the handling of multiple request types in one
+// frame." Frame/encode_frame/decode_frame above model exactly one ACF_ABB/
+// ACF_GBB message per AVTPDU — correct for the common case, but unable to
+// represent more than one request (or response) sharing a single NTSCF/TSCF
+// header. MultiFrame is the same AVTPDU envelope carrying one-or-more
+// acf::AcfEntry messages (rcp/acf.hpp's decode_acf_messages, cpp-RCP-01's
+// acf_msg_length fix above); Server and Client below are built on this, not
+// on Frame, so a single incoming request continues to behave exactly as it
+// did through Frame (MultiFrame::messages.size() == 1 is the common case),
+// while a sender that packs several requests into one datagram is now
+// actually handled per-request rather than having its later requests
+// silently swallowed into the first one's payload or dropped.
+struct MultiFrame {
+    bool            use_tscf        = false; // false = NTSCF, true = TSCF
+    avtp::StreamId  stream_id{};
+    uint16_t        sequence_num    = 0;
+    bool            timestamp_valid = false; // TSCF "tv" bit; ignored under NTSCF
+    uint32_t        avtp_timestamp  = 0;     // TSCF-only; ignored under NTSCF
+
+    std::vector<acf::AcfEntry> messages; // one or more ACF_ABB/ACF_GBB messages, in wire order
+};
+
+inline std::vector<uint8_t> encode_multi_frame(const MultiFrame& f) {
+    std::vector<uint8_t> acf_bytes;
+    for (const auto& m : f.messages) {
+        auto enc = (m.info.acf_msg_type == acf::kAcfMsgTypeGbb)
+            ? acf::encode_acf_gbb(m.info, m.message_timestamp, m.payload)
+            : acf::encode_acf_abb(m.info, m.payload);
+        acf_bytes.insert(acf_bytes.end(), enc.begin(), enc.end());
+    }
+
+    std::vector<uint8_t> out;
+    if (f.use_tscf) {
+        avtp::TscfHeader hdr;
+        hdr.stream_id           = f.stream_id;
+        hdr.sequence_num        = f.sequence_num;
+        hdr.control_data_length = static_cast<uint16_t>(acf_bytes.size());
+        hdr.timestamp_valid     = f.timestamp_valid;
+        hdr.avtp_timestamp      = f.avtp_timestamp;
+        out = avtp::encode_tscf_header(hdr);
+    } else {
+        avtp::NtscfHeader hdr;
+        hdr.stream_id           = f.stream_id;
+        hdr.sequence_num        = f.sequence_num;
+        hdr.control_data_length = static_cast<uint16_t>(acf_bytes.size());
+        out = avtp::encode_ntscf_header(hdr);
+    }
+    out.insert(out.end(), acf_bytes.begin(), acf_bytes.end());
+    return out;
+}
+
+inline std::error_code decode_multi_frame(const uint8_t* b, size_t len, MultiFrame& out) {
+    if (len < 1) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+
+    size_t acf_off;
+    out.use_tscf = (b[0] == avtp::kSubtypeTscf);
+    if (out.use_tscf) {
+        avtp::TscfHeader hdr;
+        if (auto ec = avtp::decode_tscf_header(b, len, hdr)) return ec;
+        out.stream_id       = hdr.stream_id;
+        out.sequence_num    = hdr.sequence_num;
+        out.timestamp_valid = hdr.timestamp_valid;
+        out.avtp_timestamp  = hdr.avtp_timestamp;
+        acf_off = avtp::kTscfHeaderLen;
+        // control_data_length integrity check (issue cpp-RCP-A3) — see
+        // decode_frame's equivalent comment above.
+        if (static_cast<size_t>(hdr.control_data_length) != len - acf_off)
+            return avtp::make_error_code(avtp::AvtpErrc::length_mismatch);
+    } else {
+        avtp::NtscfHeader hdr;
+        if (auto ec = avtp::decode_ntscf_header(b, len, hdr)) return ec;
+        out.stream_id       = hdr.stream_id;
+        out.sequence_num    = hdr.sequence_num;
+        out.timestamp_valid = false;
+        out.avtp_timestamp  = 0;
+        acf_off = avtp::kNtscfHeaderLen;
+        if (static_cast<size_t>(hdr.control_data_length) != len - acf_off)
+            return avtp::make_error_code(avtp::AvtpErrc::length_mismatch);
+    }
+
+    if (len < acf_off + 1) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    return acf::decode_acf_messages(b + acf_off, len - acf_off, out.messages);
+}
+
 // ── Server ────────────────────────────────────────────────────────────────────
-// Server binds a UDP socket, decodes each inbound datagram as a Frame, and
-// dispatches the carried ACF request to a caller-supplied Handler — shaped
-// to match rcp::mock::Server::dispatch's signature — then encodes and sends
-// the handler's response back to the sender under the same header kind
-// (NTSCF/TSCF) the request arrived under. Malformed datagrams (short buffer,
-// bad subtype, unrecognized ACF message type) are dropped silently, the same
-// "drop rather than partially process" choice rcp/discovery.hpp documents
-// for its own decode path.
+// Server binds a UDP socket, decodes each inbound datagram as a MultiFrame,
+// and dispatches every ACF request the datagram carries — one, the common
+// case, or more than one packed back to back (extraction §12.9.1.1, issue
+// cpp-RCP-04-fresh) — to a caller-supplied Handler individually, shaped to
+// match rcp::mock::Server::dispatch's signature, then encodes every
+// response into a single reply MultiFrame (same order as the requests
+// arrived in) and sends it back to the sender under the same header kind
+// (NTSCF/TSCF) the request arrived under. Malformed datagrams (short
+// buffer, bad subtype, unrecognized ACF message type on the very first
+// message) are dropped silently, the same "drop rather than partially
+// process" choice rcp/discovery.hpp documents for its own decode path.
 class Server {
 public:
     using Handler = std::function<std::error_code(size_t client,
@@ -289,34 +388,37 @@ private:
                                     reinterpret_cast<sockaddr*>(&from), &flen);
             if (n <= 0) break;
 
-            Frame req;
-            if (decode_frame(buf.data(), static_cast<size_t>(n), req)) continue;
+            MultiFrame req;
+            if (decode_multi_frame(buf.data(), static_cast<size_t>(n), req)) continue;
 
-            acf::AcfMessageInfo   out_info;
-            std::vector<uint8_t>  out_payload;
-            size_t client;
-            {
-                std::lock_guard<std::mutex> lk(mu_);
-                client = client_id_for(from);
-                if (handler_) {
-                    auto ec = handler_(client, req.info, req.payload, out_info, out_payload);
-                    (void)ec; // Handler always populates out_info even on failure,
-                              // same contract rcp::mock::Server::dispatch documents.
-                } else {
-                    out_info = acf::make_response(req.info, acf::ResponseKind::Acknowledge);
-                }
-            }
-
-            Frame resp;
+            MultiFrame resp;
             resp.use_tscf        = req.use_tscf;
             resp.stream_id       = stream_id_;
             resp.sequence_num    = static_cast<uint16_t>(++seq_);
             resp.timestamp_valid = req.timestamp_valid;
             resp.avtp_timestamp  = req.avtp_timestamp;
-            resp.info            = out_info;
-            resp.payload         = std::move(out_payload);
+            resp.messages.reserve(req.messages.size());
+            {
+                std::lock_guard<std::mutex> lk(mu_);
+                size_t client = client_id_for(from);
+                // §12.9.1.1: "check each of them individually if to be
+                // processed or not" — each request in the datagram is
+                // dispatched and answered on its own, not as a batch.
+                for (const auto& m : req.messages) {
+                    acf::AcfEntry out_entry;
+                    if (handler_) {
+                        auto ec = handler_(client, m.info, m.payload, out_entry.info, out_entry.payload);
+                        (void)ec; // Handler always populates out_entry.info even on
+                                  // failure, same contract rcp::mock::Server::dispatch
+                                  // documents.
+                    } else {
+                        out_entry.info = acf::make_response(m.info, acf::ResponseKind::Acknowledge);
+                    }
+                    resp.messages.push_back(std::move(out_entry));
+                }
+            }
 
-            auto out_frame = encode_frame(resp);
+            auto out_frame = encode_multi_frame(resp);
             ::sendto(fd_, out_frame.data(), out_frame.size(), 0,
                      reinterpret_cast<sockaddr*>(&from), flen);
         }
@@ -332,6 +434,16 @@ private:
 // via acf::make_standard_request or rcp/discovery.hpp's
 // make_discovery_request) so this transport stays a pure carrier, not a
 // second place request semantics are decided.
+//
+// Client::request() always sends exactly one ACF request per call, via the
+// single-message Frame codec above — so a Server it talks to always sees
+// exactly one message in that datagram, and always answers with exactly one
+// message bundled in its MultiFrame reply (see Server::serve() above),
+// which decode_frame below decodes correctly. §12.9.1.1's "shall support
+// multiple requests in one frame" is a requirement on the RC *Server* side
+// (which Server above now implements via MultiFrame/decode_acf_messages,
+// cpp-RCP-04-fresh) — this Client intentionally does not add a batching API
+// of its own client-side in this pass.
 class Client {
 public:
     Client(avtp::StreamId stream_id, const char* server_host, uint16_t server_port)

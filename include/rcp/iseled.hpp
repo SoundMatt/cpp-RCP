@@ -53,8 +53,10 @@
 // rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp, and rcp/e2e.hpp.
 #pragma once
 
+#include <rcp/avtp.hpp>
 #include <rcp/endpoint.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -124,6 +126,73 @@ inline std::error_code validate_request(const IseledRequest& req) noexcept {
 inline std::error_code validate_response(const IseledResponse& resp) noexcept {
     if (resp.address > kIseledFieldMask) return make_error_code(IseledErrc::field_out_of_range);
     if (resp.data > kIseledFieldMask) return make_error_code(IseledErrc::field_out_of_range);
+    return {};
+}
+
+// ── ACF byte_msg_payload codec (Figure 40/41, §13.7.12.3; issue cpp-RCP-A4-iseled) ──
+// Before this pass, IseledRequest/IseledResponse and IseledEndpoint::transact
+// operated purely on in-memory structs with range validation — nothing in
+// this file packed/unpacked the 12-bit address + 12-bit data fields into
+// actual ACF wire payload bytes, so no real ISELED request/response could be
+// built or parsed for the wire despite ep_type 0x0C being otherwise wired
+// up. encode_iseled_request/decode_iseled_request and
+// encode_iseled_response/decode_iseled_response below are that missing
+// byte-level codec.
+
+// Figure 40: "Instruction | Address | Data1 | Data2 | Data3 | padding" — the
+// 4-bit Instruction and 12-bit Address share the first two payload bytes
+// (instruction in byte0's top nibble, address's top 4 bits in byte0's low
+// nibble, address's low 8 bits in byte1 — the same nibble-then-byte split
+// this specification uses throughout, e.g. rcp/acf.hpp's own
+// evt/byte_bus_id fields), followed by `data` verbatim. Any trailing
+// padding octets Figure 40 shows are this codec's caller's concern to add,
+// same as every other endpoint payload in this codebase (see e.g.
+// rcp/acf.hpp's own AcfMessageInfo::pad convention) — encode_iseled_request
+// does not itself round `data` up to any particular length.
+constexpr size_t kIseledRequestFixedLen = 2; // Instruction(4 bits) + Address(12 bits), before variable-length Data
+
+inline std::vector<uint8_t> encode_iseled_request(const IseledRequest& req) {
+    std::vector<uint8_t> buf(kIseledRequestFixedLen + req.data.size());
+    buf[0] = static_cast<uint8_t>(((req.instruction & kIseledInstructionMask) << 4) |
+                                   ((req.address >> 8) & 0x0F));
+    buf[1] = static_cast<uint8_t>(req.address & 0xFF);
+    std::copy(req.data.begin(), req.data.end(), buf.begin() + static_cast<long>(kIseledRequestFixedLen));
+    return buf;
+}
+
+inline std::error_code decode_iseled_request(const uint8_t* buf, size_t len, IseledRequest& out) noexcept {
+    if (len < kIseledRequestFixedLen) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    out.instruction = static_cast<uint8_t>((buf[0] >> 4) & kIseledInstructionMask);
+    out.address      = static_cast<uint16_t>(((buf[0] & 0x0F) << 8) | buf[1]);
+    out.data.assign(buf + kIseledRequestFixedLen, buf + len);
+    return {};
+}
+
+// Figure 41: "Address | Data[11:0] | CRC (optional) | rsvd" — Address (12
+// bits) and Data[11:0] (12 bits) pack into 3 bytes (address's 8 high bits
+// in byte0, address's low 4 bits + data's top 4 bits sharing byte1's two
+// nibbles, data's low 8 bits in byte2). The optional 4-bit CRC + rsvd bits
+// Figure 41 also shows are NOT encoded here: this repository has no
+// verified copy of the ISELED standard's own CRC algorithm (see this
+// header's own top-of-file comment on the removed invented CRC-8), so —
+// same as the rest of this file — this codec only represents the
+// Address/Data fields it can source confidently, not the CRC/rsvd trailer.
+constexpr size_t kIseledResponseLen = 3; // Address(12 bits) + Data[11:0](12 bits); no CRC/rsvd
+
+inline std::vector<uint8_t> encode_iseled_response(const IseledResponse& resp) {
+    std::vector<uint8_t> buf(kIseledResponseLen);
+    const uint16_t addr = resp.address & kIseledFieldMask;
+    const uint16_t data = resp.data & kIseledFieldMask;
+    buf[0] = static_cast<uint8_t>(addr >> 4);
+    buf[1] = static_cast<uint8_t>(((addr & 0x0F) << 4) | ((data >> 8) & 0x0F));
+    buf[2] = static_cast<uint8_t>(data & 0xFF);
+    return buf;
+}
+
+inline std::error_code decode_iseled_response(const uint8_t* buf, size_t len, IseledResponse& out) noexcept {
+    if (len != kIseledResponseLen) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    out.address = static_cast<uint16_t>((static_cast<uint16_t>(buf[0]) << 4) | (buf[1] >> 4));
+    out.data     = static_cast<uint16_t>(((buf[1] & 0x0F) << 8) | buf[2]);
     return {};
 }
 

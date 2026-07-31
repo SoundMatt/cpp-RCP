@@ -82,6 +82,9 @@ TEST_CASE("EP0 write via dispatch() is always rejected", "[mock][REQ-MOCK-004]")
     auto ec = server.dispatch(/*client=*/1, req, {}, resp, resp_payload);
     REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
     REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    // cpp-RCP-02: the error response's byte_msg_payload must carry Table 27's
+    // numeric error code (RequestRejected = 11), not be left empty.
+    REQUIRE(resp_payload == std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::RequestRejected)});
 }
 
 TEST_CASE("write_whole_map requires the root client", "[mock][REQ-MOCK-005]") {
@@ -189,4 +192,24 @@ TEST_CASE("dispatch to an unmapped byte_bus_id reports invalid_parameter",
     auto ec = server.dispatch(0, req, {}, resp, resp_payload);
     REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::invalid_parameter));
     REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload == std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::InvalidParameter)});
+}
+
+TEST_CASE("A GPIO write with a mis-sized payload is rejected with wire error code INVALID_PARAMETER",
+          "[mock][REQ-MOCK-010][REQ-GPIO-001]") {
+    // cpp-RCP-02 + cpp-RCP-05-fresh together: decode_gpio_payload now
+    // rejects a non-exactly-4-byte buffer, and that rejection's wire
+    // error-response payload must carry Table 27's INVALID_PARAMETER (15).
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                 static_cast<uint8_t>(WriteSemantics::Or));
+    std::vector<uint8_t> too_long_payload{0x00, 0x00, 0x00, 0x0F, 0xFF};
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = server.dispatch(0, req, too_long_payload, resp, resp_payload);
+    REQUIRE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload == std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::InvalidParameter)});
 }

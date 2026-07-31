@@ -304,6 +304,84 @@ TEST_CASE("Decoders reject buffers shorter than their fixed header", "[acf][REQ-
     REQUIRE(decode_acf_abb(too_short_acf.data(), too_short_acf.size(), abb_out, abb_payload));
 }
 
+// ── Multiple ACF requests in one frame (extraction §12.9.1.1; issue cpp-RCP-04-fresh) ──
+
+TEST_CASE("decode_acf_messages decodes two ACF_ABB requests packed back to back",
+          "[acf][REQ-WIRE-004]") {
+    AcfMessageInfo first;
+    first.byte_bus_id     = 1;
+    first.transaction_num = 10;
+    std::vector<uint8_t> first_payload(4, 0xAA); // quadlet-aligned so acf_msg_length is byte-exact
+
+    AcfMessageInfo second;
+    second.byte_bus_id     = 2;
+    second.transaction_num = 20;
+    std::vector<uint8_t> second_payload(4, 0xBB);
+
+    auto first_bytes  = encode_acf_abb(first, first_payload);
+    auto second_bytes = encode_acf_abb(second, second_payload);
+    std::vector<uint8_t> buf = first_bytes;
+    buf.insert(buf.end(), second_bytes.begin(), second_bytes.end());
+
+    std::vector<AcfEntry> out;
+    REQUIRE_FALSE(decode_acf_messages(buf.data(), buf.size(), out));
+    REQUIRE(out.size() == 2);
+    REQUIRE(out[0].info.byte_bus_id == 1);
+    REQUIRE(out[0].info.transaction_num == 10);
+    REQUIRE(out[0].payload == first_payload);
+    REQUIRE(out[1].info.byte_bus_id == 2);
+    REQUIRE(out[1].info.transaction_num == 20);
+    REQUIRE(out[1].payload == second_payload);
+}
+
+TEST_CASE("decode_acf_messages decodes a single ACF_ABB message occupying the whole buffer",
+          "[acf][REQ-WIRE-004]") {
+    AcfMessageInfo info;
+    info.byte_bus_id = 5;
+    std::vector<uint8_t> payload{0x01, 0x02, 0x03}; // not quadlet-aligned
+    auto buf = encode_acf_abb(info, payload);
+
+    std::vector<AcfEntry> out;
+    REQUIRE_FALSE(decode_acf_messages(buf.data(), buf.size(), out));
+    REQUIRE(out.size() == 1);
+    REQUIRE(out[0].payload == payload);
+}
+
+TEST_CASE("decode_acf_messages handles a mix of ACF_ABB and ACF_GBB in one buffer",
+          "[acf][REQ-WIRE-004][REQ-WIRE-005]") {
+    AcfMessageInfo abb;
+    abb.byte_bus_id = 1;
+    std::vector<uint8_t> abb_payload(4, 0x11);
+
+    AcfMessageInfo gbb;
+    gbb.byte_bus_id = 2;
+    gbb.mtv          = true;
+    std::vector<uint8_t> gbb_payload(4, 0x22);
+    uint64_t ts = 0xAABBCCDDEEFF0011ULL;
+
+    auto abb_bytes = encode_acf_abb(abb, abb_payload);
+    auto gbb_bytes = encode_acf_gbb(gbb, ts, gbb_payload);
+    std::vector<uint8_t> buf = abb_bytes;
+    buf.insert(buf.end(), gbb_bytes.begin(), gbb_bytes.end());
+
+    std::vector<AcfEntry> out;
+    REQUIRE_FALSE(decode_acf_messages(buf.data(), buf.size(), out));
+    REQUIRE(out.size() == 2);
+    REQUIRE(out[0].info.acf_msg_type == kAcfMsgTypeAbb);
+    REQUIRE(out[0].payload == abb_payload);
+    REQUIRE(out[1].info.acf_msg_type == kAcfMsgTypeGbb);
+    REQUIRE(out[1].message_timestamp == ts);
+    REQUIRE(out[1].payload == gbb_payload);
+}
+
+TEST_CASE("decode_acf_messages rejects an empty/unrecognized-type buffer outright", "[acf][REQ-WIRE-004]") {
+    std::vector<uint8_t> bogus(kAcfCommonHeaderLen, 0x00); // acf_msg_type bits decode to neither ABB nor GBB
+    std::vector<AcfEntry> out;
+    auto ec = decode_acf_messages(bogus.data(), bogus.size(), out);
+    REQUIRE(ec);
+    REQUIRE(out.empty());
+}
+
 // ── byte_bus_id echo rule ───────────────────────────────────────────────────────
 
 TEST_CASE("make_response echoes byte_bus_id and transaction_num from the request unchanged", "[acf][REQ-WIRE-008]") {

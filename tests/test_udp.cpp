@@ -174,6 +174,57 @@ TEST_CASE("decode_frame rejects an unrecognized ACF message type", "[udp][REQ-UD
     REQUIRE(decode_frame(bytes.data(), bytes.size(), out));
 }
 
+TEST_CASE("decode_frame rejects a buffer whose control_data_length disagrees with its actual size",
+          "[udp][REQ-UDP-006]") {
+    // cpp-RCP-A3: control_data_length was decoded but never checked against
+    // the buffer it actually came with.
+    Frame f;
+    f.stream_id = make_stream_id(0x01, 2);
+    f.info      = standard_request(1, 1);
+    f.payload   = {0x01, 0x02, 0x03};
+    auto bytes  = encode_frame(f);
+    bytes.push_back(0xFF); // one extra byte the NTSCF header's own length field does not account for
+
+    Frame out;
+    auto ec = decode_frame(bytes.data(), bytes.size(), out);
+    REQUIRE(ec);
+    REQUIRE(ec == avtp::make_error_code(avtp::AvtpErrc::length_mismatch));
+}
+
+// ── MultiFrame — multiple ACF requests in one AVTPDU (cpp-RCP-04-fresh) ──────
+
+TEST_CASE("MultiFrame round-trips two ACF_ABB messages packed into one AVTPDU",
+          "[udp][REQ-UDP-001]") {
+    // Payloads are quadlet-aligned (4 bytes each) so the first message's
+    // acf_msg_length is byte-exact and the second message's boundary can be
+    // found precisely — see acf::decode_acf_messages's own documented scope
+    // limit for the non-aligned case.
+    MultiFrame f;
+    f.use_tscf     = false;
+    f.stream_id    = make_stream_id(0x02, 0x5555);
+    f.sequence_num = 3;
+
+    acf::AcfEntry a;
+    a.info    = standard_request(/*bus_id=*/1, /*transaction_num=*/10, /*write=*/true);
+    a.payload = {0x01, 0x02, 0x03, 0x04};
+    acf::AcfEntry b;
+    b.info    = standard_request(/*bus_id=*/2, /*transaction_num=*/20, /*write=*/false);
+    b.payload = {0x05, 0x06, 0x07, 0x08};
+    f.messages = {a, b};
+
+    auto bytes = encode_multi_frame(f);
+
+    MultiFrame out;
+    REQUIRE_FALSE(decode_multi_frame(bytes.data(), bytes.size(), out));
+    REQUIRE(out.messages.size() == 2);
+    REQUIRE(out.messages[0].info.byte_bus_id == 1);
+    REQUIRE(out.messages[0].info.transaction_num == 10);
+    REQUIRE(out.messages[0].payload == a.payload);
+    REQUIRE(out.messages[1].info.byte_bus_id == 2);
+    REQUIRE(out.messages[1].info.transaction_num == 20);
+    REQUIRE(out.messages[1].payload == b.payload);
+}
+
 // ── Server (real UDP sockets, loopback) ──────────────────────────────────────
 
 TEST_CASE("Server dispatches a decoded request through its handler and answers the sender",
@@ -206,6 +257,67 @@ TEST_CASE("Server dispatches a decoded request through its handler and answers t
 
     server.close();
     client.close();
+}
+
+TEST_CASE("Server handles multiple requests packed into a single datagram individually "
+          "(extraction §12.9.1.1)",
+          "[udp][REQ-UDP-007]") {
+    // rcp::udp::Client always sends one request per datagram (see Client's
+    // own header comment), so this test drives Server with a raw socket to
+    // actually exercise the multi-request-in-one-frame path (cpp-RCP-04-fresh).
+    Server server(make_stream_id(0x02, 7), "127.0.0.1", 0);
+    REQUIRE(server.ok());
+
+    std::vector<size_t> seen_bus_ids;
+    server.set_handler([&](size_t, const acf::AcfMessageInfo& req,
+                            const std::vector<uint8_t>& req_payload,
+                            acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload) {
+        seen_bus_ids.push_back(req.byte_bus_id);
+        out_resp_payload = req_payload;
+        out_resp         = acf::make_response(req, acf::ResponseKind::ReadResponse);
+        return std::error_code{};
+    });
+
+    MultiFrame req_frame;
+    req_frame.use_tscf     = false;
+    req_frame.stream_id    = make_stream_id(0x03, 7);
+    req_frame.sequence_num = 1;
+
+    acf::AcfEntry req_a;
+    req_a.info    = standard_request(/*bus_id=*/1, /*transaction_num=*/1);
+    req_a.payload = {0xAA, 0xAA, 0xAA, 0xAA};
+    acf::AcfEntry req_b;
+    req_b.info    = standard_request(/*bus_id=*/2, /*transaction_num=*/2);
+    req_b.payload = {0xBB, 0xBB, 0xBB, 0xBB};
+    req_frame.messages = {req_a, req_b};
+
+    auto req_bytes = encode_multi_frame(req_frame);
+
+    int raw_fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+    REQUIRE(raw_fd >= 0);
+    sockaddr_in server_addr{};
+    server_addr.sin_family      = AF_INET;
+    server_addr.sin_port        = htons(server.port());
+    server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    auto sent = ::sendto(raw_fd, req_bytes.data(), req_bytes.size(), 0,
+                          reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr));
+    REQUIRE(sent == static_cast<ssize_t>(req_bytes.size()));
+
+    std::vector<uint8_t> recv_buf(kMaxDatagram);
+    ssize_t n = ::recv(raw_fd, recv_buf.data(), recv_buf.size(), 0);
+    REQUIRE(n > 0);
+    ::close(raw_fd);
+
+    MultiFrame resp_frame;
+    REQUIRE_FALSE(decode_multi_frame(recv_buf.data(), static_cast<size_t>(n), resp_frame));
+    REQUIRE(resp_frame.messages.size() == 2);
+    REQUIRE(resp_frame.messages[0].info.byte_bus_id == 1);
+    REQUIRE(resp_frame.messages[0].payload == req_a.payload);
+    REQUIRE(resp_frame.messages[1].info.byte_bus_id == 2);
+    REQUIRE(resp_frame.messages[1].payload == req_b.payload);
+    REQUIRE(seen_bus_ids == std::vector<size_t>{1, 2}); // both dispatched individually, in order
+
+    server.close();
 }
 
 TEST_CASE("Server answers Acknowledge by default when no handler is registered",

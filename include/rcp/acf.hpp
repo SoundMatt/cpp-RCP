@@ -39,10 +39,32 @@
 // different message subtype elsewhere in the specification, and (2) against
 // two fully worked numeric examples elsewhere in the specification (one
 // ACF_ABB, one ACF_GBB) that state concrete byte counts and an
-// acf_msg_length value for a chosen payload/padding — this file's own
-// quadlet-counting logic reproduces both stated values exactly. See this
-// repository's pull request description for the full derivation and its
-// honestly-stated confidence level.
+// acf_msg_length value for a chosen payload/padding.
+//
+// acf_msg_length conformance note (v2.20.0, issue cpp-RCP-01): the bit
+// layout above was already correct, but until this pass nothing in this
+// codec ever *computed* acf_msg_length from a real message's actual size —
+// AcfMessageInfo::acf_msg_length defaulted to 0 and stayed 0 unless a
+// caller (only rcp/e2e.hpp's own unit tests did) set it by hand, so every
+// frame this library actually emitted over rcp/udp.hpp carried
+// acf_msg_length=0. compute_acf_msg_length() below now does that
+// computation (quadlets over the shared header, the ACF_GBB timestamp when
+// present, and the payload as given — see its own comment for the exact
+// worked-example derivation), and encode_acf_abb()/encode_acf_gbb() call it
+// automatically whenever the caller leaves AcfMessageInfo::acf_msg_length at
+// its 0 default, which is what every real request/response builder in this
+// tree does today (rcp::acf::make_standard_request, rcp::acf::make_response,
+// rcp/mock.hpp's dispatch_*, rcp/discovery.hpp, rcp/record.hpp). A caller
+// that has already computed a specific value itself — e.g. rcp/e2e.hpp's
+// apply_acf_length_adjustment(), which must bake a trailing CRC's +1
+// quadlet into the header *before* that header is serialized for CRC
+// coverage — sets AcfMessageInfo::acf_msg_length to a nonzero value first,
+// which this codec always takes as an explicit override and never
+// recomputes out from under it. See compute_acf_msg_length()'s own comment
+// for this fix's known scope limit (it counts quadlets from the payload
+// length exactly as given, since this codec has always left padding a
+// caller-owned concern — see the "ACF shared header" section above — rather
+// than silently appending real pad octets a caller did not ask for).
 #pragma once
 
 #include <rcp/avtp.hpp>
@@ -71,7 +93,8 @@ constexpr uint8_t kAcfMsgTypeAbb = 0x0E; // ACF_ABB — no timestamp field at al
 // second short_buffer value defined here.
 
 enum class AcfErrc : int {
-    bad_acf_msg_type = 1, // acf_msg_type is neither ACF_ABB nor ACF_GBB
+    bad_acf_msg_type   = 1, // acf_msg_type is neither ACF_ABB nor ACF_GBB
+    bad_acf_msg_length = 2, // a decoded acf_msg_length does not fit the buffer it was found in
 };
 
 inline const std::error_category& acf_category() noexcept {
@@ -79,8 +102,9 @@ inline const std::error_category& acf_category() noexcept {
         const char* name() const noexcept override { return "rcp.acf"; }
         std::string message(int ev) const override {
             switch (static_cast<AcfErrc>(ev)) {
-            case AcfErrc::bad_acf_msg_type: return "rcp/acf: unrecognized ACF message type";
-            default:                        return "rcp/acf: unknown error";
+            case AcfErrc::bad_acf_msg_type:   return "rcp/acf: unrecognized ACF message type";
+            case AcfErrc::bad_acf_msg_length: return "rcp/acf: acf_msg_length inconsistent with buffer size";
+            default:                          return "rcp/acf: unknown error";
             }
         }
     };
@@ -168,6 +192,39 @@ struct AcfMessageInfo {
 
 constexpr size_t kAcfCommonHeaderLen = 8;
 constexpr size_t kAcfGbbTimestampLen = 8;
+
+// compute_acf_msg_length computes the wire acf_msg_length value (quadlets,
+// counted over the *entire* ACF message: the 8-byte shared header, the
+// 8-byte message_timestamp for ACF_GBB, and the payload as given) for a
+// message about to be encoded (issue cpp-RCP-01). Confirmed against the
+// specification's own two fully worked numeric examples:
+//   ACF_ABB, 6-byte payload + 2 pad bytes already folded into the payload
+//   the caller passes (8 bytes total) + a 4-byte CRC32 trailer the caller
+//   accounts for separately (not part of `payload_len` here, see
+//   rcp/e2e.hpp's apply_acf_length_adjustment): header(8) + payload(8) = 16
+//   bytes = 4 quadlets; +1 quadlet for the trailer = 5 = 0x05.
+//   ACF_GBB, 7-byte payload + 1 pad byte already folded in (8 bytes total):
+//   header(8) + timestamp(8) + payload(8) = 24 bytes = 6 quadlets; +1
+//   quadlet for the trailer = 7 = 0x07.
+// Both match the specification's stated acf_msg_length for those examples
+// exactly (see this repository's pull request description for the
+// byte-by-byte derivation).
+//
+// Known scope limit: this function counts whatever `payload_len` it is
+// given — it does not itself round `payload_len` up to a quadlet boundary
+// or append real pad octets, since padding has always been a caller-owned
+// concern in this codec (the `pad` field exists precisely so a caller that
+// *does* pad its payload can still tell a decoder how many trailing octets
+// to treat as padding — see the "ACF shared header" section above). A
+// caller whose payload is not already quadlet-aligned and wants a
+// byte-exact acf_msg_length must pad the payload itself (adjusting `pad`
+// to match) before calling this — the same convention every existing
+// caller of AcfMessageInfo::pad in this codebase already follows.
+inline uint16_t compute_acf_msg_length(uint8_t acf_msg_type, size_t payload_len) noexcept {
+    const size_t fixed_len = kAcfCommonHeaderLen + (acf_msg_type == kAcfMsgTypeGbb ? kAcfGbbTimestampLen : 0);
+    const size_t total     = fixed_len + payload_len;
+    return static_cast<uint16_t>((total + 3) / 4); // ceiling division to whole quadlets
+}
 
 // evt[3:0] == 0xF identifies a response as an Acknowledge (extraction
 // Table 15) — the wire value this codec's own make_response()/
@@ -260,6 +317,17 @@ inline std::vector<uint8_t> encode_acf_abb(AcfMessageInfo info,
                                             const std::vector<uint8_t>& payload) {
     info.acf_msg_type = kAcfMsgTypeAbb;
     info.mtv          = false;
+    // acf_msg_length auto-fill (issue cpp-RCP-01): 0 is never a valid real
+    // wire value (the shared header alone is already 2 quadlets), so a
+    // caller leaving AcfMessageInfo::acf_msg_length at its default means
+    // "compute it for me from the payload I'm actually giving you" —
+    // exactly what every real caller in this tree does today. A caller
+    // that has already computed and set a specific nonzero value itself
+    // (e.g. rcp/e2e.hpp's apply_acf_length_adjustment(), to bake a trailing
+    // CRC's +1 quadlet in before this header is serialized for CRC
+    // coverage) is always respected unchanged.
+    if (info.acf_msg_length == 0)
+        info.acf_msg_length = compute_acf_msg_length(info.acf_msg_type, payload.size());
     std::vector<uint8_t> buf(kAcfCommonHeaderLen + payload.size());
     encode_acf_message_info(info, buf.data());
     std::copy(payload.begin(), payload.end(), buf.begin() + static_cast<long>(kAcfCommonHeaderLen));
@@ -283,6 +351,11 @@ inline std::error_code decode_acf_abb(const uint8_t* b, size_t len,
 inline std::vector<uint8_t> encode_acf_gbb(AcfMessageInfo info, uint64_t message_timestamp,
                                             const std::vector<uint8_t>& payload) {
     info.acf_msg_type = kAcfMsgTypeGbb;
+    // acf_msg_length auto-fill (issue cpp-RCP-01) — see encode_acf_abb's
+    // equivalent comment above for the full rationale; same "0 means
+    // compute it, nonzero is an explicit caller override" contract.
+    if (info.acf_msg_length == 0)
+        info.acf_msg_length = compute_acf_msg_length(info.acf_msg_type, payload.size());
     std::vector<uint8_t> buf(kAcfCommonHeaderLen + kAcfGbbTimestampLen + payload.size());
     encode_acf_message_info(info, buf.data());
     avtp::detail::put_u64(&buf[kAcfCommonHeaderLen], message_timestamp);
@@ -302,6 +375,91 @@ inline std::error_code decode_acf_gbb(const uint8_t* b, size_t len,
     decode_acf_message_info(b, out_info);
     out_message_timestamp = avtp::detail::get_u64(&b[kAcfCommonHeaderLen]);
     out_payload.assign(b + kAcfCommonHeaderLen + kAcfGbbTimestampLen, b + len);
+    return {};
+}
+
+// ── Multiple ACF requests in one frame (extraction §12.9.1.1; issue cpp-RCP-04-fresh) ──
+// "An RC Server shall support to handle multiple requests in one frame and
+// check each of them individually if to be processed or not ... The RC
+// Server shall support the handling of multiple request types in one
+// frame." decode_acf_abb/decode_acf_gbb above only ever decode a single
+// message occupying the *entire* remaining buffer — correct for the common
+// one-request-per-AVTPDU case, but unable to find where a second, packed-in
+// request begins. decode_acf_messages below walks a buffer that may contain
+// more than one ACF_ABB/ACF_GBB message back to back, using each message's
+// own acf_msg_length (now populated for real by encode_acf_abb/
+// encode_acf_gbb, cpp-RCP-01 above) to find the next one.
+
+// AcfEntry is one decoded ACF_ABB/ACF_GBB message out of a possibly-multi-
+// message buffer — the same three outputs decode_acf_abb/decode_acf_gbb
+// split into separate out-parameters, bundled here so decode_acf_messages
+// can return a sequence of them.
+struct AcfEntry {
+    AcfMessageInfo         info;
+    uint64_t               message_timestamp = 0; // meaningful only when info.acf_msg_type == kAcfMsgTypeGbb
+    std::vector<uint8_t>   payload;
+};
+
+// decode_acf_messages decodes every well-formed ACF_ABB/ACF_GBB message in
+// [b, b+len), advancing by each message's own acf_msg_length*4 bytes to
+// find the next one. The first message is held to the same strict rules
+// decode_acf_abb/decode_acf_gbb apply to a single-message buffer (a short
+// buffer or an unrecognized acf_msg_type there is a hard error). Once at
+// least one message has decoded successfully, this function treats a
+// declared acf_msg_length that does not fit the bytes actually remaining as
+// "trust the buffer, not the length" and consumes the rest of the buffer as
+// that message's payload instead of failing outright — the same behavior
+// decode_acf_abb/decode_acf_gbb have always had for a lone message — so a
+// sender whose acf_msg_length is a caller-computed estimate rather than a
+// byte-exact count (see compute_acf_msg_length's own documented scope
+// limit: it does not itself pad a non-quadlet-aligned payload) still
+// decodes correctly as long as it is the last (or only) message in the
+// buffer. A message boundary can only be found precisely when the sender's
+// acf_msg_length is byte-exact, which requires the payload to already be
+// quadlet-aligned (as e.g. rcp/gpio.hpp's and rcp/pwm.hpp's fixed 4-byte
+// payloads always are) — a non-final message with a non-aligned payload is
+// a known residual gap of this pass, noted in this repository's pull
+// request description.
+inline std::error_code decode_acf_messages(const uint8_t* b, size_t len, std::vector<AcfEntry>& out) {
+    out.clear();
+    size_t off = 0;
+    while (off < len) {
+        const size_t remaining = len - off;
+        const bool is_gbb = (peek_acf_msg_type(b + off) == kAcfMsgTypeGbb);
+        const bool is_abb = (peek_acf_msg_type(b + off) == kAcfMsgTypeAbb);
+        if (!is_gbb && !is_abb) {
+            if (out.empty()) return make_error_code(AcfErrc::bad_acf_msg_type);
+            break;
+        }
+
+        const size_t fixed_len = kAcfCommonHeaderLen + (is_gbb ? kAcfGbbTimestampLen : 0);
+        if (remaining < fixed_len) {
+            if (out.empty()) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+            break;
+        }
+
+        AcfMessageInfo info;
+        decode_acf_message_info(b + off, info);
+
+        size_t msg_bytes = static_cast<size_t>(info.acf_msg_length) * 4;
+        if (msg_bytes < fixed_len || msg_bytes > remaining) {
+            // Declared length doesn't fit this message's own fixed header,
+            // or overclaims past the end of the buffer (see this function's
+            // own comment above) — fall back to "consume the rest of the
+            // buffer", same convention decode_acf_abb/decode_acf_gbb use.
+            msg_bytes = remaining;
+        }
+
+        AcfEntry entry;
+        entry.info = info;
+        const size_t payload_off = off + fixed_len;
+        const size_t payload_len = msg_bytes - fixed_len;
+        if (is_gbb) entry.message_timestamp = avtp::detail::get_u64(&b[off + kAcfCommonHeaderLen]);
+        entry.payload.assign(b + payload_off, b + payload_off + payload_len);
+        out.push_back(std::move(entry));
+
+        off += msg_bytes;
+    }
     return {};
 }
 
@@ -373,6 +531,50 @@ inline AcfMessageInfo make_response(const AcfMessageInfo& request, ResponseKind 
     resp.err = (kind == ResponseKind::ErrorResponse);
     resp.op  = (kind == ResponseKind::WriteResponse);
     return resp;
+}
+
+// ── Wire error codes in error responses (extraction Table 27; issue cpp-RCP-02) ──
+// "The error response shall contain a byte_msg_payload with an error code"
+// (extraction §12.9.6). WireErrorCode below fixes the 17 numeric values
+// Table 27 assigns — the byte_msg_payload this codec builds for an
+// ErrorResponse (acf::ResponseKind::ErrorResponse) is that one octet, per
+// encode_error_payload(). Before this pass, nothing in this codebase built
+// that payload at all: every ErrorResponse call site in rcp/mock.hpp left
+// out_resp_payload empty, and the only existing numeric Table 27 mapping
+// anywhere in the tree (rcp/e2e.hpp's kPociFailureErrorCode) was never
+// actually wired into a response payload either. This enum is intentionally
+// independent of any endpoint/subsystem's own internal std::error_code
+// ordinals (e.g. rcp/regmap.hpp's RegMapErrc, whose own enumerator values
+// 1..4 do NOT match Table 27's numbering for the same-named codes — compare
+// RegMapErrc::unauthorized_access == 1 there against
+// WireErrorCode::UnauthorizedAccess == 3 here) — callers translate their own
+// internal error condition to a WireErrorCode explicitly (see
+// rcp/mock.hpp's wire_error_code_for()) rather than this codec guessing a
+// mapping from an arbitrary std::error_code.
+enum class WireErrorCode : uint8_t {
+    UnsupportedCmd          = 1,  // requested feature/command not supported
+    SequencerNotKnown       = 2,
+    UnauthorizedAccess      = 3,
+    LockedMemAccess         = 4,
+    RequestCanceled         = 5,
+    RequestNotFound         = 6,
+    EpError                 = 7,  // error occurred during request execution; see ep_status
+    EpNotFound              = 8,  // a Trigger request refers to a nonexisting EP
+    PwmInNoSignal           = 9,
+    ReqStorageOverflow      = 10,
+    RequestRejected          = 11, // other than STANDARD request during RC Server initial config phase
+    PociFailure              = 12, // CRC of request does not match
+    PresentationTimeTooFar   = 13,
+    GptpFail                 = 14,
+    InvalidParameter         = 15, // request parameter out of range
+    ChainAborted             = 16,
+    ChainError               = 17,
+};
+
+// encode_error_payload builds the single-octet byte_msg_payload an
+// ErrorResponse carries the numeric Table 27 code in.
+inline std::vector<uint8_t> encode_error_payload(WireErrorCode code) {
+    return {static_cast<uint8_t>(code)};
 }
 
 // ── Timestamp fallback rules ──────────────────────────────────────────────────

@@ -133,6 +133,7 @@ work, since every endpoint type's functional config block depends on it.
 | **Phase 16** | v2.17.0 | Deprecation sweep | Remove packages with no TC18 analog (see disposition table) |
 | **Phase 16** | v2.18.0 | Certification refresh | HARA/TARA/FMEA/formal verification/audit pack regenerated against the new requirement set |
 | **Phase 16** | v2.19.0 | Wire format conformance fix pass | `avtp.hpp`/`acf.hpp` NTSCF/TSCF/ACF Message Info bit-packing re-derived from the specification's own header diagrams; `e2e.hpp` CRC coverage and numeric error-code mapping corrected to match |
+| **Phase 16** | v2.20.0 | TC18 conformance fix pass II | `acf_msg_length` actually computed; multiple-requests-in-one-frame (§12.9.1.1) supported; error responses carry a Table 27 error code; GPIO exact-length payload check; ISELED gains a real wire codec; PWM_IN rising/falling-edge triggers; `control_data_length` validated |
 | **Phase 16** | v3.0.0 | **TC18 RCP — General Availability** | First release where cpp-RCP *is* the OPEN Alliance TC18 Remote Control Protocol |
 
 ---
@@ -1566,9 +1567,10 @@ already predates milestones 44-61 (still documenting `rcp/firmware.hpp`
 and other since-deleted packages) and bringing it in line with the current
 architecture is a substantial, separately-scoped task this milestone's own
 text does not name. Milestone #63 (Wire Format Conformance Fix Pass,
-v2.19.0) is next, ahead of #64 (TC18 RCP General Availability, v3.0.0),
+v2.19.0) is next, ahead of #65 (TC18 RCP General Availability, v3.0.0),
 since it corrects a defect in the exact wire surface GA's own scope
-requires to be correct.
+requires to be correct. (Milestone #64, TC18 Conformance Fix Pass II,
+v2.20.0, was added later in the same vein — see its own entry.)
 
 ### Retired-model residue cleanup (2026-07-30, v2.19.0 — audit findings cpp-RCP-FS-01..05, cpp-RCP-05, cpp-RCP-07)
 
@@ -1765,7 +1767,7 @@ environment to interoperate-test against directly, so "full bit-for-bit
 wire conformance" is not claimed as an absolute fact here either — this
 milestone's own honest position is "high confidence, derivation-and-cross-
 check verified, not independently interop-tested," which is why GA
-(milestone #64) remains a distinct, later milestone rather than being
+(milestone #65) remains a distinct, later milestone rather than being
 folded into this one.
 
 Both `AcfMessageInfo`'s and the NTSCF/TSCF headers' public field names are
@@ -1784,7 +1786,112 @@ pure widening change with no consumer breakage found across the tree
 call site in `tests/test_udp.cpp` given an explicit cast to stay
 warning-clean. Full local build (C++17) and `ctest` (53/53 tests) pass.
 
-### 64. TC18 RCP — General Availability (v3.0.0)
+### 64. TC18 Conformance Fix Pass II (v2.20.0)
+
+A second gap-audit pass (2026-07-31) against the specification's own worked
+numeric examples and per-endpoint request-handling text found that
+milestone 63's header-layout fix had left `acf_msg_length` itself unfilled,
+missed one mandatory §12.9.1.1 requirement outright, and left several
+smaller per-endpoint gaps. This pass addresses each:
+
+- **`acf_msg_length` is now actually computed (cpp-RCP-01, critical).**
+  `AcfMessageInfo::acf_msg_length` defaulted to 0 and nothing filled it in —
+  every frame this library emitted carried `acf_msg_length=0`, despite
+  milestone 63 having already fixed the *bit layout* that field lives in.
+  `rcp::acf::compute_acf_msg_length()` computes the real quadlet count
+  (header, plus the ACF_GBB timestamp when present, plus payload);
+  `encode_acf_abb`/`encode_acf_gbb` call it automatically whenever a caller
+  leaves `acf_msg_length` at its 0 default (the common case for every real
+  request/response builder in this tree), while still respecting a nonzero
+  value a caller — e.g. `rcp/e2e.hpp`'s `apply_acf_length_adjustment()`,
+  baking in a trailing CRC's +1 quadlet — has already computed itself.
+  Verified end to end against the specification's own two worked examples
+  (ACF_ABB → `acf_msg_length` 0x05 for a 20-byte frame; ACF_GBB →
+  `acf_msg_length` 0x07 for a 28-byte frame) in `tests/test_e2e.cpp`.
+- **Multiple ACF requests packed into one AVTPDU are now handled
+  (cpp-RCP-04-fresh, critical).** §12.9.1.1: "An RC Server shall support to
+  handle multiple requests in one frame and check each of them individually
+  ... The RC Server shall support the handling of multiple request types in
+  one frame." `rcp::acf::decode_acf_messages`/`AcfEntry` walk a buffer that
+  may hold more than one ACF_ABB/ACF_GBB message back to back, using each
+  message's own (now correctly non-zero) `acf_msg_length` to find the next
+  one; `rcp/udp.hpp` gains a parallel `MultiFrame`/`encode_multi_frame`/
+  `decode_multi_frame` AVTPDU envelope, and `udp::Server::serve()` is
+  rebuilt on it — every request in an inbound datagram is now dispatched
+  and answered individually, in order, in a single reply datagram, instead
+  of only ever seeing the first one. `udp::Client` intentionally keeps
+  sending one request per call (see its own updated header comment) — the
+  spec's "shall support" wording is an RC *Server*-side requirement.
+  Known scope limit: precise multi-message boundary-finding requires each
+  non-final message's payload to already be quadlet-aligned (true for e.g.
+  GPIO/PWM's fixed 4-byte payloads); a non-final message with a non-aligned
+  payload falls outside this pass — see `decode_acf_messages`'s own comment.
+- **Error responses now carry a Table 27 error-code `byte_msg_payload`
+  (cpp-RCP-02, high).** §12.9.6: "The error response shall contain a
+  byte_msg_payload with an error code." Every `ErrorResponse` this tree
+  builds left that payload empty before this pass. `rcp::acf::WireErrorCode`
+  fixes Table 27's 17 numeric values (deliberately independent of
+  `rcp/regmap.hpp`'s own `RegMapErrc` ordinals, which do not match Table
+  27's numbering for the same-named codes) and `encode_error_payload()`
+  builds the one-octet payload; `rcp/mock.hpp` gains `wire_error_code_for()`
+  translating each subsystem's internal `std::error_code` and routes every
+  `ErrorResponse` call site through one `set_error_response()` helper.
+- **GPIO's payload decoder now rejects a mis-sized buffer, matching PWM's
+  fix from the first pass (cpp-RCP-05-fresh, medium).** §13.7.4: "A request
+  not having exactly four bytes is rejected." `decode_gpio_payload` guarded
+  only against too-short buffers; a >4-byte buffer was silently accepted
+  with its trailing bytes ignored. Now checks `len != kGpioPayloadLen`,
+  the same fix `decode_pwm_payload` already had for §13.7.5.3's identical
+  rule (issue cpp-RCP-03, applied in this same pass from a pre-verified
+  diff).
+- **ISELED gains a real ACF payload codec (cpp-RCP-A4-iseled, medium).**
+  `IseledRequest`/`IseledResponse` previously only modeled validated
+  in-memory structs — nothing packed/unpacked the 4-bit Instruction/12-bit
+  Address/variable Data request shape (Figure 40) or the 12-bit
+  Address/12-bit Data[11:0] response shape (Figure 41) into actual wire
+  bytes, despite ep_type 0x0C being otherwise wired up. `encode_iseled_request`/
+  `decode_iseled_request` and `encode_iseled_response`/`decode_iseled_response`
+  are that missing codec. The optional 4-bit CRC/rsvd trailer Figure 41
+  also shows is deliberately still not encoded — this repository has no
+  verified copy of the ISELED standard's own CRC algorithm (same reason the
+  header's previously-invented CRC-8 was removed outright, not replaced, at
+  the time of issue #71).
+- **PWM_IN's trigger signals now match Table 44 (cpp-RCP-A4-pwmin, low).**
+  The endpoint modeled a single invented `MidPulse` signal; Table 44 defines
+  two independent trigger outputs, rising edge (0) and falling edge (1).
+  `PwmInSignal` is now `RisingEdge`/`FallingEdge`; `record_measurement`
+  (one full input-capture cycle, inherently spanning both edges) fires both,
+  and a new `record_edge()` fires either one independently for a caller
+  that observes edges at finer granularity.
+- **`control_data_length` is now validated against the buffer it actually
+  arrived in (cpp-RCP-A3, low).** `rcp/udp.hpp`'s `decode_frame`/
+  `decode_multi_frame` decoded the NTSCF/TSCF header's own declared ACF byte
+  length but never checked it against the real remaining buffer size; both
+  now reject a mismatch via the already-defined-but-previously-unused
+  `avtp::AvtpErrc::length_mismatch`.
+
+**Deferred from this pass:** cpp-RCP-A1 (CI's `cpfusa analyze` step runs
+non-gating via `|| true`, only `cpfusa cyber --strict` gates the build) and
+cpp-RCP-A2 (GitHub Actions pinned to mutable major-version tags, not commit
+SHAs) — both process/CI-hardening items with no TC18 wire-conformance
+content, and both risk changing what CI actually gates in ways this pass
+could not verify locally (no `cpfusa` binary/build available in this
+environment to test an analyze-gating change against; no way to test a
+SHA-pin bump's effect on the hosted Actions runners from here). Left for a
+follow-up pass with the tooling available to verify the change first.
+
+Full local build (C++17, all 213+ targets) and `ctest` (52/52 suites) pass
+after this change. This is a **behavior-changing, non-breaking-at-the-API
+level** release: every emitted ACF frame's `acf_msg_length` bytes and every
+error response's payload bytes differ from what v2.19.0 emitted (0 →
+correct value; empty → one octet), which is a wire-format correction, not a
+regression — no C++ function signature in this tree changed. `kVersion`/
+`CMakeLists.txt` bump 2.19.0 → 2.20.0 accordingly, per this repository's
+convention of reserving version bumps for commits that touch library
+code/behavior (contrast the v0.36.0→v0.48.0 cpp-FuSa CI pin bump, which
+stayed at the same cpp-rcp version since it touched no library code).
+
+### 65. TC18 RCP — General Availability (v3.0.0)
 
 - First release where cpp-RCP's `RCP` conforms to the OPEN Alliance TC18
   Remote Control Protocol Specification at the wire level: an RC Client

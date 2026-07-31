@@ -66,6 +66,16 @@ TEST_CASE("decode_pwm_payload reports short_buffer for fewer than 4 bytes", "[pw
     REQUIRE(ec == rcp::avtp::make_error_code(rcp::avtp::AvtpErrc::short_buffer));
 }
 
+TEST_CASE("decode_pwm_payload rejects an over-long buffer (spec requires exactly 4 bytes)",
+          "[pwm][REQ-PWM-001]") {
+    // §13.7.5.3: "A request not having exactly four bytes is rejected" —
+    // cpp-RCP-03. Trailing bytes must not be silently ignored.
+    uint8_t long_buf[5] = {0, 0, 0, 0, 0};
+    PwmValue out;
+    auto ec = decode_pwm_payload(long_buf, sizeof(long_buf), out);
+    REQUIRE(ec == rcp::avtp::make_error_code(rcp::avtp::AvtpErrc::short_buffer));
+}
+
 // ── PWM_OUT: Replace applies directly, every other semantics is rejected ────
 // The spec's PWM_OUT request-handling section describes only direct
 // application of the request's period/active values — no GPIO-style
@@ -164,24 +174,43 @@ TEST_CASE("PwmInEndpoint::clear_signal re-arms PWM_IN_NO_SIGNAL", "[pwm][REQ-PWM
     REQUIRE(ec == make_error_code(PwmErrc::no_signal));
 }
 
-// ── Mid-pulse trigger signal (keys ADC sampling cadence) ─────────────────────
+// ── Rising/falling-edge trigger signals (Table 44; issue cpp-RCP-A4-pwmin) ───
 
-TEST_CASE("PwmInEndpoint::record_measurement fires MidPulse when armed", "[pwm][REQ-PWM-006]") {
+TEST_CASE("PwmInEndpoint::record_measurement fires both RisingEdge and FallingEdge when armed",
+          "[pwm][REQ-PWM-006]") {
     PwmInEndpoint ep;
-    ep.triggers().enable(pwm_in_signal_id(PwmInSignal::MidPulse));
+    ep.triggers().enable(pwm_in_signal_id(PwmInSignal::RisingEdge));
+    ep.triggers().enable(pwm_in_signal_id(PwmInSignal::FallingEdge));
 
     ep.record_measurement({100, 50});
 
     auto drained = ep.triggers().drain();
-    REQUIRE(drained.size() == 1);
-    REQUIRE(drained[0] == pwm_in_signal_id(PwmInSignal::MidPulse));
+    REQUIRE(drained.size() == 2);
+    REQUIRE(drained[0] == pwm_in_signal_id(PwmInSignal::RisingEdge));
+    REQUIRE(drained[1] == pwm_in_signal_id(PwmInSignal::FallingEdge));
 }
 
-TEST_CASE("PwmInEndpoint::record_measurement fires nothing when MidPulse is not armed",
+TEST_CASE("PwmInEndpoint::record_measurement fires nothing when neither edge is armed",
           "[pwm][REQ-PWM-006]") {
     PwmInEndpoint ep;
     ep.record_measurement({100, 50});
     REQUIRE_FALSE(ep.triggers().has_pending());
+}
+
+TEST_CASE("PwmInEndpoint::record_edge fires exactly the requested edge", "[pwm][REQ-PWM-006]") {
+    PwmInEndpoint ep;
+    ep.triggers().enable(pwm_in_signal_id(PwmInSignal::RisingEdge));
+    ep.triggers().enable(pwm_in_signal_id(PwmInSignal::FallingEdge));
+
+    ep.record_edge(PwmInSignal::RisingEdge);
+    auto drained = ep.triggers().drain();
+    REQUIRE(drained.size() == 1);
+    REQUIRE(drained[0] == pwm_in_signal_id(PwmInSignal::RisingEdge));
+
+    ep.record_edge(PwmInSignal::FallingEdge);
+    drained = ep.triggers().drain();
+    REQUIRE(drained.size() == 1);
+    REQUIRE(drained[0] == pwm_in_signal_id(PwmInSignal::FallingEdge));
 }
 
 // ── PwmErrc category sanity ───────────────────────────────────────────────────

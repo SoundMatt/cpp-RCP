@@ -101,6 +101,29 @@ constexpr avtp::ByteBusId kSpiByteBusId  = static_cast<avtp::ByteBusId>(kSpiEndp
 // magic number below — see this header's own scope note above.
 constexpr size_t kEp0PartialReadLen = sizeof(uint32_t);
 
+// ── Error-response byte_msg_payload (extraction §12.9.6, Table 27; issue cpp-RCP-02) ──
+// "The error response shall contain a byte_msg_payload with an error code."
+// Every dispatch_*() error path below carries an internal std::error_code
+// from whichever subsystem raised it (rcp/regmap.hpp's RegMapErrc, an
+// rcp/avtp.hpp short_buffer from a payload-length check, ...); this
+// translates that internal condition to the acf::WireErrorCode
+// (Table 27) the wire error response payload must actually carry — the two
+// are deliberately independent numbering spaces (see acf.hpp's own
+// WireErrorCode comment), so this mapping is name-based, not a numeric
+// cast. Falls back to UnsupportedCmd (Table 27's own value 1) for anything
+// this mock does not otherwise recognize, a reasonably conservative default
+// rather than silently picking an unrelated specific code.
+inline acf::WireErrorCode wire_error_code_for(const std::error_code& ec) noexcept {
+    if (ec == make_error_code(regmap::RegMapErrc::unauthorized_access)) return acf::WireErrorCode::UnauthorizedAccess;
+    if (ec == make_error_code(regmap::RegMapErrc::locked_mem_access))   return acf::WireErrorCode::LockedMemAccess;
+    if (ec == make_error_code(regmap::RegMapErrc::request_rejected))    return acf::WireErrorCode::RequestRejected;
+    if (ec == make_error_code(regmap::RegMapErrc::invalid_parameter))   return acf::WireErrorCode::InvalidParameter;
+    if (ec == avtp::make_error_code(avtp::AvtpErrc::short_buffer))      return acf::WireErrorCode::InvalidParameter; // e.g. GPIO/SPI payload not exactly the required length
+    if (ec == make_error_code(gpio::GpioErrc::pin_index_out_of_range))  return acf::WireErrorCode::InvalidParameter;
+    if (ec == make_error_code(spi::SpiErrc::channel_out_of_range))      return acf::WireErrorCode::UnsupportedCmd; // reserved evt[2:0] selection, extraction §5.4/Table entries at 110b
+    return acf::WireErrorCode::UnsupportedCmd;
+}
+
 // ── Server ────────────────────────────────────────────────────────────────────
 // A single simulated RC Server instance. Not copyable — regmap::Ep0 holds
 // references into this object's own RegisterMap/ServerLifecycle members,
@@ -172,11 +195,23 @@ public:
         if (req.byte_bus_id == kGpioByteBusId) return dispatch_gpio(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kSpiByteBusId) return dispatch_spi(req, req_payload, out_resp, out_resp_payload);
 
-        out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
-        return make_error_code(regmap::RegMapErrc::invalid_parameter);
+        return set_error_response(req, make_error_code(regmap::RegMapErrc::invalid_parameter),
+                                   out_resp, out_resp_payload);
     }
 
 private:
+    // set_error_response is the single place every dispatch_*() error path
+    // below builds an ErrorResponse header AND its Table 27 error-code
+    // byte_msg_payload (cpp-RCP-02) — replacing the pre-fix pattern of
+    // building the header alone and leaving out_resp_payload empty.
+    static std::error_code set_error_response(const acf::AcfMessageInfo& req, std::error_code ec,
+                                               acf::AcfMessageInfo& out_resp,
+                                               std::vector<uint8_t>& out_resp_payload) noexcept {
+        out_resp         = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+        out_resp_payload = acf::encode_error_payload(wire_error_code_for(ec));
+        return ec;
+    }
+
     static regmap::RegisterMap make_initial_register_map() {
         regmap::RegisterMap regs;
         regs.endpoint_count = 2;
@@ -196,14 +231,11 @@ private:
             // Whole-map writes go through ep0().write_whole_map() at the
             // object level, not through this byte-oriented path — see this
             // header's own scope note.
-            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
-            return make_error_code(regmap::RegMapErrc::request_rejected);
+            return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
+                                       out_resp, out_resp_payload);
         }
         auto ec = ep0_.check_read_access(regmap::kEp0);
-        if (ec) {
-            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
-            return ec;
-        }
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
         out_resp_payload.resize(kEp0PartialReadLen);
         avtp::detail::put_u32(out_resp_payload.data(), regs_.magic);
         out_resp = acf::make_response(req, acf::ResponseKind::ReadResponse);
@@ -218,8 +250,8 @@ private:
                                    acf::AcfMessageInfo& out_resp,
                                    std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
-            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
-            return make_error_code(regmap::RegMapErrc::request_rejected);
+            return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
+                                       out_resp, out_resp_payload);
         }
         if (!req.op) {
             out_resp_payload = gpio::encode_gpio_payload(gpio_.read());
@@ -228,16 +260,11 @@ private:
         }
         gpio::PinMask operand = 0;
         auto ec = gpio::decode_gpio_payload(payload.data(), payload.size(), operand);
-        if (ec) {
-            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
-            return ec;
-        }
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
+
         gpio::PinMask new_value = 0;
         ec = gpio_.handle_write(endpoint::write_semantics_of(req.evt_op), operand, new_value);
-        if (ec) {
-            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
-            return ec;
-        }
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
         out_resp_payload = gpio::encode_gpio_payload(new_value);
         out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
                                                          : acf::ResponseKind::WriteResponse);
@@ -254,20 +281,15 @@ private:
                                   acf::AcfMessageInfo& out_resp,
                                   std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
-            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
-            return make_error_code(regmap::RegMapErrc::request_rejected);
+            return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
+                                       out_resp, out_resp_payload);
         }
         uint8_t channel = 0;
         auto ec = spi::channel_of(req.evt_op, channel);
-        if (ec) {
-            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
-            return ec;
-        }
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
+
         ec = spi_.transfer(channel, payload, spi_poci_[channel]);
-        if (ec) {
-            out_resp = acf::make_response(req, acf::ResponseKind::ErrorResponse);
-            return ec;
-        }
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
         out_resp_payload = spi_.last_received(channel);
         out_resp = acf::make_response(req, acf::ResponseKind::ReadResponse);
         return {};

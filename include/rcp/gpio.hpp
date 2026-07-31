@@ -119,7 +119,11 @@ inline std::vector<uint8_t> encode_gpio_payload(PinMask mask) {
 }
 
 inline std::error_code decode_gpio_payload(const uint8_t* buf, size_t len, PinMask& out) noexcept {
-    if (len < kGpioPayloadLen) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    // Spec §13.7.4: "A request not having exactly four bytes is rejected" —
+    // reject both too-short and too-long buffers, not just too-short
+    // (cpp-RCP-05-fresh; same bug class as PWM's decode_pwm_payload,
+    // cpp-RCP-03).
+    if (len != kGpioPayloadLen) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
     out = avtp::detail::get_u32(buf);
     return {};
 }
