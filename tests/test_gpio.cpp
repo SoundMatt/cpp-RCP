@@ -40,6 +40,16 @@ TEST_CASE("decode_gpio_payload rejects a short buffer", "[gpio][REQ-GPIO-001]") 
     REQUIRE(ec == rcp::avtp::make_error_code(rcp::avtp::AvtpErrc::short_buffer));
 }
 
+TEST_CASE("decode_gpio_payload rejects an over-long buffer (spec requires exactly 4 bytes)",
+          "[gpio][REQ-GPIO-001]") {
+    // §13.7.4: "A request not having exactly four bytes is rejected" —
+    // cpp-RCP-05-fresh. Trailing bytes must not be silently ignored.
+    std::vector<uint8_t> long_buf{0x01, 0x02, 0x03, 0x04, 0x05};
+    PinMask out = 0;
+    auto ec = decode_gpio_payload(long_buf.data(), long_buf.size(), out);
+    REQUIRE(ec == rcp::avtp::make_error_code(rcp::avtp::AvtpErrc::short_buffer));
+}
+
 // ── Write semantics: the 6 generic combinators ───────────────────────────────
 
 TEST_CASE("apply_gpio_write applies Replace/Or/And/Xor to state.values", "[gpio][REQ-GPIO-002]") {

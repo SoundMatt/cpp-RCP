@@ -190,6 +190,82 @@ TEST_CASE("apply_frame_length_adjustment adds exactly four octets to NTSCF and T
     REQUIRE(kCrcLengthAdjustOctets == 4);
 }
 
+// ── acf_msg_length worked-example pins (issue cpp-RCP-01) ────────────────────
+// These two cases reproduce the specification's own two fully worked
+// numeric examples end to end (compute_acf_msg_length ->
+// apply_acf_length_adjustment -> encode_acf_abb/encode_acf_gbb ->
+// append_crc), confirming the final wire acf_msg_length equals the
+// specification's own stated value in each case, not just that some
+// nonzero value comes out.
+TEST_CASE("acf_msg_length end-to-end matches the specification's own worked examples "
+          "(ACF_ABB -> 0x05, ACF_GBB -> 0x07)",
+          "[e2e][acf][REQ-E2E-003][REQ-WIRE-004][REQ-WIRE-005]") {
+    using rcp::acf::compute_acf_msg_length;
+    using rcp::acf::encode_acf_abb;
+    using rcp::acf::encode_acf_gbb;
+    using rcp::acf::kAcfMsgTypeAbb;
+    using rcp::acf::kAcfMsgTypeGbb;
+    using rcp::acf::kAcfCommonHeaderLen;
+    using rcp::acf::kAcfGbbTimestampLen;
+
+    // ACF_ABB: 6 real payload bytes + 2 pad bytes (caller-padded, per this
+    // codec's own AcfMessageInfo::pad convention — see acf.hpp's "ACF
+    // shared header" section) = 8 payload bytes, plus a trailing 4-byte
+    // CRC32 trailer. header(2 quadlets) + payload(2 quadlets) + CRC(1
+    // quadlet) = 5 quadlets = 0x05, header + payload = 20 bytes total.
+    {
+        AcfMessageInfo info;
+        info.pad = 2;
+        std::vector<uint8_t> payload(8, 0); // 6 "real" bytes + 2 pad bytes
+
+        info.acf_msg_length = compute_acf_msg_length(kAcfMsgTypeAbb, payload.size());
+        REQUIRE(info.acf_msg_length == 4); // base, before the CRC trailer is counted
+        apply_acf_length_adjustment(info);
+        REQUIRE(info.acf_msg_length == 5); // 0x05
+
+        auto frame = encode_acf_abb(info, payload);
+        REQUIRE(frame.size() == kAcfCommonHeaderLen + payload.size()); // 8 + 8 = 16 bytes
+
+        auto sid = make_stream_id(0x02, 1);
+        uint32_t crc = compute_crc(sid, std::nullopt, info, std::nullopt, payload);
+        append_crc(frame, crc);
+        REQUIRE(frame.size() == 20); // 8 header + 8 payload + 4 CRC = 20 bytes = 5 quadlets
+
+        // The wire header actually carries 5: byte0 bit0 is acf_msg_length's
+        // MSB (0, since 5 < 256) and byte1 is its low 8 bits.
+        REQUIRE((frame[0] & 0x01) == 0);
+        REQUIRE(frame[1] == 5);
+    }
+
+    // ACF_GBB: 7 real payload bytes + 1 pad byte = 8 payload bytes, plus the
+    // mandatory 8-byte message_timestamp and a trailing 4-byte CRC32.
+    // header(2) + timestamp(2) + payload(2) + CRC(1) = 7 quadlets = 0x07,
+    // 28 bytes total.
+    {
+        AcfMessageInfo info;
+        info.pad = 1;
+        info.mtv = true;
+        std::vector<uint8_t> payload(8, 0); // 7 "real" bytes + 1 pad byte
+        const uint64_t ts = 0x1122334455667788ULL;
+
+        info.acf_msg_length = compute_acf_msg_length(kAcfMsgTypeGbb, payload.size());
+        REQUIRE(info.acf_msg_length == 6); // base, before the CRC trailer is counted
+        apply_acf_length_adjustment(info);
+        REQUIRE(info.acf_msg_length == 7); // 0x07
+
+        auto frame = encode_acf_gbb(info, ts, payload);
+        REQUIRE(frame.size() == kAcfCommonHeaderLen + kAcfGbbTimestampLen + payload.size()); // 8+8+8=24
+
+        auto sid = make_stream_id(0x03, 1);
+        uint32_t crc = compute_crc(sid, std::nullopt, info, ts, payload);
+        append_crc(frame, crc);
+        REQUIRE(frame.size() == 28); // 24 + 4 CRC = 28 bytes = 7 quadlets
+
+        REQUIRE((frame[0] & 0x01) == 0);
+        REQUIRE(frame[1] == 7);
+    }
+}
+
 // ── verify_crc / append_crc ────────────────────────────────────────────────────
 
 TEST_CASE("verify_crc accepts a matching CRC and rejects a corrupted one", "[e2e][REQ-E2E-004]") {

@@ -104,7 +104,10 @@ inline PwmWireBytes encode_pwm_payload(const PwmValue& value) noexcept {
 }
 
 inline std::error_code decode_pwm_payload(const uint8_t* buf, size_t len, PwmValue& out) noexcept {
-    if (len < kPwmPayloadLen) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    // Spec §13.7.5.3: "A request not having exactly four bytes is rejected" —
+    // reject both too-short and too-long buffers, not just too-short
+    // (cpp-RCP-03).
+    if (len != kPwmPayloadLen) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
     out.period          = avtp::detail::get_u16(&buf[0]);
     out.active_duration = avtp::detail::get_u16(&buf[2]);
     return {};
@@ -161,11 +164,17 @@ private:
 
 // ── PwmInEndpoint (ep_type 0x08) ─────────────────────────────────────────────
 // Response-only read model (extraction §5.6): PWM_IN has no write request
-// shape at all in this milestone's scope. record_measurement models one
-// input-capture cycle completing and firing the MidPulse trigger signal
-// rcp/adc.hpp's AdcCadence::ExternalTrigger pattern is expected to key
-// sampling cadence off of.
-enum class PwmInSignal : uint8_t { MidPulse = 0 };
+// shape at all in this milestone's scope. Trigger signals fixed to match
+// Table 44 ("pwmi trigger outputs") exactly (issue cpp-RCP-A4-pwmin): the
+// spec defines two independent trigger outputs — rising edge (0) and
+// falling edge (1) of the measured PWM_IN signal — not the single invented
+// "MidPulse" signal this header modeled before. record_edge fires whichever
+// one edge actually occurred; record_measurement (kept for
+// rcp/adc.hpp's AdcCadence::ExternalTrigger pattern and existing callers)
+// models one full input-capture cycle completing — which inherently spans
+// both a rising and a falling edge of the measured signal — by recording
+// the new value once and then firing both signals.
+enum class PwmInSignal : uint8_t { RisingEdge = 0, FallingEdge = 1 };
 
 constexpr endpoint::TriggerRegistry::SignalId pwm_in_signal_id(PwmInSignal sig) noexcept {
     return static_cast<endpoint::TriggerRegistry::SignalId>(sig);
@@ -173,12 +182,23 @@ constexpr endpoint::TriggerRegistry::SignalId pwm_in_signal_id(PwmInSignal sig) 
 
 class PwmInEndpoint {
 public:
-    // record_measurement records one completed input-capture cycle and
-    // fires MidPulse for any armed listener.
+    // record_edge fires exactly one of Table 44's two trigger signals for
+    // an armed listener, without updating the last-measured value — for a
+    // caller that observes rising/falling edges independently rather than
+    // only at whole-cycle granularity.
+    void record_edge(PwmInSignal edge) noexcept {
+        triggers_.notify(pwm_in_signal_id(edge));
+    }
+
+    // record_measurement records one completed input-capture cycle (a full
+    // period, spanning one rising and one falling edge of the measured
+    // signal) and fires both Table 44 trigger signals for any armed
+    // listener.
     void record_measurement(PwmValue value) noexcept {
         last_value_ = value;
         has_signal_ = true;
-        triggers_.notify(pwm_in_signal_id(PwmInSignal::MidPulse));
+        triggers_.notify(pwm_in_signal_id(PwmInSignal::RisingEdge));
+        triggers_.notify(pwm_in_signal_id(PwmInSignal::FallingEdge));
     }
 
     // clear_signal models signal loss (e.g. the measured line goes idle

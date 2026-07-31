@@ -201,9 +201,18 @@ constexpr uint16_t kCrcLengthAdjustQuadlets = 1; // +1 quadlet on AcfMessageInfo
 constexpr uint16_t kCrcLengthAdjustOctets   = 4; // +4 octets on an outer AVTPDU frame-length field
 
 // apply_acf_length_adjustment mutates `info.acf_msg_length` in place, per
-// kCrcLengthAdjustQuadlets. Call this before encode_acf_abb/encode_acf_gbb
-// so the trailing CRC's length is already baked into the header the CRC
-// itself covers.
+// kCrcLengthAdjustQuadlets. This function only ever *adds* one quadlet to
+// whatever `info.acf_msg_length` already holds — it does not compute a base
+// length itself — so a CRC-protected caller must call
+// rcp::acf::compute_acf_msg_length(info.acf_msg_type, payload.size()) (or
+// otherwise set `info.acf_msg_length` to the correct base value) FIRST, and
+// only then call this function, before calling encode_acf_abb/encode_acf_gbb
+// (whose own cpp-RCP-01 auto-fill only fires when acf_msg_length is still
+// the 0 default — it never overwrites a nonzero value this function already
+// adjusted). This two-step order is required so the trailing CRC's length
+// is already baked into the header before that header is serialized both
+// for the real wire frame and for coverage_buffer()'s own CRC-coverage
+// header encode below.
 inline void apply_acf_length_adjustment(acf::AcfMessageInfo& info) noexcept {
     info.acf_msg_length = static_cast<uint16_t>(info.acf_msg_length + kCrcLengthAdjustQuadlets);
 }

@@ -109,6 +109,81 @@ TEST_CASE("IseledEndpoint::transact rejects an out-of-range field without record
     REQUIRE_FALSE(ep.triggers().has_pending());
 }
 
+// ── ACF byte_msg_payload codec (Figure 40/41; issue cpp-RCP-A4-iseled) ───────
+
+TEST_CASE("encode_iseled_request / decode_iseled_request round-trip Instruction/Address/Data",
+          "[iseled][REQ-ISELED-002]") {
+    IseledRequest req;
+    req.instruction = 0x0A; // 4 bits
+    req.address      = 0x0ABC; // 12 bits
+    req.data         = {0xDE, 0xAD, 0xBE};
+
+    auto buf = encode_iseled_request(req);
+    REQUIRE(buf.size() == kIseledRequestFixedLen + req.data.size());
+
+    IseledRequest out;
+    REQUIRE_FALSE(decode_iseled_request(buf.data(), buf.size(), out));
+    REQUIRE(out.instruction == req.instruction);
+    REQUIRE(out.address == req.address);
+    REQUIRE(out.data == req.data);
+}
+
+TEST_CASE("encode_iseled_request hand-computed expected byte sequence", "[iseled][REQ-ISELED-002]") {
+    IseledRequest req;
+    req.instruction = 0x3;    // 0b0011
+    req.address      = 0x0102; // 0b0001_0000_0010
+    req.data         = {0x11, 0x22};
+
+    // byte0 = (instruction[3:0] << 4) | address[11:8] = (0x3 << 4) | 0x1 = 0x31
+    // byte1 = address[7:0] = 0x02
+    const std::vector<uint8_t> expected{0x31, 0x02, 0x11, 0x22};
+    REQUIRE(encode_iseled_request(req) == expected);
+}
+
+TEST_CASE("decode_iseled_request rejects a buffer shorter than Instruction+Address",
+          "[iseled][REQ-ISELED-002]") {
+    uint8_t short_buf[1] = {0x00};
+    IseledRequest out;
+    auto ec = decode_iseled_request(short_buf, sizeof(short_buf), out);
+    REQUIRE(ec == rcp::avtp::make_error_code(rcp::avtp::AvtpErrc::short_buffer));
+}
+
+TEST_CASE("encode_iseled_response / decode_iseled_response round-trip Address/Data[11:0]",
+          "[iseled][REQ-ISELED-002]") {
+    IseledResponse resp;
+    resp.address = kIseledFieldMask;    // max 12-bit value
+    resp.data    = 0x0ABC;
+
+    auto buf = encode_iseled_response(resp);
+    REQUIRE(buf.size() == kIseledResponseLen);
+
+    IseledResponse out;
+    REQUIRE_FALSE(decode_iseled_response(buf.data(), buf.size(), out));
+    REQUIRE(out.address == resp.address);
+    REQUIRE(out.data == resp.data);
+}
+
+TEST_CASE("encode_iseled_response hand-computed expected byte sequence", "[iseled][REQ-ISELED-002]") {
+    IseledResponse resp;
+    resp.address = 0x0102; // 0b0001_0000_0010
+    resp.data    = 0x0BEF; // 0b1011_1110_1111
+
+    // byte0 = address[11:4] = 0b0001_0000 = 0x10
+    // byte1 = (address[3:0] << 4) | data[11:8] = (0x2 << 4) | 0xB = 0x2B
+    // byte2 = data[7:0] = 0xEF
+    const std::vector<uint8_t> expected{0x10, 0x2B, 0xEF};
+    REQUIRE(encode_iseled_response(resp) == expected);
+}
+
+TEST_CASE("decode_iseled_response rejects a buffer not exactly 3 bytes", "[iseled][REQ-ISELED-002]") {
+    uint8_t short_buf[2] = {0x00, 0x00};
+    IseledResponse out;
+    REQUIRE(decode_iseled_response(short_buf, sizeof(short_buf), out));
+
+    uint8_t long_buf[4] = {0x00, 0x00, 0x00, 0x00};
+    REQUIRE(decode_iseled_response(long_buf, sizeof(long_buf), out));
+}
+
 // ── Trigger signals ───────────────────────────────────────────────────────────
 
 TEST_CASE("IseledEndpoint::transact fires TransferComplete on a valid transaction",
