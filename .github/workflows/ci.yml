@@ -282,7 +282,7 @@ jobs:
 
       - name: Build cpp-FuSa from source
         run: |
-          git clone --depth=1 https://github.com/SoundMatt/cpp-FuSa /tmp/cpfusa
+          git clone --depth=1 --branch v0.18.0 https://github.com/SoundMatt/cpp-FuSa /tmp/cpfusa
           cmake -B /tmp/cpfusa/build -S /tmp/cpfusa \
             -DCMAKE_BUILD_TYPE=Release -G Ninja
           cmake --build /tmp/cpfusa/build --parallel
