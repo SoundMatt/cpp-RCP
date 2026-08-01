@@ -79,7 +79,7 @@ TEST_CASE("ACF_GBB round-trips a 64-bit message_timestamp alongside the shared h
     uint64_t ts = 0x0123456789ABCDEFULL;
     std::vector<uint8_t> payload = {0xAA, 0xBB, 0xCC, 0xDD};
     auto frame = encode_acf_gbb(info, ts, payload);
-    REQUIRE(frame.size() == kAcfCommonHeaderLen + kAcfGbbTimestampLen + payload.size());
+    REQUIRE(frame.size() == kAcfGbbMessageInfoLen + payload.size());
     REQUIRE(peek_acf_msg_type(frame.data()) == kAcfMsgTypeGbb);
 
     AcfMessageInfo out;
@@ -94,19 +94,51 @@ TEST_CASE("ACF_GBB round-trips a 64-bit message_timestamp alongside the shared h
 // ── Hand-computed expected-byte-sequence vectors ──────────────────────────────
 // Every byte below is computed by hand from the field values and this file's
 // own derived bit layout (see acf.hpp's "ACF shared header" comment) — not
-// copied from anywhere. Byte-by-byte derivation (MSB-first bit numbering,
-// bit0 = MSB of byte0, matching the specification's own diagrams):
+// copied from anywhere, and in particular not read back out of the
+// encoder's own output (which would only prove the encoder agrees with
+// itself). Byte-by-byte derivation (MSB-first bit numbering, bit0 = MSB of
+// byte0, matching the specification's own diagrams):
 //
+// Shared-header quadlet 0 (wire octets 0..3 of every ACF message):
 //   byte0 = (acf_msg_type[6:0] << 1) | acf_msg_length[8]
 //   byte1 = acf_msg_length[7:0]
 //   byte2 = (pad[1:0] << 6) | (mtv << 5) | (rsv=00 << 3) | byte_bus_id[10:8]
 //   byte3 = byte_bus_id[7:0]
-//   byte4 = (evt[3:0] << 4) | (rsv=00 << 2) | (hs << 1) | cs
+// Shared-header quadlet 1:
+//   byte0 = (evt[3:0] << 4) | (rsv=00 << 2) | (hs << 1) | cs
 //     where evt[3:0] = (evt_ack << 3) | evt_op[2:0]
-//   byte5 = transaction_num
-//   byte6 = (op << 7) | (rsp << 6) | (err << 5) | (ms << 4) | read_size[11:8]
-//   byte7 = read_size[7:0]
-//   (ACF_GBB only) bytes8-15 = message_timestamp, big-endian
+//   byte1 = transaction_num
+//   byte2 = (op << 7) | (rsp << 6) | (err << 5) | (ms << 4) | read_size[11:8]
+//   byte3 = read_size[7:0]
+//
+// The two quadlets' *positions* differ by message type, and this is the
+// one thing that must be pinned from the specification rather than from
+// this codec (see acf.hpp's kAcfGbbTimestampOffset comment block for the
+// full verification, summarized here):
+//
+//   ACF_ABB — no message_timestamp field exists at all:
+//     octets  0..3   quadlet 0
+//     octets  4..7   quadlet 1
+//     octets  8..    byte_msg_payload
+//
+//   ACF_GBB — the specification's single-ACF_GBB CRC-coverage figure draws
+//   one "Byte Message Info" group whose three rows are, in order, quadlet
+//   0, then message_time_stamp as a double-height 64-bit block, then
+//   quadlet 1; its compound-request figure (an mtv=0 ACF_GBB) likewise
+//   puts the fields that repurpose the timestamp slot between the same two
+//   quadlets; and its response-field table lists message_timestamp
+//   ("Present in ACF_GBB, omitted in ACF_ABB") between byte_bus_id
+//   (quadlet 0's last field) and evt (quadlet 1's first field):
+//     octets  0..3   quadlet 0
+//     octets  4..11  message_timestamp, big-endian
+//     octets 12..15  quadlet 1
+//     octets 16..    byte_msg_payload
+//   Arithmetic cross-check from the same figure: it states
+//   acf_msg_length = 0x07 quadlets = 28 octets for a 7-real-byte,
+//   1-pad-byte payload with a CRC32 trailer, and 4 + 8 + 4 + 8 + 4 = 28
+//   only works out with the timestamp inside the Message Info block. (Its
+//   ACF_ABB counterpart states 0x05 = 20 octets: 4 + 4 + 8 + 4 = 20.)
+//
 //   remaining bytes = payload, unchanged
 
 TEST_CASE("ACF_ABB hand-computed expected byte sequence", "[acf][REQ-WIRE-004][REQ-WIRE-006]") {
@@ -169,28 +201,85 @@ TEST_CASE("ACF_GBB hand-computed expected byte sequence", "[acf][REQ-WIRE-005][R
     info.ms                         = true;
     info.read_size_or_segment_num = 4095; // 12 bits, max value: 0xFFF
 
-    // byte0 = (0x0D << 1) | (7 >> 8 & 1) = 0x1A | 0 = 0x1A
-    // byte1 = 7 & 0xFF = 0x07
-    // byte2 = (1 << 6) | (1 << 5) | (300 >> 8 & 7) = 0x40 | 0x20 | 0x01 = 0x61
-    // byte3 = 300 & 0xFF = 0x2C
-    // byte4 = (0x3 << 4) | (0 << 1) | 1 = 0x30 | 0x01 = 0x31
-    // byte5 = 200 = 0xC8
-    // byte6 = 0 | (1<<6) | (1<<5) | (1<<4) | (4095 >> 8 & 0xF) = 0x40|0x20|0x10|0x0F = 0x7F
-    // byte7 = 4095 & 0xFF = 0xFF
-    const std::vector<uint8_t> expected_header = {0x1A, 0x07, 0x61, 0x2C, 0x31, 0xC8, 0x7F, 0xFF};
+    // Quadlet 0 (wire octets 0..3):
+    //   byte0 = (0x0D << 1) | (7 >> 8 & 1) = 0x1A | 0 = 0x1A
+    //   byte1 = 7 & 0xFF = 0x07
+    //   byte2 = (1 << 6) | (1 << 5) | (300 >> 8 & 7) = 0x40 | 0x20 | 0x01 = 0x61
+    //   byte3 = 300 & 0xFF = 0x2C
+    // Quadlet 1 (wire octets 12..15 for ACF_GBB — see this file's layout
+    // comment above; these are octets 4..7 only for ACF_ABB):
+    //   byte0 = (0x3 << 4) | (0 << 1) | 1 = 0x30 | 0x01 = 0x31
+    //   byte1 = 200 = 0xC8
+    //   byte2 = 0 | (1<<6) | (1<<5) | (1<<4) | (4095 >> 8 & 0xF) = 0x40|0x20|0x10|0x0F = 0x7F
+    //   byte3 = 4095 & 0xFF = 0xFF
+    const std::vector<uint8_t> expected_q0 = {0x1A, 0x07, 0x61, 0x2C};
+    const std::vector<uint8_t> expected_q1 = {0x31, 0xC8, 0x7F, 0xFF};
     const uint64_t ts = 0x1122334455667788ULL;
     const std::vector<uint8_t> expected_ts = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
     const std::vector<uint8_t> payload = {0xAA, 0xBB, 0xCC, 0xDD};
 
+    // The whole expected ACF_GBB message, written out as one literal at the
+    // spec-derived octet positions rather than assembled from the encoder's
+    // own constants: quadlet 0 || message_timestamp || quadlet 1 || payload.
+    const std::vector<uint8_t> expected_frame = {
+        // octets 0..3   — quadlet 0
+        0x1A, 0x07, 0x61, 0x2C,
+        // octets 4..11  — message_timestamp, big-endian (spliced *between*
+        //                 the two header quadlets, per the specification's
+        //                 single-ACF_GBB CRC-coverage figure and its
+        //                 compound-request figure)
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+        // octets 12..15 — quadlet 1
+        0x31, 0xC8, 0x7F, 0xFF,
+        // octets 16..19 — byte_msg_payload
+        0xAA, 0xBB, 0xCC, 0xDD,
+    };
+
     auto frame = encode_acf_gbb(info, ts, payload);
-    REQUIRE(frame.size() == expected_header.size() + expected_ts.size() + payload.size());
-    std::vector<uint8_t> header(frame.begin(), frame.begin() + static_cast<long>(kAcfCommonHeaderLen));
-    REQUIRE(header == expected_header);
-    std::vector<uint8_t> ts_bytes(frame.begin() + static_cast<long>(kAcfCommonHeaderLen),
-                                   frame.begin() + static_cast<long>(kAcfCommonHeaderLen + kAcfGbbTimestampLen));
-    REQUIRE(ts_bytes == expected_ts);
-    REQUIRE(std::vector<uint8_t>(frame.begin() + static_cast<long>(kAcfCommonHeaderLen + kAcfGbbTimestampLen),
-                                  frame.end()) == payload);
+    REQUIRE(frame.size() == 20); // 4 + 8 + 4 + 4
+    REQUIRE(frame == expected_frame);
+
+    // Same assertion again, sliced field by field at literal offsets, so a
+    // failure names which field moved rather than just "the buffer differs".
+    REQUIRE(std::vector<uint8_t>(frame.begin() + 0,  frame.begin() + 4)  == expected_q0);
+    REQUIRE(std::vector<uint8_t>(frame.begin() + 4,  frame.begin() + 12) == expected_ts);
+    REQUIRE(std::vector<uint8_t>(frame.begin() + 12, frame.begin() + 16) == expected_q1);
+    REQUIRE(std::vector<uint8_t>(frame.begin() + 16, frame.end())        == payload);
+
+    // Regression guard for the pre-v2.22.0 layout specifically: back then
+    // octet 4 was transaction-info (quadlet 1's evt/hs/cs byte) and octet 8
+    // was the timestamp's first byte. Those two octets are the cheapest
+    // possible discriminator between the two layouts.
+    REQUIRE(frame[4] == 0x11); // timestamp MSB, not 0x31 (quadlet 1 byte0)
+    REQUIRE(frame[8] == 0x55); // still inside the timestamp, not 0x31 either
+
+    // Decoding the hand-written literal (not the encoder's output) must
+    // recover every field — this is the direction that proves the decoder
+    // reads real spec-shaped bytes, not just its own encoder's bytes.
+    {
+        AcfMessageInfo from_literal;
+        uint64_t from_literal_ts = 0;
+        std::vector<uint8_t> from_literal_payload;
+        REQUIRE_FALSE(decode_acf_gbb(expected_frame.data(), expected_frame.size(), from_literal,
+                                      from_literal_ts, from_literal_payload));
+        REQUIRE(from_literal.acf_msg_type == kAcfMsgTypeGbb);
+        REQUIRE(from_literal.acf_msg_length == 7);
+        REQUIRE(from_literal.pad == 1);
+        REQUIRE(from_literal.mtv == true);
+        REQUIRE(from_literal.byte_bus_id == 300);
+        REQUIRE(from_literal.evt_ack == false);
+        REQUIRE(from_literal.evt_op == 3);
+        REQUIRE(from_literal.hs == false);
+        REQUIRE(from_literal.cs == true);
+        REQUIRE(from_literal.transaction_num == 200);
+        REQUIRE(from_literal.op == false);
+        REQUIRE(from_literal.rsp == true);
+        REQUIRE(from_literal.err == true);
+        REQUIRE(from_literal.ms == true);
+        REQUIRE(from_literal.read_size_or_segment_num == 4095);
+        REQUIRE(from_literal_ts == ts);
+        REQUIRE(from_literal_payload == payload);
+    }
 
     AcfMessageInfo decoded;
     uint64_t decoded_ts = 0;

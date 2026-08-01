@@ -143,6 +143,20 @@ inline std::error_code make_error_code(RequestErrc e) noexcept {
 // kinds. The mandatory "standard" request kind (rcp::acf::RequestKind) has
 // no opcode here at all — it is always carried as ACF_ABB, which has no
 // message_timestamp slot to repurpose in the first place.
+//
+// Wire-position note (v2.22.0): this header deals only in the *value* of
+// that 64-bit slot, never in where it sits on the wire, so the v2.22.0 fix
+// that moved the slot to its real position (spliced between the ACF_GBB
+// Message Info block's two header quadlets, octets 4..11, rather than
+// after both of them at octets 8..15 — see rcp/acf.hpp's
+// kAcfGbbTimestampOffset comment block) changed nothing here. The
+// specification's own compound-request figure independently confirms this
+// header's byte assignment within the slot: at octets 4..11 of an mtv=0
+// ACF_GBB it draws request_type / cmp_start_state / cmp_next_state /
+// cmp_sequencer then cmp_exec_delay / cmp_repetitions — i.e. the opcode is
+// the slot's first (most significant) byte and the parameters are the
+// remaining seven, exactly as encode_request_type/decode_request_type
+// below already treated them.
 
 // ROADMAP.md milestone 50 (v2.6.0) adds three more: the MSB-set (`0x8x`)
 // safety-tagged variants of compound, compound-wait, and triggered. Each

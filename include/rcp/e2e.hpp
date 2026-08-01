@@ -251,6 +251,11 @@ inline void put_u64_be(std::vector<uint8_t>& buf, uint64_t v) {
 // inserts it into the buffer when `info.acf_msg_type == acf::kAcfMsgTypeGbb`,
 // regardless of what the caller passes for a non-GBB `info`, so a caller
 // cannot accidentally cover 8 bytes of timestamp for an ACF_ABB message.
+// When it is inserted it goes at its real wire position — spliced between
+// the Message Info block's two header quadlets (block offsets 4..11), i.e.
+// buffer offsets 16..23 after the 8-byte stream_id and 4-byte
+// avtp_timestamp — not after both quadlets, which is where this function
+// put it before v2.22.0.
 // `info` must already have apply_acf_length_adjustment() applied if the
 // caller wants the trailer's length reflected in the coverage — this
 // function only serializes whatever AcfMessageInfo (and message_timestamp)
@@ -269,12 +274,24 @@ inline std::vector<uint8_t> coverage_buffer(const avtp::StreamId& stream_id,
     detail::put_u64_be(buf, stream_id.to_u64());
     detail::put_u32_be(buf, avtp_timestamp.value_or(0)); // zero-filled stand-in under NTSCF
 
-    uint8_t hdr[acf::kAcfCommonHeaderLen];
-    acf::encode_acf_message_info(info, hdr);
-    buf.insert(buf.end(), hdr, hdr + acf::kAcfCommonHeaderLen);
-
+    // The Message Info block is serialized here in exactly the byte order
+    // it has on the wire, which differs between the two message types: for
+    // ACF_ABB the 8 header bytes are contiguous, while for ACF_GBB the
+    // 64-bit message_timestamp is spliced *between* the header's two
+    // quadlets (bytes 4..11 of a 16-byte block), not appended after both of
+    // them. Going through acf::encode_acf_gbb_message_info rather than
+    // re-laying-out the fields here keeps this coverage buffer and
+    // acf::encode_acf_gbb byte-identical by construction — the CRC must
+    // cover the bytes that are actually transmitted, so any divergence
+    // between the two would make every ACF_GBB CRC wrong on the wire.
     if (is_gbb) {
-        detail::put_u64_be(buf, message_timestamp.value_or(0));
+        uint8_t hdr[acf::kAcfGbbMessageInfoLen];
+        acf::encode_acf_gbb_message_info(info, message_timestamp.value_or(0), hdr);
+        buf.insert(buf.end(), hdr, hdr + acf::kAcfGbbMessageInfoLen);
+    } else {
+        uint8_t hdr[acf::kAcfCommonHeaderLen];
+        acf::encode_acf_message_info(info, hdr);
+        buf.insert(buf.end(), hdr, hdr + acf::kAcfCommonHeaderLen);
     }
 
     buf.insert(buf.end(), payload.begin(), payload.end());

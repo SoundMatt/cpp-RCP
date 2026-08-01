@@ -65,6 +65,22 @@
 // length exactly as given, since this codec has always left padding a
 // caller-owned concern — see the "ACF shared header" section above — rather
 // than silently appending real pad octets a caller did not ask for).
+//
+// ACF_GBB timestamp-position conformance note (v2.22.0, issue
+// cpp-RCP-GBB-TS): both notes above concern the shared header's *bit*
+// packing and its length field; neither noticed that the ACF_GBB message's
+// *byte* geometry was also wrong. encode_acf_gbb/decode_acf_gbb placed the
+// 64-bit message_timestamp after the complete 8-byte shared header (wire
+// octet 8), when the specification splices it between that header's two
+// quadlets (wire octet 4), pushing evt/rsv/hs/cs/transaction_num/op/rsp/
+// err/ms/read_size_or_segment_num from octet 8 to octet 12. Every ACF_GBB
+// message this library emitted before v2.22.0 was therefore unreadable by
+// a conformant peer (and vice versa), and every ACF_GBB E2E CRC was
+// computed over the wrong byte sequence. Fixed below; see the
+// kAcfGbbTimestampOffset constant block for the point-by-point
+// verification against the specification's own figures. This is a
+// wire-format-breaking change against every prior cpp-RCP release —
+// ACF_ABB is entirely unaffected, since it has no timestamp field.
 #pragma once
 
 #include <rcp/avtp.hpp>
@@ -193,6 +209,52 @@ struct AcfMessageInfo {
 constexpr size_t kAcfCommonHeaderLen = 8;
 constexpr size_t kAcfGbbTimestampLen = 8;
 
+// ── ACF_GBB Message Info wire geometry (v2.22.0 fix) ──────────────────────────
+// The 8 shared-header bytes above are *contiguous* on the wire only for
+// ACF_ABB. For ACF_GBB the specification splices the 64-bit
+// message_timestamp **between** the shared header's two quadlets, not after
+// both of them — so an ACF_GBB Message Info block is 16 bytes laid out as:
+//
+//   offset  0..3   shared-header quadlet 0
+//                  (acf_msg_type / acf_msg_length / pad / mtv / rsv / byte_bus_id)
+//   offset  4..11  message_timestamp, 64-bit big-endian
+//   offset 12..15  shared-header quadlet 1
+//                  (evt / rsv / hs / cs / transaction_num / op / rsp / err / ms /
+//                   read_size_or_segment_num)
+//   offset 16..    byte_msg_payload
+//
+// Independently verified against the specification's own figures, not
+// inferred from this codec's prior behavior (which had the timestamp after
+// *both* header quadlets, at offset 8, pushing quadlet 1 to offset 8
+// instead of 12 — the bug this constant block exists to prevent
+// recurring):
+//   (a) The single-ACF_GBB CRC-coverage figure draws one "Byte Message
+//       Info" group of three rows in this exact order: the
+//       acf_msg_type/acf_msg_length/pad/mtv/rsv/byte_bus_id quadlet, then
+//       message_time_stamp rendered as a double-height 64-bit block (the
+//       same way that figure's own 64-bit stream_id is drawn), then the
+//       evt/rsv/hs/cs/transaction_num/op/rsp/err/ms/read_size quadlet.
+//   (b) That figure's own stated acf_msg_length (7 quadlets = 28 octets)
+//       is only reproducible with a 64-bit timestamp inside the Message
+//       Info block: quadlet0(4) + timestamp(8) + quadlet1(4) + payload
+//       (7 real + 1 pad = 8) + CRC32(4) = 28. Its ACF_ABB counterpart, with
+//       no timestamp at all, states 5 quadlets = 20 octets: 4 + 4 + (6 real
+//       + 2 pad = 8) + 4 = 20. Both check out exactly.
+//   (c) The compound-request figure (an ACF_GBB with mtv=0) shows the
+//       mtv=0 repurposing fields — request_type/cmp_start_state/
+//       cmp_next_state/cmp_sequencer, then cmp_exec_delay/cmp_repetitions —
+//       occupying exactly the two quadlets *between* the same two header
+//       quadlets, i.e. octets 4..11, which is only consistent with the
+//       timestamp slot they repurpose living there too.
+//   (d) The response-field table lists the Message Info fields in wire
+//       order and places message_timestamp ("Present in ACF_GBB, omitted in
+//       ACF_ABB") between byte_bus_id (quadlet 0's last field) and evt
+//       (quadlet 1's first field).
+constexpr size_t kAcfHeaderQuadletLen        = 4;
+constexpr size_t kAcfGbbTimestampOffset      = 4;  // == kAcfHeaderQuadletLen
+constexpr size_t kAcfGbbSecondQuadletOffset  = 12; // == kAcfHeaderQuadletLen + kAcfGbbTimestampLen
+constexpr size_t kAcfGbbMessageInfoLen       = 16; // == kAcfCommonHeaderLen + kAcfGbbTimestampLen
+
 // compute_acf_msg_length computes the wire acf_msg_length value (quadlets,
 // counted over the *entire* ACF message: the 8-byte shared header, the
 // 8-byte message_timestamp for ACF_GBB, and the payload as given) for a
@@ -296,10 +358,42 @@ inline void decode_acf_message_info(const uint8_t* in8, AcfMessageInfo& out) noe
     out.read_size_or_segment_num = static_cast<uint16_t>(((in8[6] & 0x0F) << 8) | in8[7]);
 }
 
+// ── ACF_GBB Message Info: the spliced 16-byte form ────────────────────────────
+// encode_acf_gbb_message_info/decode_acf_gbb_message_info are the ACF_GBB
+// analogues of encode_acf_message_info/decode_acf_message_info above. They
+// deliberately reuse those two functions for the bit-level packing (so the
+// bit layout has exactly one definition in this file) and only own the
+// ACF_GBB-specific *byte geometry*: quadlet 0, then the 64-bit
+// message_timestamp, then quadlet 1 — see the kAcfGbbTimestampOffset /
+// kAcfGbbSecondQuadletOffset comment block above for the verification of
+// that ordering against the specification's own figures. `out16`/`in16`
+// must point at kAcfGbbMessageInfoLen (16) accessible bytes.
+inline void encode_acf_gbb_message_info(const AcfMessageInfo& info, uint64_t message_timestamp,
+                                         uint8_t* out16) noexcept {
+    uint8_t hdr[kAcfCommonHeaderLen];
+    encode_acf_message_info(info, hdr);
+    std::copy(hdr, hdr + kAcfHeaderQuadletLen, out16);
+    avtp::detail::put_u64(out16 + kAcfGbbTimestampOffset, message_timestamp);
+    std::copy(hdr + kAcfHeaderQuadletLen, hdr + kAcfCommonHeaderLen,
+              out16 + kAcfGbbSecondQuadletOffset);
+}
+
+inline void decode_acf_gbb_message_info(const uint8_t* in16, AcfMessageInfo& out_info,
+                                         uint64_t& out_message_timestamp) noexcept {
+    uint8_t hdr[kAcfCommonHeaderLen];
+    std::copy(in16, in16 + kAcfHeaderQuadletLen, hdr);
+    std::copy(in16 + kAcfGbbSecondQuadletOffset,
+              in16 + kAcfGbbSecondQuadletOffset + kAcfHeaderQuadletLen,
+              hdr + kAcfHeaderQuadletLen);
+    decode_acf_message_info(hdr, out_info);
+    out_message_timestamp = avtp::detail::get_u64(in16 + kAcfGbbTimestampOffset);
+}
+
 // ── ACF_ABB / ACF_GBB message encode / decode ─────────────────────────────────
 // ACF_ABB carries no timestamp field at all; ACF_GBB always reserves a
-// 64-bit message_timestamp slot immediately after the shared header,
-// regardless of whether `mtv` marks it valid (extraction §2.3, §2.7).
+// 64-bit message_timestamp slot inside the Message Info block (spliced
+// between the block's two header quadlets, see above), regardless of
+// whether `mtv` marks it valid (extraction §2.3, §2.7).
 
 // peek_acf_msg_type reads the 7-bit acf_msg_type field out of a raw buffer's
 // first octet without decoding the rest of the header. Needed because
@@ -356,11 +450,10 @@ inline std::vector<uint8_t> encode_acf_gbb(AcfMessageInfo info, uint64_t message
     // compute it, nonzero is an explicit caller override" contract.
     if (info.acf_msg_length == 0)
         info.acf_msg_length = compute_acf_msg_length(info.acf_msg_type, payload.size());
-    std::vector<uint8_t> buf(kAcfCommonHeaderLen + kAcfGbbTimestampLen + payload.size());
-    encode_acf_message_info(info, buf.data());
-    avtp::detail::put_u64(&buf[kAcfCommonHeaderLen], message_timestamp);
+    std::vector<uint8_t> buf(kAcfGbbMessageInfoLen + payload.size());
+    encode_acf_gbb_message_info(info, message_timestamp, buf.data());
     std::copy(payload.begin(), payload.end(),
-              buf.begin() + static_cast<long>(kAcfCommonHeaderLen + kAcfGbbTimestampLen));
+              buf.begin() + static_cast<long>(kAcfGbbMessageInfoLen));
     return buf;
 }
 
@@ -370,11 +463,10 @@ inline std::error_code decode_acf_gbb(const uint8_t* b, size_t len,
                                        std::vector<uint8_t>& out_payload) {
     if (len < 1) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
     if (peek_acf_msg_type(b) != kAcfMsgTypeGbb) return make_error_code(AcfErrc::bad_acf_msg_type);
-    if (len < kAcfCommonHeaderLen + kAcfGbbTimestampLen)
+    if (len < kAcfGbbMessageInfoLen)
         return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
-    decode_acf_message_info(b, out_info);
-    out_message_timestamp = avtp::detail::get_u64(&b[kAcfCommonHeaderLen]);
-    out_payload.assign(b + kAcfCommonHeaderLen + kAcfGbbTimestampLen, b + len);
+    decode_acf_gbb_message_info(b, out_info, out_message_timestamp);
+    out_payload.assign(b + kAcfGbbMessageInfoLen, b + len);
     return {};
 }
 
@@ -432,14 +524,19 @@ inline std::error_code decode_acf_messages(const uint8_t* b, size_t len, std::ve
             break;
         }
 
-        const size_t fixed_len = kAcfCommonHeaderLen + (is_gbb ? kAcfGbbTimestampLen : 0);
+        // For ACF_GBB the fixed part is the whole 16-byte spliced Message
+        // Info block (quadlet0 + timestamp + quadlet1); for ACF_ABB it is
+        // the contiguous 8-byte header.
+        const size_t fixed_len = is_gbb ? kAcfGbbMessageInfoLen : kAcfCommonHeaderLen;
         if (remaining < fixed_len) {
             if (out.empty()) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
             break;
         }
 
         AcfMessageInfo info;
-        decode_acf_message_info(b + off, info);
+        uint64_t       message_timestamp = 0;
+        if (is_gbb) decode_acf_gbb_message_info(b + off, info, message_timestamp);
+        else        decode_acf_message_info(b + off, info);
 
         size_t msg_bytes = static_cast<size_t>(info.acf_msg_length) * 4;
         if (msg_bytes < fixed_len || msg_bytes > remaining) {
@@ -454,7 +551,7 @@ inline std::error_code decode_acf_messages(const uint8_t* b, size_t len, std::ve
         entry.info = info;
         const size_t payload_off = off + fixed_len;
         const size_t payload_len = msg_bytes - fixed_len;
-        if (is_gbb) entry.message_timestamp = avtp::detail::get_u64(&b[off + kAcfCommonHeaderLen]);
+        entry.message_timestamp = message_timestamp; // 0 for ACF_ABB, which has no such field
         entry.payload.assign(b + payload_off, b + payload_off + payload_len);
         out.push_back(std::move(entry));
 
