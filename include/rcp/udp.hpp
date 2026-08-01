@@ -10,6 +10,8 @@
 // fusa:req REQ-UDP-010
 // fusa:req REQ-UDP-011
 // fusa:req REQ-UDP-012
+// fusa:req REQ-UDP-013
+// fusa:req REQ-UDP-014
 
 // Native IEEE 1722-over-UDP/IP transport for the OPEN Alliance TC18 Remote
 // Control Protocol Specification v0.5.1_RC — carries real AVTPDU (NTSCF/
@@ -46,16 +48,28 @@
 // this header needing to depend on rcp/mock.hpp itself.
 //
 // IEEE 1722's own Annex J describes carrying AVTPDUs over UDP/IP instead of
-// raw Ethernet, for links where native AVTP framing (destination MAC +
-// EtherType 0x22F0) is not available. This implementation's own reading of
-// that behavior — consistent with rcp/avtp.hpp's own header comment that its
-// NTSCF/TSCF framing is transport-agnostic by design — is that the AVTPDU
-// bytes rcp/avtp.hpp and rcp/acf.hpp already produce are carried unmodified
-// as the UDP payload; no additional encapsulation header is layered on top
-// here, and IP/UDP addressing substitutes for the Ethernet destination
-// address a native AVTP link would otherwise use. Full bit-for-bit
-// conformance against other TC18/Annex-J implementations is not claimed,
-// same as the equivalent disclaimers in rcp/avtp.hpp, rcp/acf.hpp, and
+// raw Ethernet (rcp/l2.hpp, added alongside this fix), for links where
+// native AVTP framing (destination MAC + EtherType 0x22F0) is not
+// available. An earlier revision of this file's comment claimed the AVTPDU
+// bytes rcp/avtp.hpp/rcp/acf.hpp produce are carried unmodified as the UDP
+// payload with no additional encapsulation — that claim was wrong. Per two
+// independent public secondary sources — a Wireshark issue tracker
+// discussion of the real Annex J wire text, and the COVESA Open1722
+// open-source reference implementation's actual `Avtp_Udp_t` header struct
+// (`include/avtp/Udp.h`, BSD-3-Clause, github.com/COVESA/Open1722) — an
+// Annex J UDP payload actually begins with a 4-byte (32-bit) big-endian
+// "encapsulation sequence number" field before the AVTPDU itself
+// (kEncapSeqLen/encode_annexj_datagram/decode_annexj_datagram below), and
+// the standard destination UDP ports are 17220 ("Continuous"/streaming) and
+// 17221 ("Discrete"/control — kAnnexJControlPort, the default this module's
+// Server/Client now bind/connect to when a caller doesn't override it).
+// THIS PROVENANCE CAVEAT APPLIES EVERYWHERE THIS FILE CITES THOSE TWO
+// FACTS: this codebase has no access to the paywalled IEEE 1722-2016
+// standard text itself, so "Annex J conformant" below means "conformant
+// with these two independent secondary sources' reading of Annex J," not
+// verified against the primary standard. Full bit-for-bit conformance
+// against other TC18/Annex-J implementations is not claimed, same as the
+// equivalent disclaimers in rcp/avtp.hpp, rcp/acf.hpp, and
 // rcp/discovery.hpp.
 #pragma once
 
@@ -90,6 +104,57 @@ namespace udp {
 // UDP headers) regardless of AVTPDU/ACF content — the same ceiling
 // rcp/legacy_wire.hpp's MaxPayload used to size against.
 constexpr size_t kMaxDatagram = 65507;
+
+// kAnnexJControlPort (17221): the standard destination UDP port for
+// "Discrete" (control-plane) Annex J traffic, per the two secondary sources
+// this file's header comment names — RCP requests/responses/acknowledges
+// are control-plane traffic, so this is the applicable port, and the one
+// Server/Client below now default to when a caller doesn't pass one
+// explicitly. 17220 ("Continuous"/streaming traffic) has no consumer in
+// this codebase today and is not defined here.
+constexpr uint16_t kAnnexJControlPort = 17221;
+
+// kEncapSeqLen: width, in bytes, of the Annex J UDP-payload encapsulation
+// sequence number (see header comment) that precedes every AVTPDU this
+// module sends/receives over UDP — absent entirely from rcp/l2.hpp's native
+// Ethernet framing, which carries the AVTPDU directly.
+constexpr size_t kEncapSeqLen = 4;
+
+// encode_annexj_datagram/decode_annexj_datagram — pure, socket-free codec
+// for the Annex J UDP-payload envelope: a 4-byte big-endian encapsulation
+// sequence number followed by the AVTPDU bytes unchanged. Big-endian to
+// match this repo's existing AVTPDU byte-order convention
+// (avtp::detail::put_u32/get_u32, reused directly rather than re-derived).
+// These are free functions, independent of RCP_UDP_POSIX, so they — and the
+// tests exercising them — compile and run on every platform, including the
+// Windows stub build, with no socket involved.
+//
+// This module tracks and exposes the encapsulation sequence number it
+// sends and the most recent one it has received (Client::last_sent_encap_seq/
+// last_recv_encap_seq, Server::last_recv_encap_seq(client)) so a future
+// caller has the raw data available for e.g. loss detection — but no such
+// detection is implemented here. Annex J's own exact intended semantics for
+// this field (e.g. whether gaps are meant to signal loss, whether it resets
+// per-flow) are NOT verified against the primary standard; treat the value
+// as an opaque per-sender monotonic counter only.
+inline std::vector<uint8_t> encode_annexj_datagram(uint32_t encap_seq,
+                                                     const std::vector<uint8_t>& avtpdu) {
+    std::vector<uint8_t> out(kEncapSeqLen + avtpdu.size());
+    avtp::detail::put_u32(out.data(), encap_seq);
+    std::copy(avtpdu.begin(), avtpdu.end(), out.begin() + static_cast<long>(kEncapSeqLen));
+    return out;
+}
+
+inline std::error_code decode_annexj_datagram(const uint8_t* b, size_t len,
+                                                uint32_t& out_encap_seq,
+                                                const uint8_t*& out_avtpdu,
+                                                size_t& out_avtpdu_len) {
+    if (len < kEncapSeqLen) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    out_encap_seq  = avtp::detail::get_u32(b);
+    out_avtpdu     = b + kEncapSeqLen;
+    out_avtpdu_len = len - kEncapSeqLen;
+    return {};
+}
 
 #if defined(RCP_UDP_POSIX)
 
@@ -271,17 +336,22 @@ inline std::error_code decode_multi_frame(const uint8_t* b, size_t len, MultiFra
 }
 
 // ── Server ────────────────────────────────────────────────────────────────────
-// Server binds a UDP socket, decodes each inbound datagram as a MultiFrame,
-// and dispatches every ACF request the datagram carries — one, the common
-// case, or more than one packed back to back (extraction §12.9.1.1, issue
-// cpp-RCP-04-fresh) — to a caller-supplied Handler individually, shaped to
-// match rcp::mock::Server::dispatch's signature, then encodes every
-// response into a single reply MultiFrame (same order as the requests
-// arrived in) and sends it back to the sender under the same header kind
-// (NTSCF/TSCF) the request arrived under. Malformed datagrams (short
-// buffer, bad subtype, unrecognized ACF message type on the very first
-// message) are dropped silently, the same "drop rather than partially
-// process" choice rcp/discovery.hpp documents for its own decode path.
+// Server binds a UDP socket (port 17221/kAnnexJControlPort by default — see
+// this file's header comment for the secondary-source provenance of that
+// number — unless a caller passes a different one), decodes each inbound
+// datagram as an Annex J envelope (4-byte encapsulation sequence number +
+// MultiFrame AVTPDU), and dispatches every ACF request the datagram carries
+// — one, the common case, or more than one packed back to back (extraction
+// §12.9.1.1, issue cpp-RCP-04-fresh) — to a caller-supplied Handler
+// individually, shaped to match rcp::mock::Server::dispatch's signature,
+// then encodes every response into a single reply MultiFrame (same order as
+// the requests arrived in), re-wraps it in a fresh encapsulation sequence
+// number, and sends it back to the sender under the same header kind
+// (NTSCF/TSCF) the request arrived under. Malformed datagrams (too short
+// for even the encapsulation sequence number, short buffer, bad subtype,
+// unrecognized ACF message type on the very first message) are dropped
+// silently, the same "drop rather than partially process" choice
+// rcp/discovery.hpp documents for its own decode path.
 class Server {
 public:
     using Handler = std::function<std::error_code(size_t client,
@@ -290,7 +360,7 @@ public:
                                                     acf::AcfMessageInfo& out_resp,
                                                     std::vector<uint8_t>& out_resp_payload)>;
 
-    Server(avtp::StreamId stream_id, const char* addr, uint16_t port)
+    Server(avtp::StreamId stream_id, const char* addr, uint16_t port = kAnnexJControlPort)
         : stream_id_(stream_id), fd_(-1) {
         fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
         if (fd_ < 0) return;
@@ -348,12 +418,24 @@ public:
 
     bool ok() const noexcept { return fd_ >= 0; }
 
+    // last_recv_encap_seq returns the Annex J encapsulation sequence number
+    // (see this file's header comment) most recently received from the
+    // given client id, or 0 if that client has not sent anything yet — raw
+    // data only, no loss-detection semantics implied or implemented (see
+    // kEncapSeqLen's own comment above).
+    uint32_t last_recv_encap_seq(size_t client) const {
+        std::lock_guard<std::mutex> lk(mu_);
+        auto it = last_recv_encap_seq_.find(client);
+        return it != last_recv_encap_seq_.end() ? it->second : 0;
+    }
+
 private:
     avtp::StreamId stream_id_;
     int  fd_;
     std::atomic<bool>     closed_{false};
     std::atomic<uint16_t> seq_{0};
-    std::mutex   mu_;
+    std::atomic<uint32_t> encap_seq_{0}; // Annex J encapsulation sequence number, outgoing replies
+    mutable std::mutex   mu_;
     Handler      handler_;
     std::thread  serve_thread_;
 
@@ -363,6 +445,10 @@ private:
     // the UDP sender address instead of an in-process connection index.
     std::map<std::string, size_t> client_ids_;
     size_t next_client_id_ = 0;
+    // last_recv_encap_seq_ tracks the most recent inbound Annex J
+    // encapsulation sequence number per client id — see
+    // last_recv_encap_seq()'s own comment above for scope.
+    std::map<size_t, uint32_t> last_recv_encap_seq_;
 
     static std::string addr_key(const sockaddr_in& sa) {
         char buf[INET_ADDRSTRLEN];
@@ -388,8 +474,18 @@ private:
                                     reinterpret_cast<sockaddr*>(&from), &flen);
             if (n <= 0) break;
 
+            // Strip the Annex J encapsulation sequence number before
+            // handing the remainder to the existing AVTPDU/ACF decode path
+            // (this file's header comment).
+            uint32_t       in_encap_seq = 0;
+            const uint8_t* avtpdu       = nullptr;
+            size_t         avtpdu_len   = 0;
+            if (decode_annexj_datagram(buf.data(), static_cast<size_t>(n),
+                                        in_encap_seq, avtpdu, avtpdu_len))
+                continue;
+
             MultiFrame req;
-            if (decode_multi_frame(buf.data(), static_cast<size_t>(n), req)) continue;
+            if (decode_multi_frame(avtpdu, avtpdu_len, req)) continue;
 
             MultiFrame resp;
             resp.use_tscf        = req.use_tscf;
@@ -401,6 +497,7 @@ private:
             {
                 std::lock_guard<std::mutex> lk(mu_);
                 size_t client = client_id_for(from);
+                last_recv_encap_seq_[client] = in_encap_seq;
                 // §12.9.1.1: "check each of them individually if to be
                 // processed or not" — each request in the datagram is
                 // dispatched and answered on its own, not as a batch.
@@ -418,8 +515,9 @@ private:
                 }
             }
 
-            auto out_frame = encode_multi_frame(resp);
-            ::sendto(fd_, out_frame.data(), out_frame.size(), 0,
+            auto out_frame  = encode_multi_frame(resp);
+            auto out_wire   = encode_annexj_datagram(++encap_seq_, out_frame);
+            ::sendto(fd_, out_wire.data(), out_wire.size(), 0,
                      reinterpret_cast<sockaddr*>(&from), flen);
         }
     }
@@ -446,7 +544,8 @@ private:
 // of its own client-side in this pass.
 class Client {
 public:
-    Client(avtp::StreamId stream_id, const char* server_host, uint16_t server_port)
+    Client(avtp::StreamId stream_id, const char* server_host,
+           uint16_t server_port = kAnnexJControlPort)
         : stream_id_(stream_id), fd_(-1) {
         fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
         if (fd_ < 0) return;
@@ -505,7 +604,8 @@ public:
         };
 
         auto frame_bytes = encode_frame(out);
-        if (::send(fd_, frame_bytes.data(), frame_bytes.size(), 0) < 0) {
+        auto wire_bytes  = encode_annexj_datagram(++encap_seq_, frame_bytes);
+        if (::send(fd_, wire_bytes.data(), wire_bytes.size(), 0) < 0) {
             cleanup();
             return ErrClosed;
         }
@@ -540,6 +640,14 @@ public:
 
     bool ok() const noexcept { return fd_ >= 0; }
 
+    // last_sent_encap_seq/last_recv_encap_seq expose the Annex J
+    // encapsulation sequence number (this file's header comment) this
+    // Client most recently sent/received — raw counter values only, no
+    // loss-detection semantics implied or implemented (kEncapSeqLen's own
+    // comment above).
+    uint32_t last_sent_encap_seq() const noexcept { return encap_seq_.load(); }
+    uint32_t last_recv_encap_seq() const noexcept { return last_recv_encap_seq_.load(); }
+
 private:
     static uint16_t pending_key(avtp::ByteBusId bus_id, uint8_t transaction_num) noexcept {
         return static_cast<uint16_t>((static_cast<uint16_t>(bus_id) << 8) | transaction_num);
@@ -549,6 +657,8 @@ private:
     int  fd_;
     std::atomic<bool>     closed_{false};
     std::atomic<uint16_t> seq_{0};
+    std::atomic<uint32_t> encap_seq_{0};          // Annex J encapsulation sequence number, outgoing
+    std::atomic<uint32_t> last_recv_encap_seq_{0}; // most recent one seen on an inbound datagram
     std::mutex mu_;
     std::map<uint16_t, std::shared_ptr<std::promise<Frame>>> pending_;
     std::thread read_thread_;
@@ -559,8 +669,18 @@ private:
             ssize_t n = ::recv(fd_, buf.data(), buf.size(), 0);
             if (n <= 0) break;
 
+            // Strip the Annex J encapsulation sequence number before
+            // handing the remainder to the existing AVTPDU/ACF decode path.
+            uint32_t       in_encap_seq = 0;
+            const uint8_t* avtpdu       = nullptr;
+            size_t         avtpdu_len   = 0;
+            if (decode_annexj_datagram(buf.data(), static_cast<size_t>(n),
+                                        in_encap_seq, avtpdu, avtpdu_len))
+                continue;
+            last_recv_encap_seq_.store(in_encap_seq);
+
             Frame resp;
-            if (decode_frame(buf.data(), static_cast<size_t>(n), resp)) continue;
+            if (decode_frame(avtpdu, avtpdu_len, resp)) continue;
 
             const uint16_t key = pending_key(resp.info.byte_bus_id, resp.info.transaction_num);
             std::lock_guard<std::mutex> lk(mu_);
@@ -597,17 +717,18 @@ public:
                                                     const std::vector<uint8_t>&,
                                                     acf::AcfMessageInfo&, std::vector<uint8_t>&)>;
 
-    Server(avtp::StreamId, const char*, uint16_t) {}
+    Server(avtp::StreamId, const char*, uint16_t = kAnnexJControlPort) {}
     std::string addr_string() const { return {}; }
     uint16_t    port()        const { return 0; }
     void set_handler(Handler) {}
     void close() {}
     bool ok() const noexcept { return false; }
+    uint32_t last_recv_encap_seq(size_t) const { return 0; }
 };
 
 class Client {
 public:
-    Client(avtp::StreamId, const char*, uint16_t) {}
+    Client(avtp::StreamId, const char*, uint16_t = kAnnexJControlPort) {}
     std::error_code request(const rcp::Context&, const acf::AcfMessageInfo&,
                              const std::vector<uint8_t>&,
                              acf::AcfMessageInfo&, std::vector<uint8_t>&,
@@ -616,6 +737,8 @@ public:
     }
     std::error_code close() { return {}; }
     bool ok() const noexcept { return false; }
+    uint32_t last_sent_encap_seq() const noexcept { return 0; }
+    uint32_t last_recv_encap_seq() const noexcept { return 0; }
 };
 
 #endif // RCP_UDP_POSIX

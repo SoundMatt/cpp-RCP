@@ -1567,10 +1567,11 @@ already predates milestones 44-61 (still documenting `rcp/firmware.hpp`
 and other since-deleted packages) and bringing it in line with the current
 architecture is a substantial, separately-scoped task this milestone's own
 text does not name. Milestone #63 (Wire Format Conformance Fix Pass,
-v2.19.0) is next, ahead of #65 (TC18 RCP General Availability, v3.0.0),
+v2.19.0) is next, ahead of #66 (TC18 RCP General Availability, v3.0.0),
 since it corrects a defect in the exact wire surface GA's own scope
 requires to be correct. (Milestone #64, TC18 Conformance Fix Pass II,
-v2.20.0, was added later in the same vein — see its own entry.)
+v2.20.0, and milestone #65, L2 Transport + UDP Annex J Conformance Fix,
+v2.21.0, were added later in the same vein — see their own entries.)
 
 ### Retired-model residue cleanup (2026-07-30, v2.19.0 — audit findings cpp-RCP-FS-01..05, cpp-RCP-05, cpp-RCP-07)
 
@@ -1767,7 +1768,7 @@ environment to interoperate-test against directly, so "full bit-for-bit
 wire conformance" is not claimed as an absolute fact here either — this
 milestone's own honest position is "high confidence, derivation-and-cross-
 check verified, not independently interop-tested," which is why GA
-(milestone #65) remains a distinct, later milestone rather than being
+(milestone #66) remains a distinct, later milestone rather than being
 folded into this one.
 
 Both `AcfMessageInfo`'s and the NTSCF/TSCF headers' public field names are
@@ -1891,7 +1892,92 @@ convention of reserving version bumps for commits that touch library
 code/behavior (contrast the v0.36.0→v0.48.0 cpp-FuSa CI pin bump, which
 stayed at the same cpp-rcp version since it touched no library code).
 
-### 65. TC18 RCP — General Availability (v3.0.0)
+### 65. L2 (Native Ethernet) Transport + UDP Annex J Conformance Fix (v2.21.0)
+
+`rcp/udp.hpp`'s own header comment (since milestone 57, v2.13.0) named IEEE
+1722 Annex J's UDP/IP encapsulation as an alternative to native Ethernet
+framing "for links where native AVTP framing (destination MAC + EtherType
+0x22F0) is not available" — but never actually implemented that native
+framing, and, separately, its own reading of Annex J turned out to be
+wrong. This milestone fixes both, using two independent public secondary
+sources (a Wireshark issue tracker discussion of the real Annex J wire
+text, and the COVESA Open1722 open-source reference implementation's
+`Avtp_Udp_t` header struct, `include/avtp/Udp.h`, BSD-3-Clause,
+github.com/COVESA/Open1722) — this codebase has no verified access to the
+paywalled IEEE 1722-2016 standard text itself, so "Annex J conformant"
+below means conformant with these two sources' reading of Annex J, not
+verified against the primary standard.
+
+- **`rcp/udp.hpp` Annex J conformance fix.** Two gaps, both confirmed by
+  both secondary sources independently: (1) an Annex J UDP payload actually
+  begins with a 4-byte (32-bit) big-endian "encapsulation sequence number"
+  before the AVTPDU, which `udp::Frame`/`MultiFrame` never had —
+  `udp::encode_annexj_datagram`/`decode_annexj_datagram` are the new pure
+  codec for that envelope, and `udp::Server`/`udp::Client` now prepend/strip
+  it transparently around the existing AVTPDU encode/decode path. Both
+  track and expose the sequence number they send/receive
+  (`Client::last_sent_encap_seq`/`last_recv_encap_seq`,
+  `Server::last_recv_encap_seq(client)`) for a future caller's own use (e.g.
+  loss detection) — no such detection is implemented here, and the field's
+  exact intended semantics are not verified against the primary standard.
+  (2) the standard destination UDP ports are 17220 ("Continuous") and 17221
+  ("Discrete"/control) — RCP request/response/acknowledge traffic is
+  control-plane, so `udp::kAnnexJControlPort` (17221) is now the default
+  port `Server`/`Client` bind/connect to via a defaulted constructor
+  parameter, while the explicit-port constructor form is unchanged for
+  back-compat/testing.
+- **`rcp/l2.hpp` (new): native IEEE 1722-over-Ethernet transport.** The
+  transport `rcp/udp.hpp`'s own comment always described as the alternative
+  to Annex J, now actually built: destination MAC (6 bytes) + source MAC (6
+  bytes, auto-read from the caller-specified interface via `SIOCGIFHWADDR`)
+  + EtherType `0x22F0` (2 bytes) + the AVTPDU bytes directly — no
+  encapsulation sequence number, since that field is Annex J/UDP-specific,
+  not part of native L2 framing. `l2::Server`/`l2::Client` are structurally
+  parallel to `udp::Server`/`udp::Client` (same method names, same Handler
+  signature, same request/response correlation strategy) with no new
+  abstract `Transport` interface introduced — this codebase has none today,
+  and matching shapes without formal inheritance matches its existing
+  style. Linux-only (`AF_PACKET`/`SOCK_RAW`, needs `CAP_NET_RAW` or root);
+  every other platform gets the same "compiles cleanly, every operation
+  returns `std::errc::function_not_supported`" stub `rcp/udp.hpp`'s own
+  Windows branch already established as this codebase's precedent. Unlike
+  `rcp/udp.hpp`, this header's pure Ethernet-header/Frame/MultiFrame codec
+  is available unconditionally on every platform (not gated behind the
+  socket-availability guard) specifically so `tests/test_l2.cpp` can
+  exercise it everywhere with no privileges and no Linux requirement — a
+  deliberate, documented deviation from `rcp/udp.hpp`'s own structure. A
+  caller supplies the destination MAC address itself (unicast or
+  multicast); this header does not derive or allocate a multicast MAC, the
+  same "caller decides addressing" division of responsibility
+  `udp::Client`'s own caller-supplied host/port already establishes.
+- **Real-socket verification.** `tests/l2_veth_roundtrip.cpp` is a
+  standalone (non-`ctest`) program that drives a real `l2::Server`/
+  `l2::Client` pair over a real Linux `veth` interface pair, run only by
+  the new `l2-veth` CI job (`.github/workflows/ci.yml`), which creates the
+  `veth` pair with `sudo` and asserts a real Ethernet frame's payload
+  round-trips byte-for-byte. One correctness fix this verification surfaced
+  during development: `AF_PACKET` sockets do not support `shutdown()` on
+  Linux (silently a no-op, unlike the `SOCK_DGRAM`/`AF_INET` sockets
+  `rcp/udp.hpp` uses, where `shutdown()` reliably unblocks a thread parked
+  in `recv`/`recvfrom`), so `l2::Server`/`l2::Client`'s serve/read threads
+  would otherwise hang forever in `close()` after a real request/response
+  had already round-tripped correctly. Fixed by giving every real socket a
+  short `SO_RCVTIMEO` (`detail::set_recv_timeout`, 200ms) so those threads
+  periodically recheck their own closed flag instead of relying on
+  `shutdown()` to wake them.
+
+Neither transport deprecates or is preferred over the other — `rcp/udp.hpp`
+and `rcp/l2.hpp` are both permanent, equally supported options; callers
+pick whichever fits their link, exactly as discussed and decided going into
+this milestone. `kVersion`/`CMakeLists.txt` bump 2.20.0 → 2.21.0
+accordingly. Full local build (C++17/C++20, GCC 11/12, Clang 14) and
+`ctest` (53/53 suites, up from 52 — `tests/test_l2.cpp` is new) pass; the
+real `veth` round trip was verified directly in a Linux container during
+development (see this milestone's own pull request description for the
+byte-for-byte evidence), ahead of the dedicated CI job doing the same on
+every future change.
+
+### 66. TC18 RCP — General Availability (v3.0.0)
 
 - First release where cpp-RCP's `RCP` conforms to the OPEN Alliance TC18
   Remote Control Protocol Specification at the wire level: an RC Client
@@ -1919,7 +2005,8 @@ orthogonal to the protocol replacement.
 |---|---|---|
 | `rcp.hpp` | REPLACE | Core `Zone`/`Command`/`Response`/`Status`/`Controller`/`Registry` model has no TC18 analog; becomes the new stream/endpoint/register-map model (v2.0.0-v2.1.0) |
 | `wire.hpp` | REPLACE | *Is* the old wire format; rebuilt as the AVTPDU/ACF codec (v2.0.0) |
-| `udp.hpp` | REPLACE | Bespoke 16-byte-header UDP transport rebuilt to carry real AVTPDU frames (v2.13.0) |
+| `udp.hpp` | REPLACE | Bespoke 16-byte-header UDP transport rebuilt to carry real AVTPDU frames (v2.13.0); Annex J conformance fix (4-byte encapsulation sequence number, port 17221 default) at v2.21.0 |
+| `l2.hpp` | NEW | Native IEEE 1722-over-Ethernet (raw L2, `AF_PACKET`/`SOCK_RAW`, Linux-only) transport, structurally parallel to `udp.hpp`'s `Server`/`Client` — the native-Ethernet alternative `udp.hpp`'s own header comment named but never implemented (v2.21.0) |
 | `mock.hpp` | REPLACE | In-process mock is entirely `Zone`/`Command`-shaped; rebuilt as an RC Server simulator (v2.12.0) |
 | `sim.hpp` | REPLACE | Timing-realistic simulator implements the full old `Controller` interface; rebuilt against the new register/endpoint model (v2.12.0) |
 | `e2e.hpp` | REPLACE | Ad-hoc CRC-16 + replay-window wrapper superseded by the spec's actual CRC32 (poly `0xF4ACFB13`) safe-point mechanism and `rx_enforce_seq` monotonic check (v2.6.0) |

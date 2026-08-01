@@ -169,8 +169,21 @@ add_test(NAME rcp_cli COMMAND test_cli)
 
 foreach(mod
     ddsbr doipbr grpcbridge mqttbr restbridge someipbr udsbr
-    tsn mdns powerstate tls udp)
+    tsn mdns powerstate tls udp l2)
   add_executable(test_${mod} test_${mod}.cpp)
   target_link_libraries(test_${mod} PRIVATE rcp::rcp Catch2::Catch2WithMain)
   add_test(NAME rcp_${mod} COMMAND test_${mod})
 endforeach()
+
+# ── rcp/l2.hpp real-socket round trip (Linux-only, needs CAP_NET_RAW/root) ───
+# l2_veth_roundtrip is a standalone program, not a Catch2 suite, and is
+# deliberately NOT registered via add_test: rcp::l2::Server/Client need a
+# real AF_PACKET/SOCK_RAW socket (CAP_NET_RAW or root) and a real network
+# interface pair, neither of which the normal `ctest` run has or should
+# require (see tests/test_l2.cpp's own header comment — that file covers
+# the privilege-free, socket-free codec logic this program does not
+# duplicate). Built here so it's available to build; only the dedicated
+# "l2-veth" CI job (.github/workflows/ci.yml) actually creates a veth pair
+# and runs this binary with sudo.
+add_executable(l2_veth_roundtrip l2_veth_roundtrip.cpp)
+target_link_libraries(l2_veth_roundtrip PRIVATE rcp::rcp)
