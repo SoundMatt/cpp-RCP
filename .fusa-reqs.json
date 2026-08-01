@@ -2919,6 +2919,86 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-013",
+      "title": "Annex J encapsulation sequence number round-trips and increments monotonically",
+      "text": "rcp::udp::encode_annexj_datagram/decode_annexj_datagram shall round-trip a 4-byte big-endian encapsulation sequence number and the AVTPDU bytes that follow it unchanged, and rcp::udp::Client/rcp::udp::Server shall each maintain their own per-connection monotonically-incrementing counter for outgoing datagrams, exposed via Client::last_sent_encap_seq/last_recv_encap_seq and Server::last_recv_encap_seq(client).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UDP-014",
+      "title": "Server/Client default to the Annex J control port (17221) when no port is given",
+      "text": "rcp::udp::kAnnexJControlPort shall equal 17221, and rcp::udp::Server/rcp::udp::Client's port constructor parameter shall default to it so a caller that omits an explicit port binds/connects to 17221, while the explicit-port constructor form remains available.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-L2-001",
+      "title": "EthHeader encode/decode round-trips dst/src MAC and EtherType",
+      "text": "rcp::l2::encode_eth_header/decode_eth_header shall round-trip a 14-byte Ethernet header (destination MAC, source MAC, EtherType) unchanged, with the EtherType field always encoded as rcp::l2::kEtherType (0x22F0).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-L2-002",
+      "title": "decode_eth_header rejects a buffer shorter than 14 bytes",
+      "text": "rcp::l2::decode_eth_header shall return a non-zero std::error_code when given fewer than rcp::l2::kEthHeaderLen (14) bytes.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-L2-003",
+      "title": "encode_l2_frame/decode_l2_frame round-trip an AVTPDU under the Ethernet header",
+      "text": "rcp::l2::encode_l2_frame/decode_l2_frame shall round-trip a destination MAC, source MAC, EtherType, and the AVTPDU (NTSCF/TSCF header plus ACF_ABB/ACF_GBB message) it carries unchanged, for both NTSCF and TSCF framing.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-L2-004",
+      "title": "Frame round-trips a TSCF-framed request with avtp_timestamp under L2 framing",
+      "text": "rcp::l2::encode_frame/decode_frame shall round-trip a Frame carrying a TSCF header, including its timestamp_valid flag and 32-bit avtp_timestamp, unchanged, the same as rcp::udp::Frame's equivalent guarantee.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-L2-005",
+      "title": "decode_l2_frame rejects a frame whose EtherType is not 0x22F0",
+      "text": "rcp::l2::decode_l2_frame/decode_l2_multi_frame shall return rcp::l2::L2Errc::bad_ethertype when the decoded Ethernet header's EtherType field is not rcp::l2::kEtherType (0x22F0).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-L2-006",
+      "title": "decode_l2_frame rejects a buffer shorter than the Ethernet header",
+      "text": "rcp::l2::decode_l2_frame shall return a non-zero std::error_code when given fewer bytes than rcp::l2::kEthHeaderLen (14) requires.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-L2-007",
+      "title": "MultiFrame round-trips two ACF_ABB messages packed into one L2 frame",
+      "text": "rcp::l2::encode_l2_multi_frame/decode_l2_multi_frame shall round-trip two or more ACF_ABB/ACF_GBB messages packed into a single Ethernet frame's AVTPDU, per extraction §12.9.1.1's multiple-requests-in-one-frame requirement, the same as rcp::udp::MultiFrame's equivalent guarantee.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-L2-008",
+      "title": "l2::Server/l2::Client round-trip a real Ethernet frame byte-for-byte over a real interface pair",
+      "text": "rcp::l2::Server and rcp::l2::Client shall exchange a real AF_PACKET/SOCK_RAW Ethernet frame over a real Linux network interface pair and round-trip an ACF request/response payload byte-for-byte, verified by tests/l2_veth_roundtrip.cpp against a real veth pair in the dedicated l2-veth CI job (needs CAP_NET_RAW/root, not exercised by the privilege-free ctest suite).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
     }
   ]
 }

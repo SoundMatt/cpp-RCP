@@ -85,6 +85,46 @@ jobs:
           name: compile-commands
           path: build/compile_commands.json
 
+  # ── rcp/l2.hpp real-socket round trip (Linux, needs CAP_NET_RAW/root) ────────
+  # Exercises rcp::l2::Server/Client over a real veth pair — real AF_PACKET
+  # sockets, a real Linux network interface pair, real Ethernet frames. This
+  # is deliberately separate from build-and-test above: it needs elevated
+  # privileges (CAP_NET_RAW, satisfied here via `sudo`) that job intentionally
+  # does not run with, and tests/test_l2.cpp's own header comment documents
+  # why its pure codec tests must not require them either.
+  l2-veth:
+    name: l2 veth round trip (rcp::l2::Server/Client, real frames)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=17 \
+            -G Ninja
+
+      - name: Build l2_veth_roundtrip
+        run: cmake --build build --target l2_veth_roundtrip --parallel
+
+      - name: Create veth pair
+        run: |
+          sudo ip link add veth0 type veth peer name veth1
+          sudo ip link set veth0 up
+          sudo ip link set veth1 up
+
+      - name: Run real Server/Client round trip over the veth pair
+        run: |
+          SERVER_MAC=$(cat /sys/class/net/veth1/address)
+          echo "veth1 MAC: ${SERVER_MAC}"
+          sudo ./build/tests/l2_veth_roundtrip veth1 veth0 "${SERVER_MAC}"
+
   # ── RELAY conformance gate (spec §12) ────────────────────────────────────────
   relay-conform:
     name: relay conform (RELAY §12 conformance)

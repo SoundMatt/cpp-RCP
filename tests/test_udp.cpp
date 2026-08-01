@@ -10,6 +10,8 @@
 // fusa:test REQ-UDP-010
 // fusa:test REQ-UDP-011
 // fusa:test REQ-UDP-012
+// fusa:test REQ-UDP-013
+// fusa:test REQ-UDP-014
 
 // Tests for rcp/udp.hpp — the native IEEE 1722-over-UDP/IP transport
 // (ROADMAP.md milestone 57, "Native Transport Rebuild — UDP/IP (Annex J)",
@@ -19,6 +21,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <rcp/udp.hpp>
 
+#include <algorithm>
 #include <chrono>
 
 using namespace rcp;
@@ -191,6 +194,62 @@ TEST_CASE("decode_frame rejects a buffer whose control_data_length disagrees wit
     REQUIRE(ec == avtp::make_error_code(avtp::AvtpErrc::length_mismatch));
 }
 
+// ── Annex J encapsulation sequence number (pure codec, no sockets) ──────────
+// See rcp/udp.hpp's own header comment for the two independent public
+// secondary sources (a Wireshark issue tracker discussion and the COVESA
+// Open1722 reference implementation) this 4-byte-prefix reading of Annex J
+// rests on — this codebase has no verified access to the paywalled IEEE
+// 1722-2016 standard text itself.
+
+TEST_CASE("encode_annexj_datagram/decode_annexj_datagram round-trip the sequence number "
+          "and AVTPDU bytes unchanged",
+          "[udp][REQ-UDP-013]") {
+    Frame f;
+    f.stream_id = make_stream_id(0x02, 1);
+    f.info      = standard_request(1, 1);
+    f.payload   = {0x01, 0x02, 0x03};
+    auto avtpdu = encode_frame(f);
+
+    auto wire = encode_annexj_datagram(0xDEADBEEF, avtpdu);
+    REQUIRE(wire.size() == kEncapSeqLen + avtpdu.size());
+
+    uint32_t       out_seq = 0;
+    const uint8_t* out_avtpdu = nullptr;
+    size_t         out_len = 0;
+    REQUIRE_FALSE(decode_annexj_datagram(wire.data(), wire.size(), out_seq, out_avtpdu, out_len));
+    REQUIRE(out_seq == 0xDEADBEEF);
+    REQUIRE(out_len == avtpdu.size());
+    REQUIRE(std::equal(avtpdu.begin(), avtpdu.end(), out_avtpdu));
+}
+
+TEST_CASE("decode_annexj_datagram rejects a buffer shorter than the 4-byte sequence number",
+          "[udp][REQ-UDP-013]") {
+    std::vector<uint8_t> short_buf = {0x01, 0x02, 0x03};
+    uint32_t       out_seq = 0;
+    const uint8_t* out_avtpdu = nullptr;
+    size_t         out_len = 0;
+    auto ec = decode_annexj_datagram(short_buf.data(), short_buf.size(), out_seq, out_avtpdu, out_len);
+    REQUIRE(ec);
+    REQUIRE(ec == avtp::make_error_code(avtp::AvtpErrc::short_buffer));
+}
+
+TEST_CASE("encode_annexj_datagram produces a monotonically increasing wire prefix "
+          "when a caller increments its own counter",
+          "[udp][REQ-UDP-013]") {
+    std::vector<uint8_t> avtpdu = {0xAA};
+    uint32_t prev_seq = 0;
+    for (uint32_t i = 1; i <= 5; ++i) {
+        auto wire = encode_annexj_datagram(i, avtpdu);
+        uint32_t       out_seq = 0;
+        const uint8_t* out_avtpdu = nullptr;
+        size_t         out_len = 0;
+        REQUIRE_FALSE(decode_annexj_datagram(wire.data(), wire.size(), out_seq, out_avtpdu, out_len));
+        REQUIRE(out_seq == i);
+        REQUIRE(out_seq > prev_seq);
+        prev_seq = out_seq;
+    }
+}
+
 // ── MultiFrame — multiple ACF requests in one AVTPDU (cpp-RCP-04-fresh) ──────
 
 TEST_CASE("MultiFrame round-trips two ACF_ABB messages packed into one AVTPDU",
@@ -291,7 +350,11 @@ TEST_CASE("Server handles multiple requests packed into a single datagram indivi
     req_b.payload = {0xBB, 0xBB, 0xBB, 0xBB};
     req_frame.messages = {req_a, req_b};
 
-    auto req_bytes = encode_multi_frame(req_frame);
+    // Since this drives Server with a raw socket rather than rcp::udp::Client,
+    // the Annex J encapsulation sequence number Server now expects on every
+    // inbound datagram (this file's header comment, cpp-RCP UDP Annex J fix)
+    // has to be prepended here explicitly too.
+    auto req_bytes = encode_annexj_datagram(/*encap_seq=*/0x11223344, encode_multi_frame(req_frame));
 
     int raw_fd = ::socket(AF_INET, SOCK_DGRAM, 0);
     REQUIRE(raw_fd >= 0);
@@ -308,14 +371,26 @@ TEST_CASE("Server handles multiple requests packed into a single datagram indivi
     REQUIRE(n > 0);
     ::close(raw_fd);
 
+    uint32_t       resp_encap_seq = 0;
+    const uint8_t* resp_avtpdu     = nullptr;
+    size_t         resp_avtpdu_len = 0;
+    REQUIRE_FALSE(decode_annexj_datagram(recv_buf.data(), static_cast<size_t>(n),
+                                          resp_encap_seq, resp_avtpdu, resp_avtpdu_len));
+
     MultiFrame resp_frame;
-    REQUIRE_FALSE(decode_multi_frame(recv_buf.data(), static_cast<size_t>(n), resp_frame));
+    REQUIRE_FALSE(decode_multi_frame(resp_avtpdu, resp_avtpdu_len, resp_frame));
     REQUIRE(resp_frame.messages.size() == 2);
     REQUIRE(resp_frame.messages[0].info.byte_bus_id == 1);
     REQUIRE(resp_frame.messages[0].payload == req_a.payload);
     REQUIRE(resp_frame.messages[1].info.byte_bus_id == 2);
     REQUIRE(resp_frame.messages[1].payload == req_b.payload);
     REQUIRE(seen_bus_ids == std::vector<size_t>{1, 2}); // both dispatched individually, in order
+
+    // Server's own outgoing encapsulation sequence number counter (distinct
+    // from the arbitrary one this test sent inbound) started at 0 and this
+    // is its first reply, so it should read 1 — REQ-UDP-013.
+    REQUIRE(resp_encap_seq == 1);
+    REQUIRE(server.last_recv_encap_seq(0) == 0x11223344);
 
     server.close();
 }
@@ -424,6 +499,60 @@ TEST_CASE("Client::request correlates concurrent requests by byte_bus_id/transac
 
     server.close();
     client.close();
+}
+
+// ── Annex J encapsulation sequence number (real sockets) ────────────────────
+
+TEST_CASE("Client's Annex J encapsulation sequence number increments monotonically "
+          "across successive requests, and Server observes it",
+          "[udp][REQ-UDP-013]") {
+    Server server(make_stream_id(0x02, 9), "127.0.0.1", 0);
+    REQUIRE(server.ok());
+
+    server.set_handler([](size_t, const acf::AcfMessageInfo& req,
+                           const std::vector<uint8_t>&,
+                           acf::AcfMessageInfo& out_resp, std::vector<uint8_t>&) {
+        out_resp = acf::make_response(req, acf::ResponseKind::Acknowledge);
+        return std::error_code{};
+    });
+
+    Client client(make_stream_id(0x03, 9), "127.0.0.1", server.port());
+    REQUIRE(client.ok());
+    REQUIRE(client.last_sent_encap_seq() == 0); // nothing sent yet
+
+    auto ctx = Context::with_timeout(std::chrono::seconds(2));
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+
+    REQUIRE_FALSE(client.request(ctx, standard_request(1, 1), {}, resp, resp_payload));
+    REQUIRE(client.last_sent_encap_seq() == 1);
+    REQUIRE(client.last_recv_encap_seq() > 0); // Server's own reply counter, opaque value
+
+    REQUIRE_FALSE(client.request(ctx, standard_request(1, 2), {}, resp, resp_payload));
+    REQUIRE(client.last_sent_encap_seq() == 2); // strictly increasing, one per request
+
+    REQUIRE_FALSE(client.request(ctx, standard_request(1, 3), {}, resp, resp_payload));
+    REQUIRE(client.last_sent_encap_seq() == 3);
+
+    // Server saw the same client (same UDP sender address) across all three
+    // requests, so its per-client last_recv_encap_seq() also strictly
+    // increased and reflects the most recent (third) request's own counter.
+    REQUIRE(server.last_recv_encap_seq(0) == 3);
+
+    server.close();
+    client.close();
+}
+
+TEST_CASE("Server/Client default to the Annex J control port (17221) when no port is given",
+          "[udp][REQ-UDP-014]") {
+    REQUIRE(kAnnexJControlPort == 17221);
+
+    // Bound to 127.0.0.1 with no explicit port argument — exercises the new
+    // defaulted constructor parameter, not just the constant's value.
+    Server server(make_stream_id(0x02, 10), "127.0.0.1");
+    REQUIRE(server.ok());
+    REQUIRE(server.port() == kAnnexJControlPort);
+    server.close();
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
