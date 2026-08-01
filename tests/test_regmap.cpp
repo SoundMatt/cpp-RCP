@@ -119,7 +119,41 @@ TEST_CASE("A second, distinct client cannot claim the root-client slot while it 
 
 // ── Per-endpoint write restriction ──────────────────────────────────────────────
 
-TEST_CASE("A non-root client may only write the endpoint config it owns", "[regmap][REQ-REGMAP-005]") {
+TEST_CASE("A non-root client may only write the functional config of the endpoint it owns",
+          "[regmap][REQ-REGMAP-005]") {
+    auto map = make_map(2);
+    ServerLifecycle lc;
+    Ep0 ep0(map, lc);
+    REQUIRE_FALSE(ep0.set_endpoint_owner(1, /*client=*/10));
+    REQUIRE_FALSE(ep0.set_endpoint_owner(2, /*client=*/20));
+
+    EndpointFunctionalConfig cfg;
+    cfg.data = {0xAA};
+
+    REQUIRE_FALSE(ep0.write_functional_config(/*client=*/10, /*target=*/1, cfg));
+    REQUIRE(ep0.read_whole_map().functional_configs[0].data == std::vector<uint8_t>{0xAA});
+
+    // An endpoint owned by somebody else is off limits.
+    auto ec = ep0.write_functional_config(/*client=*/10, /*target=*/2, cfg);
+    REQUIRE(ec);
+    REQUIRE(ec == make_error_code(RegMapErrc::unauthorized_access));
+
+    // The root client, once claimed, may write any endpoint's functional config.
+    REQUIRE_FALSE(ep0.claim_root_client(/*client=*/99));
+    REQUIRE_FALSE(ep0.write_functional_config(/*client=*/99, /*target=*/2, cfg));
+    REQUIRE(ep0.read_whole_map().functional_configs[1].data == std::vector<uint8_t>{0xAA});
+}
+
+// The generic config block is *not* covered by the owner grant above: TC18
+// §13.1 grants a non-ROOT_CLIENT write access only to the functional config
+// of the endpoints allocated to it, and §13.2 describes the generic part of
+// the endpoint register map as owned by the RC Server. Before cpp-RCP-D2 this
+// implementation applied one identical owner-based check to both blocks, so
+// any client that merely owned an endpoint could rewrite that endpoint's HW
+// pin mapping, queue sizing, and E2E-CRC enable toggles — a privilege
+// escalation into data reserved to the root client.
+TEST_CASE("Owning an endpoint does not grant a non-root client write access to its generic config",
+          "[regmap][REQ-REGMAP-005]") {
     auto map = make_map(2);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -128,16 +162,32 @@ TEST_CASE("A non-root client may only write the endpoint config it owns", "[regm
 
     EndpointGenericConfig cfg;
     cfg.request_queue_size = 8;
+    cfg.hw_pin_indices     = {7};
 
-    REQUIRE_FALSE(ep0.write_generic_config(/*client=*/10, /*target=*/1, cfg));
-    REQUIRE(ep0.read_whole_map().generic_configs[0].request_queue_size == 8);
+    // The owner of endpoint 1 is refused on its *own* endpoint's generic block.
+    auto ec_own = ep0.write_generic_config(/*client=*/10, /*target=*/1, cfg);
+    REQUIRE(ec_own);
+    REQUIRE(ec_own == make_error_code(RegMapErrc::unauthorized_access));
+    REQUIRE(ep0.read_whole_map().generic_configs[0].request_queue_size != 8);
+    REQUIRE(ep0.read_whole_map().generic_configs[0].hw_pin_indices.empty());
 
-    auto ec = ep0.write_generic_config(/*client=*/10, /*target=*/2, cfg);
-    REQUIRE(ec);
-    REQUIRE(ec == make_error_code(RegMapErrc::unauthorized_access));
+    // ...and, as before, on an endpoint owned by somebody else.
+    auto ec_other = ep0.write_generic_config(/*client=*/10, /*target=*/2, cfg);
+    REQUIRE(ec_other);
+    REQUIRE(ec_other == make_error_code(RegMapErrc::unauthorized_access));
 
-    // The root client, once claimed, may write any endpoint's config.
+    // check_write_access reports the same asymmetry directly, and defaults to
+    // the stricter (generic) check when no block is named.
+    REQUIRE(ep0.check_write_access(/*client=*/10, /*target=*/1, Ep0::ConfigBlock::Generic) ==
+            make_error_code(RegMapErrc::unauthorized_access));
+    REQUIRE(ep0.check_write_access(/*client=*/10, /*target=*/1) ==
+            make_error_code(RegMapErrc::unauthorized_access));
+    REQUIRE_FALSE(ep0.check_write_access(/*client=*/10, /*target=*/1, Ep0::ConfigBlock::Functional));
+
+    // Only the root client may write the generic block.
     REQUIRE_FALSE(ep0.claim_root_client(/*client=*/99));
+    REQUIRE_FALSE(ep0.write_generic_config(/*client=*/99, /*target=*/1, cfg));
+    REQUIRE(ep0.read_whole_map().generic_configs[0].request_queue_size == 8);
     REQUIRE_FALSE(ep0.write_generic_config(/*client=*/99, /*target=*/2, cfg));
     REQUIRE(ep0.read_whole_map().generic_configs[1].request_queue_size == 8);
 }
@@ -161,6 +211,10 @@ TEST_CASE("Generic config writes are refused once the lifecycle locks the generi
     auto map = make_map(1);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
+    // The generic block is root-client-only (TC18 §13.1/§13.2, cpp-RCP-D2),
+    // so the lock is what has to refuse this write — use the root client, or
+    // the authorization check would mask the lock check being tested.
+    REQUIRE_FALSE(ep0.claim_root_client(10));
     REQUIRE_FALSE(ep0.set_endpoint_owner(1, 10));
     REQUIRE_FALSE(lc.advance(ServerState::HwConfigured));
 

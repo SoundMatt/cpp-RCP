@@ -315,8 +315,10 @@ struct RegisterMap {
 // endpoint (as EP0) for whole-register-map reads and writes. Every client may
 // read the whole map. Only one client — the root client, identified by
 // svr_root_client_index — may write the whole map through EP0; every other
-// client is restricted to writing the generic/functional config of the
-// endpoint(s) it owns.
+// client is restricted to writing the *functional* config of the endpoint(s)
+// it owns. The generic config block is the RC Server's own and is writable by
+// the root client alone, no matter who owns the endpoint (TC18 §13.1/§13.2,
+// cpp-RCP-D2 — see check_write_access below).
 //
 // "Client" here is identified by an opaque index the embedding transport
 // assigns per connected stream; this header does not know or care how that
@@ -398,10 +400,25 @@ public:
     }
 
     // check_write_access enforces: EP0 (whole-map) writes require the root
-    // client; a non-EP0 endpoint's write requires either the root client or
-    // that endpoint's assigned owner; and a write to whichever config block
-    // is targeted is rejected while the current lifecycle state has that
-    // specific block locked, regardless of who is asking.
+    // client; a non-EP0 endpoint's write requires the root client, or — for
+    // the *functional* config block only — that endpoint's assigned owner;
+    // and a write to whichever config block is targeted is rejected while
+    // the current lifecycle state has that specific block locked, regardless
+    // of who is asking.
+    //
+    // The Generic/Functional asymmetry is the access-control rule TC18 §13.1
+    // states (extraction: for RC Clients other than the ROOT_CLIENT, write
+    // access is granted only to the *functional* config of endpoints
+    // allocated to that client) and §13.2's own framing reinforces (the
+    // generic part of the endpoint register map is owned by the RC Server,
+    // not by the allocated client). Owning an endpoint therefore does NOT
+    // confer write access to that endpoint's generic block: HW pin mapping,
+    // request/response queue sizing, and the E2E-CRC enable toggles live
+    // there, and a non-root client that could rewrite them would be able to
+    // repoint another endpoint's hardware pins or silently disable a safety
+    // mechanism (cpp-RCP-D2). Note that `block` defaults to
+    // ConfigBlock::Generic, i.e. to the stricter of the two checks, so a
+    // caller that forgets to name a block fails closed rather than open.
     std::error_code check_write_access(size_t client, EndpointId target,
                                         ConfigBlock block = ConfigBlock::Generic) const noexcept {
         if (target == kEp0) {
@@ -411,7 +428,10 @@ public:
         if (target > endpoint_owner_.size())
             return make_error_code(RegMapErrc::invalid_parameter);
         const auto& owner = endpoint_owner_[static_cast<size_t>(target - 1)];
-        if (!is_root_client(client) && (!owner.has_value() || *owner != client))
+        const bool owns = owner.has_value() && *owner == client;
+        const bool authorized =
+            is_root_client(client) || (block == ConfigBlock::Functional && owns);
+        if (!authorized)
             return make_error_code(RegMapErrc::unauthorized_access);
         const bool locked = (block == ConfigBlock::Generic)
                                  ? lifecycle_.generic_config_locked()
@@ -453,7 +473,10 @@ public:
 
     // write_generic_config / write_functional_config apply the per-endpoint
     // write-access and per-block lock checks above before mutating the
-    // targeted endpoint's config block in the underlying RegisterMap. The
+    // targeted endpoint's config block in the underlying RegisterMap. The two
+    // are deliberately not symmetric in who may call them: the generic block
+    // is root-client-only, the functional block is root-or-owner (TC18
+    // §13.1/§13.2 — see check_write_access above, cpp-RCP-D2). The
     // explicit size check against the vector actually being indexed (rather
     // than trusting check_write_access's endpoint_owner_-based verdict
     // alone) is a second, independent layer of defense against cpp-RCP-N2-01

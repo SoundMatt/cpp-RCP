@@ -18,8 +18,11 @@
 #include "rcp/faultinject.hpp"
 #include "rcp/mock.hpp"
 
+#include <atomic>
+#include <chrono>
 #include <functional>
 #include <thread>
+#include <vector>
 
 using namespace rcp;
 using namespace std::chrono_literals;
@@ -131,6 +134,79 @@ TEST_CASE("FaultInject rule expires after count sends", "[faultinject][REQ-FI-00
     { auto ec = fi.send(Context::background(), req, {}, out, out_payload); REQUIRE(ec); } // drop 1
     { auto ec = fi.send(Context::background(), req, {}, out, out_payload); REQUIRE(ec); } // drop 2
     REQUIRE_FALSE(fi.send(Context::background(), req, {}, out, out_payload)); // passes
+}
+
+// ── Expiry on the firing call must not read an erased rule (cpp-RCP-D6) ───────
+// pick_rule() used to return a Rule* into its own std::vector and erase that
+// very element before returning, so send() dereferenced an erased element to
+// read type/latency. An unsanitized build usually got away with it (erasing a
+// trailing element does not reallocate), which is why the count-expiry test
+// above never caught it; AddressSanitizer reports a container-overflow. These
+// cases pin the fixed contract: the rule is applied from a copy taken while
+// the lock is held, so its effect is correct on the exact call that retires
+// it, and remains correct with concurrent callers.
+
+TEST_CASE("A rule that expires on the same call it fires is still applied correctly",
+          "[faultinject][REQ-FI-005]") {
+    faultinject::Interceptor fi(make_mock_fn(make_server()));
+
+    faultinject::Rule r;
+    r.type    = faultinject::FaultType::Slow;
+    r.latency = 60ms;
+    r.count   = 1; // fires once and is retired during that same pick_rule()
+    fi.add_rule(r);
+
+    auto req = gpio_read_request();
+    acf::AcfMessageInfo out;
+    std::vector<uint8_t> out_payload;
+
+    // The Slow rule's latency is read after the rule has been erased; it must
+    // still be the 60ms that was configured, not whatever the freed slot held.
+    auto start = std::chrono::steady_clock::now();
+    REQUIRE_FALSE(fi.send(Context::background(), req, {}, out, out_payload));
+    auto elapsed = std::chrono::steady_clock::now() - start;
+    REQUIRE(elapsed >= 50ms);
+
+    // The rule really is gone: the next call passes straight through.
+    start = std::chrono::steady_clock::now();
+    REQUIRE_FALSE(fi.send(Context::background(), req, {}, out, out_payload));
+    REQUIRE(std::chrono::steady_clock::now() - start < 50ms);
+}
+
+TEST_CASE("Concurrent senders retiring count-limited rules do not read erased rules",
+          "[faultinject][REQ-FI-005]") {
+    faultinject::Interceptor fi(make_mock_fn(make_server()));
+
+    // Many single-shot rules, so nearly every send() retires the element it
+    // just picked while other threads are picking/erasing/appending too.
+    constexpr int kRules   = 256;
+    constexpr int kThreads = 8;
+    for (int i = 0; i < kRules; ++i) {
+        faultinject::Rule r;
+        r.type  = faultinject::FaultType::Timeout;
+        r.count = 1;
+        fi.add_rule(r);
+    }
+
+    std::atomic<int> timeouts{0};
+    std::vector<std::thread> threads;
+    threads.reserve(kThreads);
+    for (int t = 0; t < kThreads; ++t) {
+        threads.emplace_back([&] {
+            for (int i = 0; i < kRules / kThreads; ++i) {
+                auto req = gpio_read_request();
+                acf::AcfMessageInfo out;
+                std::vector<uint8_t> out_payload;
+                if (fi.send(Context::background(), req, {}, out, out_payload) == ErrTimeout)
+                    timeouts.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+    for (auto& th : threads) th.join();
+
+    // Every send consumed exactly one single-shot Timeout rule; a torn read of
+    // an erased rule would surface here as a wrong (or garbage) FaultType.
+    REQUIRE(timeouts.load() == kRules);
 }
 
 // ── clear_rules ───────────────────────────────────────────────────────────────

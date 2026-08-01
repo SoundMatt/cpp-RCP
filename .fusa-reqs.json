@@ -763,7 +763,7 @@
     {
       "id": "REQ-FI-005",
       "title": "Count-based rule expires after N firings",
-      "text": "A rule with count > 0 shall auto-expire after count applications and be removed from the active list.",
+      "text": "A rule with count > 0 shall auto-expire after count applications and be removed from the active list. The application that retires a rule shall still take full effect, and rule selection shall yield a value copy taken under the interceptor's own lock rather than a reference into the mutable rule list, so that no caller reads a rule element that has been erased or relocated.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2099,7 +2099,7 @@
     {
       "id": "REQ-REGMAP-005",
       "title": "Per-endpoint write restriction for non-root clients",
-      "text": "Ep0::check_write_access (and the write_generic_config/write_functional_config calls built on it) shall permit a non-root client to write only the endpoint config it owns per Ep0::set_endpoint_owner, shall return RegMapErrc::unauthorized_access for any other endpoint, shall always permit the root client, and shall return RegMapErrc::invalid_parameter for an out-of-range endpoint id.",
+      "text": "Ep0::check_write_access (and the write_generic_config/write_functional_config calls built on it) shall permit a non-root client to write only the FUNCTIONAL config block of an endpoint it owns per Ep0::set_endpoint_owner (TC18 section 13.1 grants a non-ROOT_CLIENT write access to EP_FUNC_config only; section 13.2 places the generic block under the RC Server's ownership), shall return RegMapErrc::unauthorized_access for a non-root client writing the GENERIC config block of any endpoint including one it owns, shall return RegMapErrc::unauthorized_access for a non-root client writing either block of an endpoint it does not own, shall always permit the root client, and shall return RegMapErrc::invalid_parameter for an out-of-range endpoint id.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2107,7 +2107,7 @@
     {
       "id": "REQ-REGMAP-006",
       "title": "Config-block locks are enforced independently by EP0",
-      "text": "Ep0::write_generic_config shall return RegMapErrc::locked_mem_access once ServerLifecycle::generic_config_locked is true, and Ep0::write_functional_config shall return RegMapErrc::locked_mem_access once ServerLifecycle::functional_config_locked is true, even when called by an otherwise-authorized owning or root client.",
+      "text": "Ep0::write_generic_config shall return RegMapErrc::locked_mem_access once ServerLifecycle::generic_config_locked is true, and Ep0::write_functional_config shall return RegMapErrc::locked_mem_access once ServerLifecycle::functional_config_locked is true, even when called by a client that REQ-REGMAP-005 would otherwise authorize for that block.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
