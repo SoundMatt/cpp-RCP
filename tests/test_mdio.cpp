@@ -3,6 +3,7 @@
 // fusa:test REQ-MDIO-003
 // fusa:test REQ-MDIO-004
 // fusa:test REQ-MDIO-005
+// fusa:test REQ-MDIO-006
 
 // Tests for rcp/mdio.hpp — the MDIO endpoint type (ROADMAP.md milestone 51,
 // "Remaining Endpoint Types — LIN, CAN (incl. CAN XL), ISELED, MDIO, Wakeup
@@ -156,4 +157,40 @@ TEST_CASE("MdioErrc reports a non-empty message in its own category", "[mdio][RE
     auto ec = make_error_code(MdioErrc::payload_exceeds_mode_width);
     REQUIRE(ec.category() == mdio_category());
     REQUIRE_FALSE(ec.message().empty());
+}
+
+// ── TC18 §13.7.13.3 Table 57: mdio_mode selector values ─────────────────────
+
+TEST_CASE("mdio_mode assigns four distinct selectors, keeping Table 57's MMS values",
+          "[mdio][REQ-MDIO-006]") {
+    // Table 57 gives the selector value 01b twice (MMD single-word and MMD
+    // multiple-byte) and never lists 00b, so it cannot be implemented as
+    // written. This implementation resolves the defect by numbering the four
+    // meanings 00b..11b in table order, which leaves both MMS rows at exactly
+    // the values Table 57 gives them.
+    REQUIRE(static_cast<uint8_t>(MdioMode::MmsSingleWord) == 0b10);
+    REQUIRE(static_cast<uint8_t>(MdioMode::MmsMultiWord)  == 0b11);
+
+    // The two MMD meanings stay distinct rather than colliding on 01b.
+    REQUIRE(static_cast<uint8_t>(MdioMode::MmdSingleWord) != static_cast<uint8_t>(MdioMode::MmdMultiWord));
+    REQUIRE(static_cast<uint8_t>(MdioMode::MmdSingleWord) <= 0b11);
+    REQUIRE(static_cast<uint8_t>(MdioMode::MmdMultiWord)  <= 0b11);
+
+    // register_key folds the mode into its lookup key, so distinct selectors
+    // must keep distinct register spaces for one and the same address.
+    MdioEndpoint ep;
+    MdioResponse resp;
+    MdioRequest single;
+    single.mode         = MdioMode::MmdSingleWord;
+    single.mdio_address = 0x123;
+    single.mdio_payload = 0xBEEF;
+    single.is_write     = true;
+    REQUIRE_FALSE(ep.handle_request(single, resp));
+
+    MdioRequest multi = single;
+    multi.mode         = MdioMode::MmdMultiWord;
+    multi.mdio_payload = 0x0000;
+    multi.is_write     = false;
+    REQUIRE_FALSE(ep.handle_request(multi, resp));
+    REQUIRE(resp.mdio_payload == 0); // the MMD multi-word space is untouched by the single-word write
 }

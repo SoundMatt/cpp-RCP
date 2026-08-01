@@ -3,6 +3,8 @@
 // fusa:req REQ-MDIO-003
 // fusa:req REQ-MDIO-004
 // fusa:req REQ-MDIO-005
+// fusa:req REQ-MDIO-006
+// fusa:req REQ-MDIO-007
 
 // MDIO endpoint (ep_type 0x0D) — the OPEN Alliance TC18 Remote Control
 // Protocol Specification v0.5.1_RC's mdio_mode-selected register access
@@ -189,6 +191,19 @@ private:
     MdioRequest                            last_request_;
     std::unordered_map<uint64_t, uint32_t> registers_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-MDIO-007: TC18 §13.7.13.2 Table 56's registers are not modeled, and
+//     TC18 defines no MDIO trigger table, so MdioSignal::TransferComplete
+//     below is an implementation extension.
 
 } // namespace mdio
 } // namespace rcp

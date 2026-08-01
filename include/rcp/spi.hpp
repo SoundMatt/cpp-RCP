@@ -3,6 +3,11 @@
 // fusa:req REQ-SPI-003
 // fusa:req REQ-SPI-004
 // fusa:req REQ-SPI-005
+// fusa:req REQ-SPI-006
+// fusa:req REQ-SPI-007
+// fusa:req REQ-SPI-008
+// fusa:req REQ-SPI-009
+// fusa:req REQ-SPI-010
 
 // SPI endpoint (ep_type 0x03) — up to 6 pre-configured channels selected by
 // evt[2:0], raw full-duplex PICO-out/POCI-in byte transfer, the
@@ -150,6 +155,31 @@ private:
     std::array<std::vector<uint8_t>, kMaxChannels>       last_pico_out_;
     std::array<std::vector<uint8_t>, kMaxChannels>       last_poci_in_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-SPI-006: TC18 §13.7.3.1 Table 38's flat trigger numbering (0
+//     execution done, 1 reserved, 2+2n/3+2n per CS) is not what
+//     spi_signal_id produces.
+//   REQ-SPI-007: TC18 §13.7.3.3's read_size-driven zero padding and
+//     full-PICO presentation rules are not implemented; transfer() never
+//     sees read_size.
+//   REQ-SPI-008: TC18 §13.7.3.1/§13.7.3.3 keep the wait comparison data
+//     endpoint-wide and bounded by read_size; this header stores it per
+//     channel and compares within fixed constants.
+//   REQ-SPI-009: TC18 §13.7.3.3's error state, EP_config enable-bit reset,
+//     client-driven recovery and clamped-pin diagnostics are not
+//     implemented.
+//   REQ-SPI-010: TC18 §13.7.3.2 Table 39's up-to-six per-channel
+//     configuration sets are not modeled; the channel selector selects no
+//     bus parameters.
 
 } // namespace spi
 } // namespace rcp

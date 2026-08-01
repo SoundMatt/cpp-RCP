@@ -8,6 +8,7 @@
 // fusa:test REQ-WIRE-013
 // fusa:test REQ-WIRE-014
 // fusa:test REQ-WIRE-015
+// fusa:test REQ-EVT-001
 
 // Tests for rcp/acf.hpp — the ACF_ABB/ACF_GBB message-format half of the TC18
 // wire codec (ROADMAP.md milestone 44, "Wire Format Core", v2.0.0; split
@@ -624,4 +625,41 @@ TEST_CASE("to_message carries message_timestamp only for ACF_GBB", "[acf][relay-
     gbb_info.acf_msg_type = kAcfMsgTypeGbb;
     auto gbb_msg = to_message(gbb_info, /*message_timestamp=*/0xDEADBEEF, {});
     REQUIRE(gbb_msg.timestamp == 0xDEADBEEF);
+}
+
+// ── TC18 §13.5: evt[3] is the acknowledge flag, evt[2:0] the op selector ─────
+
+TEST_CASE("evt_ack encodes at evt bit 3 and evt_op at evt bits 2:0", "[acf][REQ-EVT-001]") {
+    // §13.5 splits the 4-bit evt field into an acknowledge-request flag
+    // (evt[3]) and an operation selector (evt[2:0]). Asserted against the raw
+    // wire nibble, not just a struct round-trip, so a swapped split would fail.
+    AcfMessageInfo info;
+    info.evt_ack = true;
+    info.evt_op  = 0x05; // 101b
+
+    uint8_t wire[kAcfCommonHeaderLen] = {};
+    encode_acf_message_info(info, wire);
+
+    const uint8_t evt_nibble = static_cast<uint8_t>((wire[4] >> 4) & 0x0F);
+    REQUIRE(evt_nibble == 0x0D); // 1101b: ack bit set, op == 101b
+}
+
+TEST_CASE("evt_ack and evt_op decode independently of each other", "[acf][REQ-EVT-001]") {
+    // A message that requests an acknowledge must be distinguishable from one
+    // whose evt[2:0] merely happens to be large: evt=0111b is op 7 with no
+    // acknowledge requested, evt=1000b is an acknowledge request with op 0.
+    struct Case { bool ack; uint8_t op; };
+    for (Case c : {Case{false, 0x07}, Case{true, 0x00}, Case{true, 0x07}, Case{false, 0x00}}) {
+        AcfMessageInfo in;
+        in.evt_ack = c.ack;
+        in.evt_op  = c.op;
+
+        uint8_t wire[kAcfCommonHeaderLen] = {};
+        encode_acf_message_info(in, wire);
+
+        AcfMessageInfo out;
+        decode_acf_message_info(wire, out);
+        REQUIRE(out.evt_ack == c.ack);
+        REQUIRE(out.evt_op  == c.op);
+    }
 }

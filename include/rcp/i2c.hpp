@@ -3,6 +3,8 @@
 // fusa:req REQ-I2C-003
 // fusa:req REQ-I2C-004
 // fusa:req REQ-I2C-005
+// fusa:req REQ-I2C-006
+// fusa:req REQ-I2C-007
 
 // I2C endpoint (ep_type 0x04) — controller-only raw byte-stream transfer
 // (including address bytes, per the OPEN Alliance TC18 Remote Control
@@ -162,6 +164,18 @@ private:
     std::vector<uint8_t>      last_out_;
     std::vector<uint8_t>      last_in_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-I2C-007: TC18 §13.7.7.2 Table 46's I2C functional configuration
+//     (clock divider, full i2c_mode ladder, i2c_trail) is not modeled.
 
 } // namespace i2c
 } // namespace rcp

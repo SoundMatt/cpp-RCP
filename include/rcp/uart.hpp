@@ -5,6 +5,12 @@
 // fusa:req REQ-UART-005
 // fusa:req REQ-UART-006
 // fusa:req REQ-UART-007
+// fusa:req REQ-UART-008
+// fusa:req REQ-UART-009
+// fusa:req REQ-UART-010
+// fusa:req REQ-UART-011
+// fusa:req REQ-UART-012
+// fusa:req REQ-UART-013
 
 // UART endpoint (ep_type 0x05) — independent TX/RX queues, RX FIFO
 // fill/drain semantics, read completion on either a configured `read_size`
@@ -193,6 +199,29 @@ private:
     std::deque<uint8_t> tx_queue_;
     std::deque<uint8_t> rx_fifo_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-UART-008: TC18 §13.7.8.4 Table 49's two UART trigger signals are not
+//     implemented; this endpoint has no TriggerRegistry.
+//   REQ-UART-009: TC18 §13.7.8.1 requires a read request carrying a
+//     byte_msg_payload to be rejected; nothing here rejects it.
+//   REQ-UART-010: TC18 §13.7.8.1's compound-wait against the RX FIFO (per
+//     §13.5.1) has no entry point here.
+//   REQ-UART-011: TC18 §13.7.8.2 Table 48's functional configuration is not
+//     modeled; the timeout is a call argument in milliseconds, not a
+//     configured register in bit times.
+//   REQ-UART-012: TC18 §13.7.8.3's whole-payload trailing-bit truncation
+//     rule is not implemented; only per-octet masking is.
+//   REQ-UART-013: TC18 §13.7.8.1 flags an RX overflow in the endpoint status
+//     register; rx_fill below refuses the fill and returns an error instead.
 
 } // namespace uart
 } // namespace rcp

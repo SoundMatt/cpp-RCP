@@ -8,6 +8,7 @@
 // fusa:req REQ-WIRE-013
 // fusa:req REQ-WIRE-014
 // fusa:req REQ-WIRE-015
+// fusa:req REQ-EVT-001
 
 // TC18 wire codec, message half — the ACF_ABB / ACF_GBB message types (ACF —
 // AVTP Control Format) the OPEN Alliance TC18 Remote Control Protocol

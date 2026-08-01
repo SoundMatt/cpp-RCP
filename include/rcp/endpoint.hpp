@@ -4,6 +4,13 @@
 // fusa:req REQ-ENDPOINT-004
 // fusa:req REQ-ENDPOINT-005
 // fusa:req REQ-ENDPOINT-006
+// fusa:req REQ-ENDPOINT-007
+// fusa:req REQ-ENDPOINT-008
+// fusa:req REQ-ENDPOINT-009
+// fusa:req REQ-EVT-002
+// fusa:req REQ-EVT-003
+// fusa:req REQ-EVT-004
+// fusa:req REQ-EVT-005
 
 // Shared endpoint-registration and request-dispatch scaffolding — the pieces
 // every concrete OPEN Alliance TC18 Remote Control Protocol Specification
@@ -245,6 +252,35 @@ private:
     std::set<SignalId>    enabled_;
     std::vector<SignalId> pending_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-ENDPOINT-008: TC18 Table 29 allocates ep_type 0x0A to a DAC endpoint
+//     type; no id is assigned above and no DAC endpoint exists, because
+//     v0.5.1_RC defines no behavior for it.
+//   REQ-ENDPOINT-009: TC18 §13.5 states the add/subtract saturation bounds
+//     literally as 0x0000/0xFFFF; apply_bitmask_write above saturates at the
+//     caller's operand width instead, which differs for payloads wider than
+//     16 bits.
+//   REQ-EVT-002: TC18 §13.5.1's eight evt[2:0] compound-wait comparison
+//     modes have no comparator here; only rcp/spi.hpp and rcp/i2c.hpp have
+//     any wait matcher, and neither is mode-selected.
+//   REQ-EVT-003: TC18 §13.5.1's compound-wait length rules (shorter status
+//     never matches; longer status capped to the payload length) are not
+//     implemented generically.
+//   REQ-EVT-004: TC18 §13.5 Table 30's reserved-evt rejection
+//     (UNSUPPORTED_CMD) is not performed by the
+//     ADC/PWM_IN/I2C/LIN/CAN/UART/ISELED/MDIO endpoint types; none of them
+//     take an evt argument.
+//   REQ-EVT-005: TC18 §13.5 Table 30's evt[2:0]=111b 'payload reconfigures
+//     the endpoint' path is not implemented for any endpoint type.
 
 } // namespace endpoint
 } // namespace rcp

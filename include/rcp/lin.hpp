@@ -2,6 +2,9 @@
 // fusa:req REQ-LINEP-002
 // fusa:req REQ-LINEP-003
 // fusa:req REQ-LINEP-004
+// fusa:req REQ-LINEP-005
+// fusa:req REQ-LINEP-006
+// fusa:req REQ-LINEP-007
 
 // LIN commander endpoint (ep_type 0x06) — the OPEN Alliance TC18 Remote
 // Control Protocol Specification v0.5.1_RC's raw-byte-pusher model for LIN:
@@ -123,6 +126,23 @@ private:
     std::vector<uint8_t>      last_out_;
     std::vector<uint8_t>      last_in_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-LINEP-005: TC18 §13.7.10.1 gates the LIN trigger on the configured
+//     trailing time having expired as well; transfer() below fires
+//     immediately, and TC18 defines no second LIN trigger signal.
+//   REQ-LINEP-006: TC18 §13.7.10.1's pending-read matching of received
+//     frames against the payload under evt[2:0] is not implemented.
+//   REQ-LINEP-007: TC18 §13.7.10.2 Table 52's LIN functional configuration
+//     is not modeled.
 
 } // namespace lin
 } // namespace rcp

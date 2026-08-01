@@ -5,6 +5,14 @@
 // fusa:req REQ-PWM-005
 // fusa:req REQ-PWM-006
 // fusa:req REQ-PWM-007
+// fusa:req REQ-PWM-008
+// fusa:req REQ-PWM-009
+// fusa:req REQ-PWM-010
+// fusa:req REQ-PWM-011
+// fusa:req REQ-PWM-012
+// fusa:req REQ-PWM-013
+// fusa:req REQ-PWM-014
+// fusa:req REQ-PWM-015
 
 // PWM_OUT (ep_type 0x07) and PWM_IN (ep_type 0x08) endpoints — the shared
 // period/active-duration two-field payload shape, PWM_OUT's fixed 4-byte
@@ -223,6 +231,34 @@ private:
     bool                        has_signal_ = false;
     endpoint::TriggerRegistry  triggers_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-PWM-009: TC18 §13.7.5.1 Table 42's three PWM_OUT trigger outputs are
+//     not implemented; PwmOutEndpoint has no TriggerRegistry.
+//   REQ-PWM-010: TC18 §13.5 Table 30 puts PWM_OUT in GPIO's evt[2:0] row,
+//     including add/subtract for duty-cycle stepping; handle_write below
+//     rejects those (REQ-PWM-003).
+//   REQ-PWM-011: TC18 §13.7.5.3's start/stop rules (period 0 stops
+//     generation; active 0 with period > 0 disables the output but keeps
+//     triggers) are not modeled.
+//   REQ-PWM-012: TC18 §13.7.5.3's trigger-configuration request, whose first
+//     two payload bytes are a phase shift rather than the period, has no
+//     request shape here.
+//   REQ-PWM-013: TC18 §13.7.5.3's output-pin read-back toggle check is not
+//     implemented.
+//   REQ-PWM-014: TC18 §13.7.5.2 Table 43's PWM_OUT functional configuration,
+//     including duty-cycle min/max capping, is not modeled.
+//   REQ-PWM-015: TC18 §13.7.6.2 Table 45's PWM_IN functional configuration,
+//     including the max-period error rule and continuous-vs-single
+//     measurement mode, is not modeled.
 
 } // namespace pwm
 } // namespace rcp

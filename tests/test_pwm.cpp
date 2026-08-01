@@ -5,6 +5,7 @@
 // fusa:test REQ-PWM-005
 // fusa:test REQ-PWM-006
 // fusa:test REQ-PWM-007
+// fusa:test REQ-PWM-008
 
 // Tests for rcp/pwm.hpp — the PWM_OUT and PWM_IN endpoint types
 // (ROADMAP.md milestone 48, "Basic Endpoint Types II — I2C, UART, ADC,
@@ -59,7 +60,8 @@ TEST_CASE("decode_pwm_payload round-trips encode_pwm_payload", "[pwm][REQ-PWM-00
     REQUIRE(out.active_duration == in.active_duration);
 }
 
-TEST_CASE("decode_pwm_payload reports short_buffer for fewer than 4 bytes", "[pwm][REQ-PWM-001]") {
+TEST_CASE("decode_pwm_payload reports short_buffer for fewer than 4 bytes",
+          "[pwm][REQ-PWM-001][REQ-PWM-008]") {
     uint8_t short_buf[3] = {0, 0, 0};
     PwmValue out;
     auto ec = decode_pwm_payload(short_buf, sizeof(short_buf), out);
@@ -67,7 +69,7 @@ TEST_CASE("decode_pwm_payload reports short_buffer for fewer than 4 bytes", "[pw
 }
 
 TEST_CASE("decode_pwm_payload rejects an over-long buffer (spec requires exactly 4 bytes)",
-          "[pwm][REQ-PWM-001]") {
+          "[pwm][REQ-PWM-001][REQ-PWM-008]") {
     // §13.7.5.3: "A request not having exactly four bytes is rejected" —
     // cpp-RCP-03. Trailing bytes must not be silently ignored.
     uint8_t long_buf[5] = {0, 0, 0, 0, 0};

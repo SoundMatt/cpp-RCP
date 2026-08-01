@@ -3,6 +3,8 @@
 // fusa:req REQ-ISELED-003
 // fusa:req REQ-ISELED-004
 // fusa:req REQ-ISELED-005
+// fusa:req REQ-ISELED-006
+// fusa:req REQ-ISELED-007
 
 // ISELED endpoint (ep_type 0x0C) — the OPEN Alliance TC18 Remote Control
 // Protocol Specification v0.5.1_RC's native ISELED daisy-chain framing: a
@@ -237,6 +239,20 @@ private:
     IseledRequest              last_request_;
     IseledResponse             last_response_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-ISELED-006: TC18 §13.7.12.2 Table 55's ISELED functional
+//     configuration is not modeled.
+//   REQ-ISELED-007: TC18 §13.7.12.1's 4b/5b line coding and ISELED-native
+//     CRC generation/checking are not implemented.
 
 } // namespace iseled
 } // namespace rcp

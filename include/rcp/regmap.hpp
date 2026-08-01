@@ -13,6 +13,12 @@
 // fusa:req REQ-REGMAP-013
 // fusa:req REQ-REGMAP-014
 // fusa:req REQ-REGMAP-015
+// fusa:req REQ-REGMAP-016
+// fusa:req REQ-REGMAP-017
+// fusa:req REQ-SVREP-001
+// fusa:req REQ-SVREP-002
+// fusa:req REQ-SVREP-003
+// fusa:req REQ-SVREP-004
 
 // RC Server register-map data model and EP0 pseudo-endpoint — the
 // whole-device configuration surface an OPEN Alliance TC18 Remote Control
@@ -523,6 +529,31 @@ private:
     std::optional<size_t>              root_client_;
     std::vector<std::optional<size_t>> endpoint_owner_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-REGMAP-016: TC18 §13.2 Table 28's ep_generic_config fields (ep_type,
+//     ep_used, ep_delay_time, ep_description, tx/rx buffer sizes, fixed
+//     relative addresses) are not modeled by EndpointGenericConfig.
+//   REQ-REGMAP-017: TC18 §13.2's EP_RESP_ON_ERROR pin gauging and
+//     pin-referencing error responses are not implemented.
+//   REQ-SVREP-001: TC18 §13.7.1.3 Table 34's RC Server trigger signals (PTP
+//     sync established/lost) are not implemented.
+//   REQ-SVREP-002: TC18 §13.7.1.1's cyclic heartbeat, including the ACF-less
+//     NTSCF PDU sent when the queue is empty, is not implemented.
+//   REQ-SVREP-003: TC18 §13.7.1.2 Table 33's server functional configuration
+//     is not addressable here, and the root client is an opaque identity
+//     rather than svr_root_client_index.
+//   REQ-SVREP-004: TC18 §13.7.1.2's register-write payload shape, evt[2:0]
+//     combining semantics and silently-absorbed writes to read-only
+//     registers are not implemented.
 
 } // namespace regmap
 } // namespace rcp

@@ -4,6 +4,8 @@
 // fusa:req REQ-WIRE-007
 // fusa:req REQ-WIRE-011
 // fusa:req REQ-WIRE-013
+// fusa:req REQ-WIRE-016
+// fusa:req REQ-WIRE-017
 
 // TC18 wire codec, framing half — IEEE 1722 AVTPDU framing (NTSCF/TSCF) that
 // the OPEN Alliance TC18 Remote Control Protocol Specification v0.5.1_RC
@@ -312,6 +314,19 @@ inline std::error_code decode_tscf_header(const uint8_t* b, size_t len, TscfHead
     out.control_data_length = detail::get_u16(&b[20]);
     return {};
 }
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-WIRE-017: TC18 §13.3 makes the ignore-versus-drop handling of
+//     presentation-timed and tv=0 requests configuration-dependent; no such
+//     policy setting exists here.
 
 } // namespace avtp
 } // namespace rcp

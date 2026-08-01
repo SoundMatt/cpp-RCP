@@ -4,6 +4,11 @@
 // fusa:req REQ-ADC-004
 // fusa:req REQ-ADC-005
 // fusa:req REQ-ADC-006
+// fusa:req REQ-ADC-007
+// fusa:req REQ-ADC-008
+// fusa:req REQ-ADC-009
+// fusa:req REQ-ADC-010
+// fusa:req REQ-ADC-011
 
 // ADC endpoint (ep_type 0x09) — the three-level averaging model
 // (adc_sample_interval -> adc_avg_intervals_per_request ->
@@ -203,6 +208,28 @@ public:
         return compute_average(averaged_intervals, out_value);
     }
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-ADC-007: TC18 §13.7.9.1 Table 50's five ADC trigger outputs are not
+//     implemented; this endpoint has no TriggerRegistry.
+//   REQ-ADC-008: TC18 §13.7.9.1's compound-wait behavior (compare the last
+//     average, do not sample) has no entry point here.
+//   REQ-ADC-009: TC18 §13.7.9.2's response transaction_num and timestamp
+//     attribution rules are not implemented.
+//   REQ-ADC-010: TC18 §13.7.9.3's read_size-derived response value count and
+//     the request-shape rules are not implemented; read_size is not an input
+//     here.
+//   REQ-ADC-011: TC18 §13.7.9.2 Table 51's functional configuration,
+//     including the 16-bit adc_resolution ceiling and the two trigger
+//     thresholds, is not modeled.
 
 } // namespace adc
 } // namespace rcp

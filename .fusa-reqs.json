@@ -2009,6 +2009,22 @@
       "asil": "QM"
     },
     {
+      "id": "REQ-WIRE-016",
+      "title": "A TSCF timestamp marked uncertain is handled exactly as a certain one",
+      "text": "TC18 \u00a713.3 requires that a request whose TSCF header marks the timestamp as uncertain (tu=1) is executed as if tu were 0. rcp::avtp::decode_tscf_header shall not read the tu bit at all: decoding two headers that differ only in that bit shall produce identical TscfHeader values, so no downstream execution path can branch on it.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WIRE-017",
+      "title": "Configurable drop-versus-queue policy for presentation-timed requests [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.3 makes two request-validation outcomes configuration-dependent rather than fixed: an RC Server that does not support time synchronisation either ignores a request's presentation time and executes the request as if none were present, or drops the request, depending on its configuration; and a request whose TSCF timestamp is marked invalid (tv=0) with all header reserved bytes zero is either queued as if the header had been NTSCF, or dropped, again depending on configuration. cpp-RCP exposes no such policy setting: rcp/avtp.hpp preserves the tv flag (REQ-WIRE-011) and rcp/acf.hpp's effective_timestamp falls back across timestamp sources (REQ-WIRE-012), but nothing selects between the ignore and drop behaviors.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-LIFECYCLE-001",
       "title": "ServerState byte encoding",
       "text": "rcp::lifecycle::ServerState shall encode HwUnconfigured as 0x00, HwConfigured as 0x55, and RcpConfigured as 0xAA, and a freshly constructed ServerLifecycle shall report HwUnconfigured as its initial state.",
@@ -2185,6 +2201,22 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-REGMAP-016",
+      "title": "Table 28 ep_generic_config fields [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.2 Table 28 fixes the per-endpoint generic register block the RC Server owns: ep_type, ep_used (fixed to 1 for EP0, which must always be implemented), ep_delay_time (a 2-bit selector for 1/10/20/50 microseconds), ep_req_storage_size (in 32-bit words), ep_description, ep_tx_buffer_size and ep_rx_buffer_size (each reading 0x0000 when the endpoint has no such buffer), at fixed relative addresses repeating per endpoint. rcp::regmap::EndpointGenericConfig instead carries hw_pin_indices, request_queue_size, response_queue_size and the three per-role E2E CRC enables (REQ-REGMAP-015): it has no ep_type, no ep_used, no ep_delay_time, no ep_description and no tx/rx buffer-size entries, and no fixed relative-address layout.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-REGMAP-017",
+      "title": "EP_RESP_ON_ERROR pin gauging and pin-referencing error responses [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.2 states that the EP_RESP_ON_ERROR configuration parameter additionally switches on gauging of the endpoint's assigned physical IO pins: if the endpoint drives a pin and the pin's state does not follow, an error is flagged and a response is sent that includes a reference to the pin that caused the error; an error from a different source instead produces an error response with the corresponding Table 27 code. cpp-RCP has no EP_RESP_ON_ERROR configuration bit, no pin gauging and no pin-referencing error response payload.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-DISC-001",
       "title": "Discovery request framing \u2014 byte_bus_id 0, register-map address 0",
       "text": "rcp::discovery::make_discovery_request shall build an unconditional ACF_ABB read (op=false) targeting byte_bus_id 0 (kDiscoveryByteBusId), and kDiscoveryRegisterAddress shall be 0, fixing discovery reads at the general bootstrap/magic-number register-map region.",
@@ -2305,6 +2337,30 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-ENDPOINT-007",
+      "title": "Complete ep_type id assignment per Table 29",
+      "text": "rcp/endpoint.hpp shall assign every endpoint-type id TC18 \u00a713.2 Table 29 enumerates for a type this codebase implements, with the exact numeric values that table gives: Wakeup 0x01, GPIO 0x02, SPI 0x03, I2C 0x04, UART 0x05, LIN 0x06, PWM_OUT 0x07, PWM_IN 0x08, ADC 0x09, CAN 0x0B, ISELED 0x0C, MDIO 0x0D. The ids shall be pairwise distinct and none shall take the value 0x0A, which Table 29 reserves for the DAC endpoint type (see REQ-ENDPOINT-008).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ENDPOINT-008",
+      "title": "DAC endpoint type (Table 29 ep_type 0x0A) [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.2 Table 29 enumerates a DAC endpoint type at ep_type 0x0A. cpp-RCP implements no DAC endpoint and deliberately leaves 0x0A unallocated in rcp/endpoint.hpp. Reason: TC18 v0.5.1_RC allocates the id and a DAC_OUT pin signal but defines no \u00a713.7 chapter, functional-configuration table, request format or trigger table for the type, so there is no normative behavior to implement.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-ENDPOINT-009",
+      "title": "Table 30's literal 0x0000/0xFFFF arithmetic saturation bounds [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.5 states, immediately below Table 30, that add/subtract write semantics saturate at 0x0000 on the low side and 0xFFFF on the high side. rcp::endpoint::apply_bitmask_write (REQ-ENDPOINT-004) instead saturates at the representable range of the caller's own unsigned operand type, so a 32-bit payload such as GPIO's rcp::gpio::PinMask saturates at 0xFFFFFFFF rather than at the literal 0xFFFF bound TC18 states. The two agree only for 16-bit operands (PWM_OUT's period/active pair). Whether TC18's bound is a 16-bit-specific statement or a universal one is not resolvable from the text; the divergence is recorded here rather than silently resolved in either direction.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-GPIO-001",
       "title": "GPIO payload is a 4-byte big-endian bitmask",
       "text": "rcp::gpio::kGpioPayloadLen shall be 4 and kMaxPins shall be 32; encode_gpio_payload/decode_gpio_payload shall round-trip a PinMask value in big-endian byte order, and decode_gpio_payload shall return avtp::AvtpErrc::short_buffer when given fewer than kGpioPayloadLen bytes.",
@@ -2369,6 +2425,46 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-GPIO-009",
+      "title": "OR with an all-zero payload leaves the pin state unchanged",
+      "text": "TC18 \u00a713.7.4.3 states that a GPIO request whose payload is all zeros with evt[2:0]=001b (OR) results in no change. rcp::gpio::apply_gpio_write with WriteSemantics::Or and an operand of 0x00000000 shall leave GpioState::values bitwise identical, for any prior state, and shall report no error.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-010",
+      "title": "Writes to a pin configured as input are ignored per pin [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.4.3 states that a write request addressed to a pin configured as an input is ignored for that pin. rcp::gpio::apply_gpio_write consults GpioState::directions only for the Reconfigure semantics; for every other write semantics it applies the operand to GpioState::values across all 32 bit positions without masking out the bits whose direction bit marks them as inputs, so an input pin's recorded value is changed by a write that TC18 requires to have no effect on it.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-011",
+      "title": "Table 40 trigger-signal numbering [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.4.1 Table 40 fixes GPIO's trigger-signal reference numbers: signal 0 is 'GPIO EP request execution done', and each pin's change/rising/falling signals then follow contiguously in that order, so pin n occupies signals 3n+1, 3n+2 and 3n+3 up to 96 for a 32-pin endpoint. rcp::gpio::gpio_signal_id instead packs (pin, edge) as (pin << 2) | edge, which is neither contiguous nor Table 40's numbering, and no signal id is reserved for request-execution-done, so that event cannot be delivered at all.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-012",
+      "title": "gpio_io_max and the fewer-than-32-pin payload rule [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.4.1 states a GPIO endpoint may implement fewer than 32 IOs, in which case the least significant bits of the four-byte payload are the ones used, and \u00a713.7.4.2 Table 41 exposes the implemented maximum as the read-only gpio_io_max register. rcp/gpio.hpp fixes kMaxPins at 32 with no configurable implemented-pin count, so neither the register nor the truncation rule exists and a request addressing an unimplemented pin is indistinguishable from one addressing an implemented pin.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-GPIO-013",
+      "title": "Table 41 functional-configuration block and debounce-dependent response timing [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.4.2 Table 41 defines GPIO's functional configuration as gpio_ep_len, gpio_io_max, gpio_ep_enable&clr, gpio_ep_options, gpio_base_clk, gpio_ep_status, gpio_clk_divider and one gpio_debounce_IOn byte per pin, and \u00a713.7.4.3 makes the response timing depend on that debounce time: a payload-less pure read responds immediately, whereas a write (or a read carrying a payload) drives the pins and only then waits out the debounce time before responding. cpp-RCP's rcp::gpio::encode_gpio_functional_config/decode_gpio_functional_config carry a pin-direction mask plus a per-pin enabled-edge mask instead \u2014 none of Table 41's registers \u2014 and rcp::gpio::GpioEndpoint models no debounce time and no response-timing distinction.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-SPI-001",
       "title": "SPI channel selection via evt[2:0]",
       "text": "rcp::spi::kMaxChannels shall be 6; rcp::spi::channel_of shall accept evt[2:0] values 0-5 as channel selectors (masking its input to the low 3 bits first) and return SpiErrc::channel_out_of_range for 6 and 7.",
@@ -2409,6 +2505,46 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-SPI-006",
+      "title": "Table 38 SPI trigger-signal numbering [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.3.1 Table 38 fixes SPI's trigger-signal reference numbers as a single flat table for the whole endpoint: signal 0 is SPI execution done, signal 1 is reserved, and signals 2..13 are CSn asserted (2+2n) and CSn de-asserted (3+2n) for n in 0..5. rcp::spi::spi_signal_id instead derives ids as (channel << 2) | signal, which yields a per-channel TransferComplete rather than Table 38's single endpoint-wide execution-done signal, reserves nothing at id 1, and does not produce Table 38's CS numbering.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SPI-007",
+      "title": "read_size-driven zero padding and full PICO presentation [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.3.3 states two independent length rules for an SPI transfer: the endpoint appends zeros when the request's read_size exceeds the number of bytes in the byte_msg_payload, and the byte_msg_payload is presented on PICO in full even when read_size is smaller than the payload. rcp::spi::SpiEndpoint::transfer takes the outgoing and incoming byte vectors as-is and never sees read_size, so neither rule is implemented.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SPI-008",
+      "title": "Wait-data retention is endpoint-wide and read_size-bounded [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.3.1 states that the byte_msg_payload of an SPI wait request is compared against the last data received irrespective of which CS channel it was received on, and \u00a713.7.3.3 states the endpoint retains that data up to the read_size given with the acf-type. rcp::spi::SpiEndpoint stores last_poci_in_ per channel, and rcp::spi::compound_wait_matches compares against a caller-supplied buffer bounded by the fixed constants kMaxStatusBytes (20) and kCompoundWaitCompareLen (4) rather than by the request's read_size.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SPI-009",
+      "title": "SPI error state, enable-bit reset and client-driven recovery [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.3.3 defines a recovery protocol for an SPI endpoint that stops execution: the endpoint enters an error state recorded in the debug register, its enable bit in EP_config is reset, and it resumes only after the RC Client clears the error status and re-enables it, optionally clearing one or more of the endpoint's queues first. It further requires that a pin detected as clamped raises a flag in the server's diagnostic registers and sets the error flag in every response from that endpoint. rcp::spi::SpiEndpoint has no error state, no enable bit and no diagnostic-register linkage.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SPI-010",
+      "title": "Table 39 per-channel functional configuration sets [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.3.2 Table 39 defines an SPI functional configuration consisting of spi_ep_len, spi_nr_cs, spi_ep_enable&clr, spi_ep_options and spi_ep_status, followed by up to six independent per-channel configuration sets (SPI_CFG0..5), each holding spi_baud_rate, spi_clk_polarity, spi_clk_phase, spi_cs_polarity, spi_use_cs, spi_cs_clk_leadtime, spi_clk_cs_trailtime, spi_bits_max and spi_pause_min. cpp-RCP implements the channel selector itself (REQ-SPI-001) but defines no per-channel configuration set, so selecting channel n selects no distinct bus parameters.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-I2C-001",
       "title": "i2c_mode open item \u2014 coarse high-speed decode only",
       "text": "rcp::i2c::i2c_mode_of shall map AcfMessageInfo::hs=false to I2cMode::Standard and hs=true to I2cMode::HighSpeed, and shall not attempt to distinguish any finer I2C speed grade, per this milestone's documented open item pending a future spec errata pass.",
@@ -2444,6 +2580,22 @@
       "id": "REQ-I2C-005",
       "title": "I2cErrc is a distinct error category with a non-empty message",
       "text": "rcp::i2c::make_error_code(I2cErrc::nack) shall report rcp::i2c::i2c_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-I2C-006",
+      "title": "I2C trigger-signal ids are an implementation choice because Table 47 is empty",
+      "text": "TC18 \u00a713.7.7.4 Table 47 lists three I2C trigger-signal ids (0, 1, 2) but leaves the Event column blank for all three in v0.5.1_RC, so the specification assigns no meaning to any I2C trigger signal. rcp::i2c::I2cSignal's TransferComplete=0 and Nack=1 are therefore this implementation's own assignment, not a spec-derived one, and shall be documented as such; rcp::i2c::i2c_signal_id shall map them to those two ids and leave id 2 unassigned.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-I2C-007",
+      "title": "Table 46 I2C functional configuration [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.7.2 Table 46 defines I2C's functional configuration as i2c_ep_len, i2c_ep_enable&clr, i2c_ep_options, i2c_base_clk, i2c_ep_status, i2c_clock_divider, i2c_mode and i2c_trail, where i2c_mode selects among Standard 100 kbit/s, Fast 400 kbit/s, Fast-plus 1 Mbit/s, High-speed (both 1.7 and 3.4 Mbit/s, which the table erroneously gives the same selector value 3) and Ultra-fast 5 Mbit/s, and i2c_trail is a minimum inter-transaction trail time in I2C clock cycles. cpp-RCP defines no functional configuration block for I2C: rcp::i2c::i2c_mode_of decodes only a two-way Standard/HighSpeed split from the message-info hs bit (REQ-I2C-001), and no clock divider or trail time exists.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2505,6 +2657,54 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-UART-008",
+      "title": "Table 49 UART trigger signals [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.8.4 Table 49 defines two UART trigger outputs: transmit request finalized (0) and read request finalized (1). rcp::uart::UartEndpoint has no rcp::endpoint::TriggerRegistry member, no signal enum and no notify call, so neither signal exists; enqueue_tx/drain_tx and handle_read report completion only through their return values.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-009",
+      "title": "A read request carrying a byte_msg_payload must be rejected [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.8.1 states that a UART read request having a byte_msg_payload is rejected with an error code the section names UNKNOWN_CMD. rcp::uart::UartEndpoint offers handle_read (read_size-driven) and handle_pure_read (payload-less) but rejects nothing: a caller that has a payload in hand simply calls the wrong one. Note also that TC18's own Table 27 error-code enumeration (\u00a712.9.6) contains no UNKNOWN_CMD; the nearest enumerated code is UNSUPPORTED_CMD (value 1), so the required response code is ambiguous in the specification text.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-010",
+      "title": "UART compound-wait against the RX FIFO [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.8.1 states that a compound-wait request on a UART endpoint produces a response when the expected data matches the data in the receive FIFO, with the amount of data compared bounded by uart_rx_fifo_size, and refers explicitly to \u00a713.5.1's evt-field comparison modes. rcp/uart.hpp has no compound-wait entry point of any kind and no evt[2:0] handling.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-011",
+      "title": "Table 48 UART functional configuration [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.8.2 Table 48 defines UART's functional configuration as uart_ep_len, the shared enable&clr and options entries, uart_ep_status, uart_baud_rate, uart_nr_bits, uart_parity_enable, uart_parity_pol, uart_rts_enable, uart_cts_enable, uart_half_duplex, uart_stop_bits, uart_timeout (in bit times, measured from the last received stop bit) and uart_trail. rcp/uart.hpp defines no functional-configuration struct: the timeout is passed to handle_read as a caller-supplied argument in milliseconds rather than read from a configured register in bit times, the frame width appears only as the pack/unpack bits_per_frame argument, and parity, flow control, duplex mode, stop bits, baud rate and trail time are absent.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-012",
+      "title": "Transmit-side truncation when the payload is not a multiple of uart_nr_bits [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.8.3 states that when the request payload's length is not an integer multiple of uart_nr_bits, the endpoint ignores the last up to uart_nr_bits-1 bits of that payload when transmitting, and appends up to uart_nr_bits-1 bits in responses. cpp-RCP implements only the per-frame masking of a single octet (rcp::uart::pack_frame_to_octet/unpack_frame_bits, REQ-UART-005); rcp::uart::UartEndpoint::enqueue_tx transmits the caller's byte vector unchanged and applies no whole-payload truncation rule.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-013",
+      "title": "RX FIFO overflow is flagged in the endpoint status register [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.8.1 states that a UART receive-FIFO overflow is flagged in the UART endpoint's status register, i.e. it is a latched, client-readable condition rather than a rejected operation. rcp::uart::UartEndpoint::rx_fill instead refuses the fill and returns UartErrc::rx_fifo_overflow, leaving no status bit set and losing no data \u2014 a different observable behavior from the one specified. Table 48's uart_ep_status register itself is not modeled (see REQ-UART-011).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-ADC-001",
       "title": "ADC arithmetic-mean averaging combinator",
       "text": "rcp::adc::compute_average shall compute the arithmetic mean of a non-empty sample set and shall return AdcErrc::no_signal for an empty sample set.",
@@ -2553,6 +2753,46 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-ADC-007",
+      "title": "Table 50 ADC trigger signals [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.9.1 Table 50 defines five ADC trigger outputs: averaged value falling below ADC_MIN_TRIGGER (0), rising above ADC_MIN_TRIGGER (1), falling below ADC_MAX_TRIGGER (2), rising above ADC_MAX_TRIGGER (3), and measurement interval finished (4); the section adds that no trigger can occur while no request is being executed, since the ADC samples only during request execution. rcp::adc::AdcEndpoint has no rcp::endpoint::TriggerRegistry member and no signal enum, so none of the five exists \u2014 rcp/adc.hpp's AdcCadence::ExternalTrigger is about consuming another endpoint's trigger, not about emitting ADC's own.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-008",
+      "title": "ADC compound-wait compares the last average without sampling [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.9.1 states that a compound-wait request addressed to an ADC endpoint does not start sampling and instead compares against the last acquired average value. rcp/adc.hpp has no compound-wait entry point, and every reading path (request_reading, request_reading_from_trigger_queue) samples on call, so the non-sampling comparison behavior does not exist.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-009",
+      "title": "Response transaction_num and timestamp rules when averages span several requests [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.9.2 defines how responses relate to requests across the three adc_combine_avg_values vs adc_avg_intervals_per_request cases, and fixes two attributes of the resulting response: when several request executions are needed before a response is generated, the response carries the transaction_num of the request that produced the first average value included in it, and when the response carries a timestamp, that timestamp is the capture time of the last sample of that same first average value. rcp/adc.hpp returns bare sample values with no transaction number and no timestamp, so neither attribution rule is implemented.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-010",
+      "title": "read_size determines the number of measurement values per response [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.9.3 states that an ADC request carries no byte_msg_payload while a wait request must carry one, and that a response contains as many measurement values as half the request's read_size (each value being 16 bits wide). rcp::adc::AdcEndpoint's reading calls are parameterised by the averaging configuration alone; read_size is not an input anywhere in rcp/adc.hpp, and no request-shape validation distinguishes a payload-carrying request from a payload-less one.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-011",
+      "title": "Table 51 ADC functional configuration [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.9.2 Table 51 defines ADC's functional configuration as adc_ep_len, the shared enable&clr and options entries, adc_base_clk, adc_ep_status, adc_base_clk_divider, adc_sample_interval, adc_avg_intervals_per_request, adc_samples_per_avg_interval, adc_combine_avg_values, adc_resolution (bounded by \u00a713.7.9.1 to at most 16 bits, higher resolutions being a different endpoint type), adc_trigger_min and adc_trigger_max. rcp::adc::AdcAveragingConfig carries only the three averaging counts (REQ-ADC-002); the sampling interval, clock divider and the two trigger thresholds have no representation, and adc_resolution is not configurable at all - the 16-bit ceiling holds only incidentally, because rcp/adc.hpp fixes its sample and averaged-result types at uint16_t.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-PWM-001",
       "title": "PWM_OUT/PWM_IN shared period/active-duration payload shape",
       "text": "rcp::pwm::PwmValue shall default both period and active_duration to 0, and both rcp::pwm::PwmOutEndpoint and rcp::pwm::PwmInEndpoint shall operate on this same two-field type.",
@@ -2594,8 +2834,8 @@
     },
     {
       "id": "REQ-PWM-006",
-      "title": "PWM_IN mid-pulse trigger signal",
-      "text": "rcp::pwm::PwmInEndpoint::record_measurement shall notify the MidPulse trigger signal on every call, observable via drain() only when MidPulse was armed via triggers().enable().",
+      "title": "PWM_IN rising- and falling-edge trigger signals",
+      "text": "rcp::pwm::PwmInEndpoint shall expose exactly the two trigger outputs TC18 \u00a713.7.6.1 Table 44 defines for a PWM_IN endpoint \u2014 rising edge of the measured signal (id 0) and falling edge (id 1) \u2014 via rcp::pwm::PwmInSignal/pwm_in_signal_id. record_edge shall notify exactly the one signal named by its argument without updating the last-measured value, and record_measurement shall record the new value and notify both signals, each observable via drain() only when that signal was armed via triggers().enable(). The single invented \"MidPulse\" signal this requirement described before v2.16.0 no longer exists.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2604,6 +2844,70 @@
       "id": "REQ-PWM-007",
       "title": "PwmErrc is a distinct error category with a non-empty message",
       "text": "rcp::pwm::make_error_code(PwmErrc::no_signal) shall report rcp::pwm::pwm_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-008",
+      "title": "PWM payload length is exactly four bytes, longer and shorter both rejected",
+      "text": "TC18 \u00a713.7.5.3 states that a PWM_OUT request not having exactly four bytes is rejected with error code INVALID_PARAMETER. rcp::pwm::decode_pwm_payload shall reject a buffer of any length other than kPwmPayloadLen (4) \u2014 an over-long buffer as well as a short one \u2014 rather than decoding the first four bytes and ignoring the remainder.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-009",
+      "title": "Table 42 PWM_OUT trigger signals [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.5.1 Table 42 defines three trigger outputs for a PWM_OUT endpoint: request execution done (0), start of cycle (1), and mid-active-pulse (2, fired even at 0% duty cycle), with the section text naming signal 1 as the means of phase-correlating several PWM_OUT endpoints and signal 2 as the means of synchronising ADC sampling into the active phase. rcp::pwm::PwmOutEndpoint has no rcp::endpoint::TriggerRegistry member, no signal-id helper and no notify call, so none of the three signals exists; only PWM_IN has a trigger registry.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-010",
+      "title": "Table 30 places PWM_OUT in GPIO's evt[2:0] row [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.5 Table 30 lists GPIO and PWM_OUT together in one row, so PWM_OUT's evt[2:0] semantics are the same eight as GPIO's \u2014 including 101b (add) and 110b (subtract), whose Table 30 examples name increasing and decreasing the duty cycle of PWM_out explicitly. rcp::pwm::PwmOutEndpoint::handle_write accepts only WriteSemantics::Replace and rejects Or/And/Xor/Add/Subtract with EndpointErrc::non_combinable_write_semantics (REQ-PWM-003), so five of Table 30's eight PWM_OUT semantics are unavailable. REQ-PWM-003's stated rationale \u2014 that the specification describes no combining write behavior for PWM_OUT \u2014 is contradicted by Table 30; see the PR follow-up note.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-011",
+      "title": "PWM_OUT start/stop and disabled-output semantics [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.5.3 gives two distinguished payload values a PWM_OUT request: a request with PWM_Period of 0 stops signal generation, and a request with PWM_active of 0 and PWM_Period greater than 0 keeps the endpoint running with its output disabled while still generating trigger signals. rcp::pwm::PwmOutEndpoint::handle_write stores both fields verbatim with no running/stopped state and no output-enable state, so neither rule is represented.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-012",
+      "title": "Phase-shift reinterpretation of the payload in a PWM_OUT trigger configuration [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.5.3 states that when the request is a trigger configuration the first two bytes of the byte_msg_payload carry a phase shift rather than the period, so that one PWM_OUT endpoint can be run at a fixed phase relation to another. rcp::pwm::decode_pwm_payload always decodes the first two bytes as PwmValue::period and rcp/pwm.hpp has no trigger-configuration request shape at all.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-013",
+      "title": "PWM_OUT output-pin read-back check [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.5.3 requires that during PWM generation the assigned output pin is also read back and checked to be actually toggling, with an error signalled if it is not. cpp-RCP models no physical pin state for PWM_OUT and performs no read-back, so this diagnostic does not exist. Related surface: TC18 \u00a713.2's EP_RESP_ON_ERROR pin gauging, recorded separately as REQ-REGMAP-017.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-014",
+      "title": "Table 43 PWM_OUT functional configuration, including duty-cycle capping [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.5.2 Table 43 defines PWM_OUT's functional configuration: pwmo_ep_len (fixed length 0x06), pwmo_ep_enable&clr, pwmo_ep_options, pwmo_base_clk, pwmo_ep_status, pwmo_clk_divider, pwmo_inv_polarity, pwmo_idle_state, pwmo_idle_state_inv, pwmo_duty_cycle_min, pwmo_duty_cycle_max and pwmo_skew. Two of these are behavioral rather than descriptive: a request whose active time falls below pwmo_duty_cycle_min or rises above pwmo_duty_cycle_max is capped to that limit rather than rejected. rcp/pwm.hpp defines no functional-configuration struct and applies no capping.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-PWM-015",
+      "title": "Table 45 PWM_IN functional configuration, including the max-period error rule [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.6.2 Table 45 defines PWM_IN's functional configuration: pwmi_ep_len, pwmi_ep_enable&clr, pwmi_ep_options, pwmi_base_clk, pwmi_ep_status, pwmi_clk_divider, pwmi_polarity, pwmi_err_on_max_period, pwmi_continuous_mode and pwmi_max_period. Three of these are behavioral: exceeding pwmi_max_period either invalidates the measurement and waits for a new active phase or stops measurement and raises an error response (selected by pwmi_err_on_max_period, and gated on EP_RESP_ON_ERR per \u00a713.7.6.1), and pwmi_continuous_mode selects between one measurement per request (response delayed until the measurement completes) and free-running measurement (response sent immediately with the last result). rcp::pwm::PwmInEndpoint models only the has-signal/no-signal distinction (PWM_IN_NO_SIGNAL, REQ-PWM-005) with no configuration block, no maximum period and no mode selection.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2737,6 +3041,30 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-LINEP-005",
+      "title": "LIN trigger fires only after the configured trailing time [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.10.1 states that the LIN endpoint issues its trigger when a transmission has been finalized and the configured trailing time has expired \u2014 the two conditions together \u2014 which is what makes a LIN endpoint driven by a repeated trigger request on its own trigger produce a correctly spaced cyclic transmission. rcp::lin::LinEndpoint::transfer notifies TransferComplete immediately on transfer completion, with no trailing time modeled. TC18 defines no second LIN trigger signal, so rcp::lin::LinSignal::NoResponse (REQ-LINEP-003) is an implementation extension rather than spec surface.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LINEP-006",
+      "title": "Pending LIN read requests match received frames against the payload under evt[2:0] [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.10.1 describes the LIN endpoint's read path: with a read request pending, each message received from the bus is checked against the request's byte_msg_payload, and when a match is found under the conditions selected by evt[2:0] a reply is sent if op=0. rcp::lin::LinEndpoint::transfer models only a commanded transfer with a caller-supplied responded flag; there is no pending-read state, no received-frame matching and no evt[2:0] handling.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-LINEP-007",
+      "title": "Table 52 LIN functional configuration [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.10.2 Table 52 defines LIN's functional configuration as lin_ep_len, lin_ep_enable&clr, lin_ep_options, lin_base_clk, lin_ep_status and lin_clk_divider (which generates the LIN bit time), all R/W entries being runtime-changeable. rcp/lin.hpp defines no functional-configuration struct and no bit timing at all.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
       "id": "REQ-CANEP-001",
       "title": "CAN's ep_type id is 0x0B",
       "text": "rcp::endpoint::kEndpointTypeCan shall equal 0x0B.",
@@ -2793,6 +3121,30 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-CANEP-008",
+      "title": "Table 54 FrameFormat encoding [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.11.3 Table 54 assigns the request/response FrameFormat sub-field six defined values \u2014 CBFF=0, CEFF=1, FBFF=2, FEFF=3, XL on the classical physical layer=4, XL on the new physical layer=5 \u2014 with 6 and 7 reserved. rcp::can::FrameFormat instead defines Classical=0, Fd=1, Xl=2: it collapses the base/extended-identifier distinction that Table 54 encodes in the format field itself (that distinction lives in CanIdentifier::extended instead), collapses the two XL physical-layer variants into one, and assigns numeric values that disagree with Table 54 for every format except CBFF. Nothing rejects the reserved values 6 and 7. This is a wire-visible divergence, not only a naming one; see the PR follow-up note.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CANEP-009",
+      "title": "11-bit identifiers are right-aligned in the CAN ID field [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.11.3 states that sending remote frames is not supported and that an 11-bit CAN identifier is right-aligned within the request's CAN ID field. cpp-RCP implements the remote-frame prohibition (REQ-CANEP-003) but has no CAN request wire codec at all \u2014 rcp::can::CanIdentifier is an in-memory value plus an `extended` flag \u2014 so no field alignment rule is expressed or enforced anywhere.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-CANEP-010",
+      "title": "Table 53 CAN functional-configuration register block [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.11.2 Table 53 lays out CAN's functional configuration at fixed relative addresses: can_ep_len, can_ep_enable&clr, can_ep_options, can_base_clk, can_ep_status, can_clk_divider, three 32-bit bit-time registers (Classical CAN, CAN FD, CAN XL), a TDCC delay-compensation register, a 32-bit CAN EP status register, a FIFO status register, four CAN XL acceptance filters and four (or more) receive ID filters. rcp/can.hpp carries per-phase bit-timing values and XL filters as plain structs (REQ-CANEP-005, REQ-CANEP-006) with no register-map placement, no TDCC register and no FIFO status register, so the block is not addressable through the register map the way Table 53 requires.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-ISELED-001",
       "title": "ISELED's ep_type id is 0x0C",
       "text": "rcp::endpoint::kEndpointTypeIseled shall equal 0x0C.",
@@ -2818,8 +3170,8 @@
     },
     {
       "id": "REQ-ISELED-004",
-      "title": "ISELED TransferComplete and NativeCrcError trigger signals",
-      "text": "rcp::iseled::IseledEndpoint::transact shall notify only TransferComplete for a transaction whose response native CRC verifies (or carries none), and shall notify only NativeCrcError and return IseledErrc::native_crc_mismatch for a transaction whose response native CRC does not verify.",
+      "title": "ISELED transfer-complete trigger signal",
+      "text": "rcp::iseled::IseledEndpoint::transact shall notify rcp::iseled::IseledSignal::TransferComplete, and only that signal, on completion of a transaction \u2014 matching TC18 \u00a713.7.12.1, which gives the ISELED endpoint exactly one trigger event, raised when transmission of a data packet on the ISELED network has completed. The second signal this requirement described before (NativeCrcError) was removed together with the ISELED-native CRC modelling; see REQ-ISELED-007 for that gap.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2828,6 +3180,22 @@
       "id": "REQ-ISELED-005",
       "title": "IseledErrc is a distinct error category with a non-empty message",
       "text": "rcp::iseled::make_error_code(IseledErrc::native_crc_mismatch) shall report rcp::iseled::iseled_category() as its category and shall have a non-empty diagnostic message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ISELED-006",
+      "title": "Table 55 ISELED functional configuration [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.12.2 Table 55 defines ISELED's functional configuration as iseled_ep_len, iseled_base_clk, iseled_ep_enable&clr, iseled_ep_options, iseled_ep_status, iseled_clk_divider (nominally producing a 2 MHz ISELED clock), iseled_collect_resp (collect several ISELED responses into one ACF type), iseled_use_rcv_clk (sample using the clock supplied by the first ISELED device instead of the Freq_Sync pattern), iseled_nr_leds (which bounds the number of expected responses) and iseled_rcv_timeout. The section states this clock configuration is what defines execution delays in triggered and compound operations. rcp/iseled.hpp defines no functional-configuration struct, so none of these exists.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ISELED-007",
+      "title": "ISELED 4b/5b line coding and native CRC generation/checking [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.12.1 states that data sent to the ISELED network is 4/5-bit encoded per the ISELED standard and received data is 5/4-bit decoded, and that the ISELED-native CRC generation can be enabled, in which case the endpoint generates and appends the CRC to write messages and calculates and checks it on read data \u2014 a CRC that exists on the ISELED network and, per \u00a713.7.12.3, is distinct from the safe-operation mode CRC added on the RCP side. rcp::iseled::IseledEndpoint::transact moves plain bytes: it applies no line coding in either direction and computes no ISELED-native CRC. Reason, for the CRC half: TC18 defers the ISELED CRC's own algorithm and its optional four-bit trailer width to the separate ISELED standard, which is not available to this implementation, so v2.16.0 deliberately removed an earlier invented CRC-8 rather than keep an unsourced algorithm (see rcp/iseled.hpp's own header comment). No such rationale covers the 4b/5b line coding, which is simply unimplemented.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2873,6 +3241,22 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-MDIO-006",
+      "title": "mdio_mode encoding resolves Table 57's duplicated selector value",
+      "text": "TC18 \u00a713.7.13.3 Table 57 lists four mdio_mode meanings but gives the selector value 01b twice (for MMD single-word and MMD multiple-byte access) and never lists 00b, so the table cannot be implemented literally. rcp::mdio::MdioMode shall resolve this by assigning the four meanings the four distinct 2-bit values in table order \u2014 MmdSingleWord=00b, MmdMultiWord=01b, MmsSingleWord=10b, MmsMultiWord=11b \u2014 keeping the two MMS values at exactly the 10b/11b Table 57 gives them, and this deviation shall be documented as a deviation rather than presented as spec-conformant.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MDIO-007",
+      "title": "Table 56 MDIO functional configuration and the absence of an MDIO trigger table [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.13.2 opens by stating that the MDIO endpoint has no configurable parameters and then gives Table 56 listing mdio_ep_len, mdio_ep_enable&clr, mdio_ep_options and mdio_ep_status (the last with overlapping relative addresses 0x0002, and its description left as 'to be defined'). cpp-RCP models none of these registers. Separately, TC18 \u00a713.7.13 defines no trigger-signal table for MDIO at all, so rcp::mdio::MdioSignal::TransferComplete is an implementation extension rather than spec surface.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
       "id": "REQ-WAKEUP-001",
       "title": "Wakeup control's ep_type id is 0x01",
       "text": "rcp::endpoint::kEndpointTypeWakeup shall equal 0x01.",
@@ -2911,6 +3295,30 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WAKEUP-006",
+      "title": "Table 37 wake-up source pin behavior codes [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.2.2 Table 36 gives each configured wake-up source a 16-bit entry splitting into an IO pin number in bits [10:0] and an IO behavior selector in bits [15:11], and Table 37 enumerates that selector: pin inactive (00000b), rising edge (00001b), falling edge (00010b), both edges (00011b), high level (00100b), low level (00101b), all other combinations reserved. A pin number of 0 terminates the table. rcp::wakeup::WakeupEndpoint records wake sources as a flat 32-bit pin mask with no per-pin behavior selector, so every configured source behaves identically and reserved selectors cannot be rejected.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WAKEUP-007",
+      "title": "Sleep request quiescence sequence before acknowledging [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.2.3 fixes the order of operations a sleep request triggers: the server first stops entering incoming requests into endpoint queues, then waits for every endpoint to report that it has no pending execution-time-base or standard requests left, and only once all endpoints are idle and the responder queues are empty does it acknowledge the sleep request and enter sleep. rcp::wakeup::WakeupEndpoint::handle_sleep_cmd sets its asleep flag immediately on decoding the fixed SleepCMD opcode, with no request-intake gate, no endpoint-idle wait and no acknowledge step. rcp::power::PowerManager does refuse a sleep entry while an endpoint is non-idle or a queue is non-empty (REQ-PWR-004, REQ-PWR-005), which is a refusal rule rather than TC18's drain-then-acknowledge sequence, and the two components are not wired to each other.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-WAKEUP-008",
+      "title": "wup_status is write-one-to-clear per wake-up source [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.2.2 Table 36 defines wup_status as a 16-bit R/W register in which each bit indicates one wake-up source and writing a 1 to a bit clears that bit's flag. rcp::wakeup::WakeupEndpoint::clear_wake_source_pins clears the entire accumulated mask unconditionally, so a client cannot acknowledge one wake-up source while leaving another pending, and the register itself is not exposed in the register map.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
     },
     {
       "id": "REQ-LOAN-007",
@@ -2996,6 +3404,78 @@
       "id": "REQ-L2-008",
       "title": "l2::Server/l2::Client round-trip a real Ethernet frame byte-for-byte over a real interface pair",
       "text": "rcp::l2::Server and rcp::l2::Client shall exchange a real AF_PACKET/SOCK_RAW Ethernet frame over a real Linux network interface pair and round-trip an ACF request/response payload byte-for-byte, verified by tests/l2_veth_roundtrip.cpp against a real veth pair in the dedicated l2-veth CI job (needs CAP_NET_RAW/root, not exercised by the privilege-free ctest suite).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-EVT-001",
+      "title": "evt[3] is the acknowledge-request flag, evt[2:0] the operation selector",
+      "text": "Per TC18 \u00a713.5, the 4-bit evt field splits into evt[3] (set to request an acknowledge) and evt[2:0] (the endpoint-type-specific operation selector). rcp::acf::AcfMessageInfo shall carry that split as the separate evt_ack and evt_op members, encode_byte_message_info shall place evt_ack at bit 3 and evt_op in bits 2:0 of the 4-bit evt nibble, and decode_byte_message_info shall recover both independently, so a message that requests an acknowledge is distinguishable from one whose evt[2:0] merely happens to be large.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-EVT-002",
+      "title": "Generic compound-wait comparator covering all eight evt[2:0] modes [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.5.1 defines eight evt[2:0]-selected comparison modes for compound-wait requests: exact match (000b), all payload one-bits set in the interface status (001b), all payload one-bits clear in the status (010b), reserved and to be rejected (011b), and four magnitude comparisons over the first or last half of the first payload quadlet (100b-111b). cpp-RCP implements no comparator covering these modes. The only compound-wait matchers that exist are rcp::spi::compound_wait_matches (a fixed-window byte-equality test, REQ-SPI-002) and rcp::i2c::compound_wait_matches_bits (an arbitrary-bit-length equality test, REQ-I2C-002); neither takes an evt[2:0] mode argument at all, so seven of the eight modes are unreachable for every endpoint type.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-EVT-003",
+      "title": "Generic compound-wait length rules [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.5.1 states two length rules for the compound-wait comparison: an interface status shorter than the byte_msg_payload can never satisfy the wait condition, and an interface status longer than the byte_msg_payload is capped to the payload's length before comparing. cpp-RCP implements neither rule generically. rcp::spi::compound_wait_matches caps at a fixed four-byte window (kCompoundWaitCompareLen) rather than at the payload's actual length, and returns false for an empty window rather than implementing the shorter-status rule as such; no other endpoint type has any equivalent.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-EVT-004",
+      "title": "Table 30 reserved-evt rejection for the non-combinable endpoint group [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.5 Table 30 groups ADC, PWM_IN, I2C, LIN, CAN, UART, ISELED and MDIO in a single row where evt[2:0] values 000b through 110b are reserved and a request carrying one shall be rejected with an error response carrying error code UNSUPPORTED_CMD (rcp::acf::WireErrorCode::UnsupportedCmd, Table 27 value 1). No endpoint type in that group validates evt[2:0] at all: rcp::adc, rcp::pwm::PwmInEndpoint, rcp::i2c, rcp::lin, rcp::can, rcp::uart, rcp::iseled and rcp::mdio take no evt/write-semantics argument on any request-handling entry point, so a reserved evt code is accepted rather than rejected.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-EVT-005",
+      "title": "Table 30 evt[2:0]=111b reconfigure path [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.5 Table 30 specifies for every endpoint type that evt[2:0]=111b means the byte_msg_payload is not presented to the physical interface but is instead applied as a change to the endpoint's configuration (\u00a712.7.1). cpp-RCP implements no such payload-to-configuration path for any endpoint type. rcp::endpoint::WriteSemantics::Reconfigure exists and rcp::gpio::apply_gpio_write repurposes it to replace the pin-direction mask, but that is a GPIO-local state field, not the endpoint's functional configuration block in the register map, and no other endpoint type honours 111b at all.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SVREP-001",
+      "title": "Table 34 RC Server trigger signals [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.1.3 Table 34 defines the trigger signals the RC Server endpoint itself issues: PTP time synchronisation established (0) and PTP time synchronisation lost (1), both conditional on the implementation supporting PTP, with signal 2 left to be defined. cpp-RCP models no server-level trigger signals: rcp::endpoint::TriggerRegistry is only ever instantiated per device-facing endpoint, and neither rcp/regmap.hpp nor rcp/tsn.hpp raises a signal on a time-synchronisation state change.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A"
+    },
+    {
+      "id": "REQ-SVREP-002",
+      "title": "Cyclic heartbeat with an empty PDU when the response queue is empty [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.1.1 requires that the RC Server support sending a cyclic heartbeat, achieved by configuring a response queue to transmit with a fixed periodicity, and states that when that queue would be empty at its transmit instant an empty PDU carrying only the NTSCF header and no ACF messages is sent instead. cpp-RCP's response-queue configuration (REQ-REGMAP-011) carries no periodicity, and no code path emits an ACF-less NTSCF PDU.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SVREP-003",
+      "title": "svr_root_client_index and the Table 33 server functional-configuration block [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.1.2 Table 33 defines the RC Server endpoint's own functional configuration: svr_ep_len, svr_ep_enable&clr (whose enable bit is fixed to 1 and read-only), svr_ep_options, svr_root_client_index, svr_lifecycle_state, svr_discovery_timeout (defaulting to 20000 microseconds) and svr_ep_status. svr_root_client_index is behavioral: it names the index in the request-stream configuration of the one stream still allowed to reach the whole register map in HW_CONFIGURED, with the value 0 meaning no stream holds root write access. cpp-RCP models the root client as an opaque client identity in rcp::regmap::Ep0 (REQ-REGMAP-003, REQ-REGMAP-004) rather than as an index into the request-stream configuration table, and none of Table 33's registers is addressable at its specified relative address.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SVREP-004",
+      "title": "Register-write payload shape and read-only-register write semantics [NOT IMPLEMENTED]",
+      "text": "NOT IMPLEMENTED: TC18 \u00a713.7.1.2 specifies the RC Server register-write payload as a 16-bit address, an optional CRC when safe mode is requested, and the data to be written, with the effective number of data bytes given by (acf_msg_length - 3) * 4 - pad; it further requires that evt[2:0] selects whether the data is set, OR-ed, AND-ed or XOR-ed into the target register, that a write to a read-only register has no effect and is confirmed normally (not rejected), and that a write to a write-prohibited register produces a response with err=1 carrying UNAUTHORIZED_ACCESS. cpp-RCP's rcp::regmap::Ep0 write path takes already-decoded values with no address/length payload codec, applies no evt[2:0] combining semantics, and has no read-only-register class that absorbs writes silently.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"

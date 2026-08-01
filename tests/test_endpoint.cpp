@@ -4,6 +4,7 @@
 // fusa:test REQ-ENDPOINT-004
 // fusa:test REQ-ENDPOINT-005
 // fusa:test REQ-ENDPOINT-006
+// fusa:test REQ-ENDPOINT-007
 
 // Tests for rcp/endpoint.hpp — the shared endpoint-registration and
 // request-dispatch scaffolding (ROADMAP.md milestone 47, "Basic Endpoint
@@ -13,6 +14,8 @@
 #include <rcp/endpoint.hpp>
 
 #include <limits>
+#include <set>
+#include <vector>
 
 using namespace rcp::endpoint;
 
@@ -144,4 +147,42 @@ TEST_CASE("EndpointErrc reports a non-empty message in its own category", "[endp
     auto ec = make_error_code(EndpointErrc::reserved_write_semantics);
     REQUIRE(ec.category() == endpoint_category());
     REQUIRE_FALSE(ec.message().empty());
+}
+
+// ── TC18 §13.2 Table 29 ep_type ids ──────────────────────────────────────────
+
+TEST_CASE("Every implemented endpoint-type id matches TC18 Table 29", "[endpoint][REQ-ENDPOINT-007]") {
+    // Table 29 assigns one id per endpoint type; these are the ones this
+    // codebase implements. Asserted as literals rather than by comparing the
+    // constants to each other, so a renumbering cannot pass vacuously.
+    REQUIRE(kEndpointTypeWakeup == 0x01);
+    REQUIRE(kEndpointTypeGpio   == 0x02);
+    REQUIRE(kEndpointTypeSpi    == 0x03);
+    REQUIRE(kEndpointTypeI2c    == 0x04);
+    REQUIRE(kEndpointTypeUart   == 0x05);
+    REQUIRE(kEndpointTypeLin    == 0x06);
+    REQUIRE(kEndpointTypePwmOut == 0x07);
+    REQUIRE(kEndpointTypePwmIn  == 0x08);
+    REQUIRE(kEndpointTypeAdc    == 0x09);
+    REQUIRE(kEndpointTypeCan    == 0x0B);
+    REQUIRE(kEndpointTypeIseled == 0x0C);
+    REQUIRE(kEndpointTypeMdio   == 0x0D);
+}
+
+TEST_CASE("Endpoint-type ids are pairwise distinct and skip Table 29's DAC id",
+          "[endpoint][REQ-ENDPOINT-007]") {
+    const std::vector<EndpointTypeId> ids{
+        kEndpointTypeWakeup, kEndpointTypeGpio,   kEndpointTypeSpi,    kEndpointTypeI2c,
+        kEndpointTypeUart,   kEndpointTypeLin,    kEndpointTypePwmOut, kEndpointTypePwmIn,
+        kEndpointTypeAdc,    kEndpointTypeCan,    kEndpointTypeIseled, kEndpointTypeMdio};
+
+    std::set<EndpointTypeId> unique(ids.begin(), ids.end());
+    REQUIRE(unique.size() == ids.size());
+
+    // 0x0A is Table 29's DAC endpoint type, which this codebase does not
+    // implement (REQ-ENDPOINT-008) — no other type may squat on that id.
+    REQUIRE(unique.count(0x0A) == 0);
+    // 0x00 is Table 29's Server type, which is EP0's register map rather than
+    // a device-facing endpoint type, so it must not appear here either.
+    REQUIRE(unique.count(0x00) == 0);
 }
