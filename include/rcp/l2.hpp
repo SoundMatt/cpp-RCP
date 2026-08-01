@@ -208,7 +208,13 @@ inline std::vector<uint8_t> encode_frame(const Frame& f) {
     if (f.use_tscf) {
         avtp::TscfHeader hdr;
         hdr.stream_id           = f.stream_id;
-        hdr.sequence_num        = f.sequence_num;
+        // avtp::TscfHeader::sequence_num is the real 8-bit wire field
+        // (avtp.hpp's own header comment: "sequence_num -- 8 bits, not
+        // 16"); Frame::sequence_num above is 16 bits wide to match
+        // rcp/udp.hpp::Frame's identical field, so this narrowing is
+        // intentional -- explicit cast needed for MSVC's /W4 (matches this
+        // codebase's existing narrowing-cast convention elsewhere).
+        hdr.sequence_num        = static_cast<uint8_t>(f.sequence_num);
         hdr.control_data_length = static_cast<uint16_t>(acf_msg.size());
         hdr.timestamp_valid     = f.timestamp_valid;
         hdr.avtp_timestamp      = f.avtp_timestamp;
@@ -216,7 +222,7 @@ inline std::vector<uint8_t> encode_frame(const Frame& f) {
     } else {
         avtp::NtscfHeader hdr;
         hdr.stream_id           = f.stream_id;
-        hdr.sequence_num        = f.sequence_num;
+        hdr.sequence_num        = static_cast<uint8_t>(f.sequence_num);
         hdr.control_data_length = static_cast<uint16_t>(acf_msg.size());
         out = avtp::encode_ntscf_header(hdr);
     }
@@ -287,7 +293,9 @@ inline std::vector<uint8_t> encode_multi_frame(const MultiFrame& f) {
     if (f.use_tscf) {
         avtp::TscfHeader hdr;
         hdr.stream_id           = f.stream_id;
-        hdr.sequence_num        = f.sequence_num;
+        // See encode_frame's identical cast above for why this narrowing
+        // is intentional and needs to be explicit for MSVC's /W4.
+        hdr.sequence_num        = static_cast<uint8_t>(f.sequence_num);
         hdr.control_data_length = static_cast<uint16_t>(acf_bytes.size());
         hdr.timestamp_valid     = f.timestamp_valid;
         hdr.avtp_timestamp      = f.avtp_timestamp;
@@ -295,7 +303,7 @@ inline std::vector<uint8_t> encode_multi_frame(const MultiFrame& f) {
     } else {
         avtp::NtscfHeader hdr;
         hdr.stream_id           = f.stream_id;
-        hdr.sequence_num        = f.sequence_num;
+        hdr.sequence_num        = static_cast<uint8_t>(f.sequence_num);
         hdr.control_data_length = static_cast<uint16_t>(acf_bytes.size());
         out = avtp::encode_ntscf_header(hdr);
     }
