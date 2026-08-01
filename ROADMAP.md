@@ -134,6 +134,8 @@ work, since every endpoint type's functional config block depends on it.
 | **Phase 16** | v2.18.0 | Certification refresh | HARA/TARA/FMEA/formal verification/audit pack regenerated against the new requirement set |
 | **Phase 16** | v2.19.0 | Wire format conformance fix pass | `avtp.hpp`/`acf.hpp` NTSCF/TSCF/ACF Message Info bit-packing re-derived from the specification's own header diagrams; `e2e.hpp` CRC coverage and numeric error-code mapping corrected to match |
 | **Phase 16** | v2.20.0 | TC18 conformance fix pass II | `acf_msg_length` actually computed; multiple-requests-in-one-frame (§12.9.1.1) supported; error responses carry a Table 27 error code; GPIO exact-length payload check; ISELED gains a real wire codec; PWM_IN rising/falling-edge triggers; `control_data_length` validated |
+| **Phase 16** | v2.21.0 | L2 (native Ethernet) transport + UDP Annex J conformance fix | New `l2.hpp` raw-Ethernet transport (EtherType 0x22F0); `udp.hpp` gains Annex J's 4-byte encapsulation sequence number and port 17221 default |
+| **Phase 16** | v2.22.0 | ACF_GBB `message_timestamp` wire-position fix | The 64-bit `message_timestamp` is spliced *between* the ACF Message Info header's two quadlets (octet 4), not appended after both (octet 8); `e2e.hpp` CRC coverage follows; wire-breaking for ACF_GBB only |
 | **Phase 16** | v3.0.0 | **TC18 RCP — General Availability** | First release where cpp-RCP *is* the OPEN Alliance TC18 Remote Control Protocol |
 
 ---
@@ -175,7 +177,9 @@ incrementally through v2.6.0 per the Phase 13 introduction above.
   (time-synchronous, client-only) AVTPDU headers (extraction §2.2)
 - Implement the two ACF message types RCP defines on top of IEEE 1722:
   ACF_ABB (`0x0E`, no timestamp field) and ACF_GBB (`0x0D`, 64-bit
-  `message_timestamp` field) (extraction §2.3)
+  `message_timestamp` field, spliced between the shared header's two
+  quadlets at octets 4..11 — corrected at milestone 66/v2.22.0)
+  (extraction §2.3)
 - Implement the shared `byte_message_info` header fields common to both
   message types: `acf_msg_type`, `acf_msg_length`, `pad`, `mtv`, `rsv`,
   `byte_bus_id`, `evt` (ack flag + 3-bit sub-opcode), `hs`, `cs`,
@@ -1567,11 +1571,12 @@ already predates milestones 44-61 (still documenting `rcp/firmware.hpp`
 and other since-deleted packages) and bringing it in line with the current
 architecture is a substantial, separately-scoped task this milestone's own
 text does not name. Milestone #63 (Wire Format Conformance Fix Pass,
-v2.19.0) is next, ahead of #66 (TC18 RCP General Availability, v3.0.0),
+v2.19.0) is next, ahead of #67 (TC18 RCP General Availability, v3.0.0),
 since it corrects a defect in the exact wire surface GA's own scope
 requires to be correct. (Milestone #64, TC18 Conformance Fix Pass II,
-v2.20.0, and milestone #65, L2 Transport + UDP Annex J Conformance Fix,
-v2.21.0, were added later in the same vein — see their own entries.)
+v2.20.0; milestone #65, L2 Transport + UDP Annex J Conformance Fix,
+v2.21.0; and milestone #66, ACF_GBB `message_timestamp` Wire-Position Fix,
+v2.22.0, were added later in the same vein — see their own entries.)
 
 ### Retired-model residue cleanup (2026-07-30, v2.19.0 — audit findings cpp-RCP-FS-01..05, cpp-RCP-05, cpp-RCP-07)
 
@@ -1744,9 +1749,11 @@ check/lint/trace and RELAY `conform --strict` were not run locally (the
   cross-checked against a second, independent presentation of the same
   header shapes elsewhere in the specification
 - `rcp/e2e.hpp`'s `coverage_buffer`/`compute_crc`/`verify_crc` gain a
-  `message_timestamp` parameter and include it, at the correct byte offset,
-  in an ACF_GBB message's CRC coverage — previously omitted entirely,
-  understating what the CRC actually protects for every GBB message
+  `message_timestamp` parameter and include it in an ACF_GBB message's CRC
+  coverage — previously omitted entirely, understating what the CRC
+  actually protects for every GBB message. (This milestone put it at the
+  offset the codec used at the time, which milestone 66/v2.22.0 later
+  found was itself wrong — see that milestone.)
 - `rcp/e2e.hpp`'s `E2eErrc::crc_error` gains a numeric-TC18-wire-error-code
   accessor (`POCI_FAILURE` = 12) for use when building an error response's
   `byte_msg_payload`, distinct from the enum's own internal
@@ -1768,8 +1775,11 @@ environment to interoperate-test against directly, so "full bit-for-bit
 wire conformance" is not claimed as an absolute fact here either — this
 milestone's own honest position is "high confidence, derivation-and-cross-
 check verified, not independently interop-tested," which is why GA
-(milestone #66) remains a distinct, later milestone rather than being
-folded into this one.
+(milestone #67) remains a distinct, later milestone rather than being
+folded into this one. (Milestone 66/v2.22.0 vindicated that caution: this
+milestone re-derived the shared header's *bit* packing correctly but never
+questioned the ACF_GBB message's *byte* geometry around it, which was
+wrong the whole time.)
 
 Both `AcfMessageInfo`'s and the NTSCF/TSCF headers' public field names are
 kept stable through this fix — only the bit positions/widths the codec
@@ -1977,7 +1987,116 @@ development (see this milestone's own pull request description for the
 byte-for-byte evidence), ahead of the dedicated CI job doing the same on
 every future change.
 
-### 66. TC18 RCP — General Availability (v3.0.0)
+### 66. ACF_GBB `message_timestamp` Wire-Position Fix (v2.22.0)
+
+A single-field byte-geometry defect, found by an independent audit of this
+repository, that made every ACF_GBB message this library has ever emitted
+unreadable by a conformant peer — and every ACF_GBB E2E CRC wrong.
+
+**The bug.** `encode_acf_gbb`/`decode_acf_gbb` placed the 64-bit
+`message_timestamp` *after* the complete 8-byte shared Message Info header,
+at wire octet 8. The specification splices it *between* that header's two
+4-byte quadlets, at wire octet 4 — which pushes the entire second quadlet
+(`evt`/`rsv`/`hs`/`cs`/`transaction_num`/`op`/`rsp`/`err`/`ms`/
+`read_size_or_segment_num`) from octet 8 to octet 12, and the payload from
+octet 16 to… also octet 16, which is exactly why nothing caught it: the
+message length was right, the round trip through this codec's own encoder
+and decoder was right, and only the four bytes in the middle were in the
+wrong place. Milestones 63 (v2.19.0) and 64 (v2.20.0) both audited this
+header and both missed it, because both were looking at *bit* packing
+within the header and at `acf_msg_length`, not at where the header's halves
+sit relative to the timestamp. ACF_ABB is entirely unaffected — it has no
+timestamp field, so its two quadlets have always been correctly contiguous
+at octets 0..7.
+
+**How the correct layout was verified**, independently and before any code
+changed, against the specification PDF itself (figures rendered at high DPI
+and read directly, since these layouts exist only as figures, not as
+extractable text) rather than against this codec's prior behavior:
+
+1. The **single-ACF_GBB CRC-coverage figure** draws one "Byte Message Info"
+   group of three rows in this order: the
+   `acf_msg_type`/`acf_msg_length`/`pad`/`mtv`/`rsv`/`byte_bus_id` quadlet;
+   then `message_time_stamp` as a double-height 64-bit block (rendered the
+   same way that figure's own 64-bit `stream_id` is); then the
+   `evt`/`rsv`/`hs`/`cs`/`transaction_num`/`op`/`rsp`/`err`/`ms`/
+   `read_size` quadlet.
+2. **Arithmetic cross-check from that same figure**, which states
+   `acf_msg_length` = 0x07 for its example: 7 quadlets = 28 octets =
+   quadlet0(4) + timestamp(8) + quadlet1(4) + payload(7 real + 1 pad = 8) +
+   CRC32(4). No other placement of a 64-bit timestamp closes that sum. Its
+   ACF_ABB counterpart states 0x05 = 20 octets = 4 + 4 + (6 real + 2 pad =
+   8) + 4, confirming the same two quadlets with no timestamp between them.
+3. The **compound-request figure** (an ACF_GBB with `mtv=0`) shows the
+   fields that repurpose the timestamp slot — `request_type`/
+   `cmp_start_state`/`cmp_next_state`/`cmp_sequencer`, then
+   `cmp_exec_delay`/`cmp_repetitions` — occupying exactly the two quadlets
+   *between* the same two header quadlets, i.e. octets 4..11. That figure
+   also independently confirms `rcp/request.hpp`'s existing byte assignment
+   *within* the slot (opcode in the slot's first octet, seven parameter
+   octets after it), which needed no change.
+4. The **response-field table** lists the Message Info fields in wire order
+   and places `message_timestamp` ("Present in ACF_GBB, omitted in
+   ACF_ABB") between `byte_bus_id` — quadlet 0's last field — and `evt` —
+   quadlet 1's first field.
+
+**What changed.**
+
+- `rcp/acf.hpp` gains `kAcfHeaderQuadletLen`/`kAcfGbbTimestampOffset`/
+  `kAcfGbbSecondQuadletOffset`/`kAcfGbbMessageInfoLen` and a pair of
+  ACF_GBB-specific Message Info codecs,
+  `encode_acf_gbb_message_info`/`decode_acf_gbb_message_info`, which own the
+  spliced byte geometry while delegating all bit-level packing to the
+  existing `encode_acf_message_info`/`decode_acf_message_info` — so the bit
+  layout keeps exactly one definition in the file.
+  `encode_acf_gbb`/`decode_acf_gbb` and the multi-message walker
+  `decode_acf_messages` all route through them.
+- `rcp/e2e.hpp`'s `coverage_buffer` serialized the ACF_GBB Message Info
+  block by hand (header, then timestamp) and so inherited the same wrong
+  order; it now calls `acf::encode_acf_gbb_message_info`, making the
+  CRC-covered bytes byte-identical to the transmitted bytes *by
+  construction* rather than by two code paths agreeing. A new assertion in
+  `tests/test_e2e.cpp` pins that identity directly.
+- `rcp/udp.hpp`, `rcp/l2.hpp` and `rcp/record.hpp` needed no change: all
+  three already route every ACF_GBB message through
+  `encode_acf_gbb`/`decode_acf_gbb` and hardcode no offsets of their own.
+  `rcp/request.hpp` likewise needed no change — it deals only in the
+  *value* of the 64-bit slot, never its wire position — and gained only a
+  comment recording that, plus the figure-3 confirmation above.
+- `.fusa-reqs.json`: `REQ-WIRE-005` and `REQ-E2E-002` now state the exact
+  octet positions rather than leaving the geometry implicit (`REQ-E2E-002`
+  also still said "the 10-byte ACF shared header", stale since milestone 63
+  made it 8), and `REQ-SEQ-001` records where the repurposed slot actually
+  sits.
+
+**Tests.** `tests/test_acf.cpp`'s and `tests/test_e2e.cpp`'s ACF_GBB
+byte-sequence expectations had *pinned the bug as correct* — the classic
+tautology failure of testing an encoder against its own output. They are
+rewritten around literal octet positions derived from the figures above,
+with the derivation written out in the test file itself, plus a new
+full-message conformance vector reproducing the CRC-coverage figure's own
+message (`acf_msg_type` 0x0D, `acf_msg_length` 0x07, `pad` 1, 7+1-octet
+payload, CRC32 trailer, 28 octets total) octet for octet, asserted in both
+directions (encode to literal, and decode *from* the literal back to
+fields, so the decoder is proven against spec-shaped bytes rather than its
+own encoder's bytes). The new expectations were mutation-checked: reverting
+the two offset constants to their pre-fix values fails 4 test cases across
+the two suites, confirming the tests actually discriminate between the two
+layouts. Full local build and `ctest` (53/53 suites) pass.
+
+**Breaking change.** This changes bytes on the wire for every ACF_GBB
+message, so a v2.22.0 peer cannot interoperate with a pre-v2.22.0 peer for
+GBB traffic (ACF_ABB traffic is unaffected). No public API signature,
+struct field, or function name changes — `AcfMessageInfo` and the
+`encode_acf_gbb`/`decode_acf_gbb` signatures are identical — so this is a
+source-compatible, wire-incompatible release. Given the pre-v2.22.0 bytes
+were never conformant with anything but themselves, correcting them is
+strictly a move toward the interoperability GA requires; `kVersion`/
+`CMakeLists.txt` bump 2.21.0 → 2.22.0 accordingly, following the same minor
+-bump convention milestones 63/64/65 used for their own wire-format
+corrections during this pre-GA v2.x line.
+
+### 67. TC18 RCP — General Availability (v3.0.0)
 
 - First release where cpp-RCP's `RCP` conforms to the OPEN Alliance TC18
   Remote Control Protocol Specification at the wire level: an RC Client

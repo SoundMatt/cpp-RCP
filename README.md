@@ -22,7 +22,7 @@ reference.
 | Header | Description |
 |---|---|
 | `<rcp/avtp.hpp>` | TC18 wire codec, framing half — IEEE 1722 AVTPDU (NTSCF/TSCF) header framing, `StreamId`, `ByteBusId` |
-| `<rcp/acf.hpp>` | TC18 wire codec, message half — ACF_ABB/ACF_GBB message format, `AcfMessageInfo` |
+| `<rcp/acf.hpp>` | TC18 wire codec, message half — ACF_ABB/ACF_GBB message format, `AcfMessageInfo`. ACF_ABB Message Info is 8 contiguous octets; ACF_GBB is 16, with the 64-bit `message_timestamp` spliced between the header's two quadlets (octets 0–3 quadlet 0, 4–11 timestamp, 12–15 quadlet 1) — corrected in v2.22.0, see ROADMAP.md milestone 66 |
 | `<rcp/regmap.hpp>` | RC Server register-map model (generic + functional config, EP0) |
 | `<rcp/lifecycle.hpp>` | RC Server lifecycle state machine |
 | `<rcp/request.hpp>` | Conditional-request taxonomy (compound, triggered, timed, chained, ...) and sequencers |

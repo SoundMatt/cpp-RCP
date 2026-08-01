@@ -267,7 +267,7 @@
     {
       "id": "REQ-E2E-002",
       "title": "CRC coverage buffer layout",
-      "text": "rcp::e2e::coverage_buffer shall assemble, in order, the 8-byte big-endian stream_id, the 4-byte big-endian avtp_timestamp (zero-filled when std::nullopt is passed, the NTSCF stand-in), the 10-byte ACF shared header, and the payload; rcp::e2e::compute_crc shall compute the CRC over exactly that buffer.",
+      "text": "rcp::e2e::coverage_buffer shall assemble, in order, the 8-byte big-endian stream_id, the 4-byte big-endian avtp_timestamp (zero-filled when std::nullopt is passed, the NTSCF stand-in), the ACF Message Info block in its exact on-the-wire byte order, and the payload; rcp::e2e::compute_crc shall compute the CRC over exactly that buffer. The Message Info block is the contiguous 8-byte shared header for ACF_ABB, and for ACF_GBB is the 16-byte form in which the 64-bit big-endian message_timestamp is spliced between the shared header's two quadlets (block octets 0-3 = quadlet 0, octets 4-11 = message_timestamp, octets 12-15 = quadlet 1), so that the CRC covers byte-for-byte the octets rcp::acf::encode_acf_gbb transmits.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -1923,7 +1923,7 @@
     {
       "id": "REQ-WIRE-005",
       "title": "ACF_GBB carries a 64-bit message_timestamp",
-      "text": "encode_acf_gbb/decode_acf_gbb shall round-trip the shared ACF header, a 64-bit message_timestamp value, and the payload unchanged for an ACF_GBB (0x0D) message.",
+      "text": "encode_acf_gbb/decode_acf_gbb shall round-trip the shared ACF header, a 64-bit message_timestamp value, and the payload unchanged for an ACF_GBB (0x0D) message, and shall place them on the wire in the order octets 0-3 = shared-header quadlet 0 (acf_msg_type/acf_msg_length/pad/mtv/rsv/byte_bus_id), octets 4-11 = message_timestamp big-endian, octets 12-15 = shared-header quadlet 1 (evt/rsv/hs/cs/transaction_num/op/rsp/err/ms/read_size_or_segment_num), octets 16 onwards = byte_msg_payload.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2002,8 +2002,8 @@
     },
     {
       "id": "REQ-WIRE-015",
-      "title": "RELAY spec §15.5 canonical ControlFlags/Message conversion",
-      "text": "rcp::acf::ControlFlags shall define FlagAck/FlagRead/FlagWrite/FlagResponse/FlagError/FlagMoreSegments at bit values 0x80/0x40/0x20/0x10/0x08/0x04 respectively, matching RELAY spec §15.5's Go definition exactly; rcp::acf::to_message/from_message shall convert between AcfMessageInfo and the RELAY spec §15.5 canonical Message shape, preserving byte_bus_id, transaction_num, read_size_or_segment, and body, and carrying message_timestamp only for the ACF_GBB encoding.",
+      "title": "RELAY spec \u00a715.5 canonical ControlFlags/Message conversion",
+      "text": "rcp::acf::ControlFlags shall define FlagAck/FlagRead/FlagWrite/FlagResponse/FlagError/FlagMoreSegments at bit values 0x80/0x40/0x20/0x10/0x08/0x04 respectively, matching RELAY spec \u00a715.5's Go definition exactly; rcp::acf::to_message/from_message shall convert between AcfMessageInfo and the RELAY spec \u00a715.5 canonical Message shape, preserving byte_bus_id, transaction_num, read_size_or_segment, and body, and carrying message_timestamp only for the ACF_GBB encoding.",
       "standard": "relay",
       "level": "QM",
       "asil": "QM"
@@ -2611,7 +2611,7 @@
     {
       "id": "REQ-SEQ-001",
       "title": "message_timestamp-repurposing request_type decode/encode (mtv=0)",
-      "text": "rcp::request::decode_request_type shall return RequestErrc::timestamp_not_repurposed when mtv is true, shall return RequestErrc::unknown_request_type when the top byte of message_timestamp is not one of the 8 defined opcodes, and shall otherwise recover the opcode and the remaining 7 parameter bytes exactly as produced by encode_request_type for the same inputs; rcp::request::make_conditional_request shall always build an ACF_GBB AcfMessageInfo with mtv clear.",
+      "text": "rcp::request::decode_request_type shall return RequestErrc::timestamp_not_repurposed when mtv is true, shall return RequestErrc::unknown_request_type when the top byte of message_timestamp is not one of the 8 defined opcodes, and shall otherwise recover the opcode and the remaining 7 parameter bytes exactly as produced by encode_request_type for the same inputs; rcp::request::make_conditional_request shall always build an ACF_GBB AcfMessageInfo with mtv clear. The repurposed slot is the ACF_GBB message_timestamp slot at wire octets 4-11 (see REQ-WIRE-005), whose first octet carries the opcode.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2987,7 +2987,7 @@
     {
       "id": "REQ-L2-007",
       "title": "MultiFrame round-trips two ACF_ABB messages packed into one L2 frame",
-      "text": "rcp::l2::encode_l2_multi_frame/decode_l2_multi_frame shall round-trip two or more ACF_ABB/ACF_GBB messages packed into a single Ethernet frame's AVTPDU, per extraction §12.9.1.1's multiple-requests-in-one-frame requirement, the same as rcp::udp::MultiFrame's equivalent guarantee.",
+      "text": "rcp::l2::encode_l2_multi_frame/decode_l2_multi_frame shall round-trip two or more ACF_ABB/ACF_GBB messages packed into a single Ethernet frame's AVTPDU, per extraction \u00a712.9.1.1's multiple-requests-in-one-frame requirement, the same as rcp::udp::MultiFrame's equivalent guarantee.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"

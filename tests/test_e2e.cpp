@@ -104,33 +104,64 @@ TEST_CASE("coverage_buffer layout is stream_id + avtp_timestamp + ACF header + p
     REQUIRE(buf[buf.size() - 1] == 3);
 }
 
-// cpp-RCP-N2-03: for ACF_GBB, the wire carries an 8-byte message_timestamp
-// between the Message Info header and the payload (see rcp/acf.hpp's
-// encode_acf_gbb) — coverage_buffer must include those exact 8 bytes at
-// that exact offset, not omit them.
-TEST_CASE("coverage_buffer inserts the 8-byte message_timestamp between the ACF header and "
-          "payload for ACF_GBB",
+// cpp-RCP-N2-03 / cpp-RCP-GBB-TS: for ACF_GBB the wire carries an 8-byte
+// message_timestamp *inside* the Message Info block, spliced between its
+// two header quadlets — the specification's single-ACF_GBB CRC-coverage
+// figure draws one "Byte Message Info" group whose rows are, in order,
+// the acf_msg_type/acf_msg_length/pad/mtv/rsv/byte_bus_id quadlet, then
+// message_time_stamp as a double-height 64-bit block, then the
+// evt/rsv/hs/cs/transaction_num/op/rsp/err/ms/read_size quadlet. The CRC
+// coverage buffer must reproduce that byte order exactly, because the CRC
+// has to cover the bytes actually transmitted. Before v2.22.0 this test
+// pinned the wrong layout (timestamp after *both* quadlets, at coverage
+// offset 20); the offsets below are derived from the figure, not from
+// coverage_buffer's own output.
+TEST_CASE("coverage_buffer splices the 8-byte message_timestamp between the ACF header's two "
+          "quadlets for ACF_GBB",
           "[e2e][REQ-E2E-002]") {
     auto sid = make_stream_id(0x02, 0x0003);
     AcfMessageInfo info;
     info.acf_msg_type = rcp::acf::kAcfMsgTypeGbb;
     info.byte_bus_id   = 9;
     info.mtv            = true;
+    info.transaction_num = 0x5A;
     std::vector<uint8_t> payload{0x11, 0x22};
     const uint64_t ts = 0x0102030405060708ULL;
+    // Set explicitly so coverage_buffer (which never auto-fills) and
+    // encode_acf_gbb (which auto-fills only a 0) serialize the same header.
+    info.acf_msg_length = rcp::acf::compute_acf_msg_length(rcp::acf::kAcfMsgTypeGbb, payload.size());
 
     auto buf = coverage_buffer(sid, uint32_t{0}, info, ts, payload);
-    REQUIRE(buf.size() == 8 + 4 + rcp::acf::kAcfCommonHeaderLen + rcp::acf::kAcfGbbTimestampLen +
-                              payload.size());
+    REQUIRE(buf.size() == 8 + 4 + 16 + payload.size()); // stream_id + avtp_ts + 16-byte GBB block
 
-    // The 8 message_timestamp bytes sit right after stream_id(8) +
-    // avtp_timestamp(4) + Message Info(8) = offset 20, big-endian.
-    const size_t ts_off = 8 + 4 + rcp::acf::kAcfCommonHeaderLen;
-    REQUIRE(buf[ts_off + 0] == 0x01);
-    REQUIRE(buf[ts_off + 7] == 0x08);
-    // Payload follows immediately after the timestamp, unchanged.
-    REQUIRE(buf[ts_off + 8]     == 0x11);
-    REQUIRE(buf[ts_off + 8 + 1] == 0x22);
+    // Fixed prefix: stream_id (8, big-endian) + avtp_timestamp (4).
+    // Message Info block therefore begins at coverage offset 12:
+    //   12..15  quadlet 0
+    //   16..23  message_timestamp, big-endian
+    //   24..27  quadlet 1
+    //   28..    payload
+    const size_t mi_off = 8 + 4;
+    // Quadlet 0: byte0 = (0x0D << 1) | 0 = 0x1A; byte2 has mtv (bit5) set
+    // and byte_bus_id's high bits clear = 0x20; byte3 = byte_bus_id & 0xFF.
+    REQUIRE(buf[mi_off + 0] == 0x1A);
+    REQUIRE(buf[mi_off + 2] == 0x20);
+    REQUIRE(buf[mi_off + 3] == 9);
+    // message_timestamp at block offset 4 (coverage offset 16), big-endian.
+    REQUIRE(buf[mi_off + 4]  == 0x01);
+    REQUIRE(buf[mi_off + 11] == 0x08);
+    // Quadlet 1 at block offset 12 (coverage offset 24): byte1 is
+    // transaction_num, which is the cheapest positive proof the second
+    // quadlet really moved from offset 4 to offset 12.
+    REQUIRE(buf[mi_off + 13] == 0x5A);
+    // Payload follows the complete 16-byte block, unchanged.
+    REQUIRE(buf[mi_off + 16] == 0x11);
+    REQUIRE(buf[mi_off + 17] == 0x22);
+
+    // The CRC-covered bytes must be byte-identical to the bytes
+    // encode_acf_gbb actually puts on the wire — otherwise a peer
+    // recomputing the CRC over the received frame can never match.
+    auto wire = rcp::acf::encode_acf_gbb(info, ts, payload);
+    REQUIRE(std::vector<uint8_t>(buf.begin() + static_cast<long>(mi_off), buf.end()) == wire);
 
     // An ACF_ABB message with the same nominal message_timestamp argument
     // must NOT grow by those 8 bytes — the type gates inclusion, not merely
@@ -254,7 +285,9 @@ TEST_CASE("acf_msg_length end-to-end matches the specification's own worked exam
         REQUIRE(info.acf_msg_length == 7); // 0x07
 
         auto frame = encode_acf_gbb(info, ts, payload);
-        REQUIRE(frame.size() == kAcfCommonHeaderLen + kAcfGbbTimestampLen + payload.size()); // 8+8+8=24
+        // 16-byte Message Info block (quadlet0 + 8-byte message_timestamp +
+        // quadlet1) + 8-byte payload = 24.
+        REQUIRE(frame.size() == rcp::acf::kAcfGbbMessageInfoLen + payload.size()); // 16+8=24
 
         auto sid = make_stream_id(0x03, 1);
         uint32_t crc = compute_crc(sid, std::nullopt, info, ts, payload);
@@ -263,7 +296,88 @@ TEST_CASE("acf_msg_length end-to-end matches the specification's own worked exam
 
         REQUIRE((frame[0] & 0x01) == 0);
         REQUIRE(frame[1] == 7);
+
+        // The timestamp occupies octets 4..11 of the message, not 8..15 —
+        // this is the arithmetic the 0x07 figure only closes with the
+        // timestamp inside the Message Info block (4 + 8 + 4 + 8 + 4 = 28).
+        REQUIRE(frame[4]  == 0x11); // message_timestamp MSB
+        REQUIRE(frame[11] == 0x88); // message_timestamp LSB
+        // Quadlet 1 begins at octet 12; with every field left at its
+        // default in this fixture, all four of its bytes are 0.
+        REQUIRE(frame[12] == 0x00);
+        REQUIRE(frame[15] == 0x00);
     }
+}
+
+// Full-message conformance vector reproducing the specification's own
+// single-ACF_GBB CRC-coverage figure field for field: acf_msg_type = 0x0D,
+// acf_msg_length = 0x07, pad = 1, a 7-real-byte payload padded to 8, and a
+// trailing CRC32 — 28 octets total. Every octet position below comes from
+// that figure's row structure (quadlet 0 || 64-bit message_time_stamp ||
+// quadlet 1 || byte_msg_payload || CRC32), not from this codec's output.
+TEST_CASE("ACF_GBB full-message layout matches the specification's CRC-coverage figure "
+          "octet for octet",
+          "[e2e][acf][REQ-WIRE-005][REQ-E2E-002]") {
+    using rcp::acf::AcfMessageInfo;
+
+    AcfMessageInfo info;
+    info.acf_msg_type   = rcp::acf::kAcfMsgTypeGbb;
+    info.acf_msg_length = 0x07; // the figure's own stated value
+    info.pad             = 1;    // the figure's own stated value
+    info.mtv             = true;
+    info.byte_bus_id     = 0x123;
+    info.transaction_num = 0x42;
+    info.op               = true;
+    info.read_size_or_segment_num = 0x0AB;
+
+    const uint64_t ts = 0xDEADBEEFCAFEF00DULL;
+    // 7 real payload octets + 1 pad octet, matching the figure's PL_Byte1..7
+    // plus one 0x00 (padding) cell.
+    const std::vector<uint8_t> payload{0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0x00};
+
+    // Octet-by-octet expectation, hand-derived:
+    //   [0]  = (0x0D << 1) | (0x07 >> 8)          = 0x1A
+    //   [1]  = 0x07 & 0xFF                        = 0x07
+    //   [2]  = (1 << 6) | (mtv << 5) | (0x123>>8) = 0x40|0x20|0x01 = 0x61
+    //   [3]  = 0x123 & 0xFF                       = 0x23
+    //   [4..11] = message_timestamp, big-endian
+    //   [12] = (evt=0 << 4) | (hs=0 << 1) | cs=0  = 0x00
+    //   [13] = transaction_num                    = 0x42
+    //   [14] = (op << 7) | (0x0AB >> 8)           = 0x80|0x00 = 0x80
+    //   [15] = 0x0AB & 0xFF                       = 0xAB
+    //   [16..23] = byte_msg_payload (7 real + 1 pad)
+    const std::vector<uint8_t> expected{
+        0x1A, 0x07, 0x61, 0x23,
+        0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xF0, 0x0D,
+        0x00, 0x42, 0x80, 0xAB,
+        0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0x00,
+    };
+
+    auto frame = rcp::acf::encode_acf_gbb(info, ts, payload);
+    REQUIRE(frame == expected);
+
+    // ...and with the CRC32 trailer the figure also shows, the frame is
+    // exactly acf_msg_length * 4 = 28 octets.
+    auto sid = make_stream_id(0x03, 0x0007);
+    append_crc(frame, compute_crc(sid, std::nullopt, info, ts, payload));
+    REQUIRE(frame.size() == static_cast<size_t>(info.acf_msg_length) * 4);
+    REQUIRE(frame.size() == 28);
+
+    // Round trip from the hand-written literal back to fields.
+    AcfMessageInfo decoded;
+    uint64_t decoded_ts = 0;
+    std::vector<uint8_t> decoded_payload;
+    REQUIRE_FALSE(rcp::acf::decode_acf_gbb(expected.data(), expected.size(), decoded, decoded_ts,
+                                            decoded_payload));
+    REQUIRE(decoded.acf_msg_length == 0x07);
+    REQUIRE(decoded.pad == 1);
+    REQUIRE(decoded.mtv == true);
+    REQUIRE(decoded.byte_bus_id == 0x123);
+    REQUIRE(decoded.transaction_num == 0x42);
+    REQUIRE(decoded.op == true);
+    REQUIRE(decoded.read_size_or_segment_num == 0x0AB);
+    REQUIRE(decoded_ts == ts);
+    REQUIRE(decoded_payload == payload);
 }
 
 // ── verify_crc / append_crc ────────────────────────────────────────────────────
