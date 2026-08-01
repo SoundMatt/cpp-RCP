@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include <sstream>
 #include <string>
 
@@ -76,29 +77,36 @@ avtp::StreamId make_stream_id(uint8_t mac_seed, uint16_t suffix) {
 
 #endif // RCP_L2_LINUX
 
+// iostream, not the C stdio print family: every diagnostic below is a
+// literal message, never runtime/user-controlled data in a format-string
+// position — but cpfusa's own CYBER018 rule flags any of those stdio
+// functions whenever their *first* argument isn't a literal, which for the
+// two-stream-argument member of that family is always the stream itself,
+// not the format text; a false positive against that member's real
+// argument order, filed upstream against cpp-FuSa. Using iostream
+// sidesteps the false positive by construction — there is no format-string
+// argument at all — rather than silencing the finding.
 #define CHECK(cond, msg)                                                     \
     do {                                                                     \
         if (!(cond)) {                                                       \
-            std::fprintf(stderr, "l2_veth_roundtrip: FAIL: %s (%s:%d)\n",    \
-                          msg, __FILE__, __LINE__);                          \
+            std::cerr << "l2_veth_roundtrip: FAIL: " << (msg) << " ("        \
+                       << __FILE__ << ":" << __LINE__ << ")\n";               \
             return 1;                                                        \
         }                                                                    \
     } while (0)
 
 int main(int argc, char** argv) {
 #if !defined(RCP_L2_LINUX)
-    std::fprintf(stderr,
-                  "l2_veth_roundtrip: this program requires the Linux "
-                  "rcp::l2::Server/Client implementation (RCP_L2_LINUX); "
-                  "rcp/l2.hpp's own header comment documents every other "
-                  "platform as a function_not_supported stub with nothing "
-                  "real to round-trip.\n");
+    std::cerr << "l2_veth_roundtrip: this program requires the Linux "
+                 "rcp::l2::Server/Client implementation (RCP_L2_LINUX); "
+                 "rcp/l2.hpp's own header comment documents every other "
+                 "platform as a function_not_supported stub with nothing "
+                 "real to round-trip.\n";
     return 1;
 #else
     if (argc != 4) {
-        std::fprintf(stderr,
-                      "usage: %s <server_ifname> <client_ifname> <server_mac>\n",
-                      argv[0]);
+        std::cerr << "usage: " << argv[0]
+                   << " <server_ifname> <client_ifname> <server_mac>\n";
         return 2;
     }
     const std::string server_ifname = argv[1];
