@@ -136,6 +136,7 @@ work, since every endpoint type's functional config block depends on it.
 | **Phase 16** | v2.20.0 | TC18 conformance fix pass II | `acf_msg_length` actually computed; multiple-requests-in-one-frame (§12.9.1.1) supported; error responses carry a Table 27 error code; GPIO exact-length payload check; ISELED gains a real wire codec; PWM_IN rising/falling-edge triggers; `control_data_length` validated |
 | **Phase 16** | v2.21.0 | L2 (native Ethernet) transport + UDP Annex J conformance fix | New `l2.hpp` raw-Ethernet transport (EtherType 0x22F0); `udp.hpp` gains Annex J's 4-byte encapsulation sequence number and port 17221 default |
 | **Phase 16** | v2.22.0 | ACF_GBB `message_timestamp` wire-position fix | The 64-bit `message_timestamp` is spliced *between* the ACF Message Info header's two quadlets (octet 4), not appended after both (octet 8); `e2e.hpp` CRC coverage follows; wire-breaking for ACF_GBB only |
+| **Phase 16** | v2.23.0 | §13.1 config-block privilege separation + fault-injection use-after-free | `regmap::Ep0` generic config is root-client-only (owning an endpoint grants the *functional* block only); `faultinject::pick_rule` no longer hands `send()` a pointer to an erased vector element; ASan/UBSan CI job extended to `test_faultinject` |
 | **Phase 16** | v3.0.0 | **TC18 RCP — General Availability** | First release where cpp-RCP *is* the OPEN Alliance TC18 Remote Control Protocol |
 
 ---
@@ -2096,7 +2097,93 @@ strictly a move toward the interoperability GA requires; `kVersion`/
 -bump convention milestones 63/64/65 used for their own wire-format
 corrections during this pre-GA v2.x line.
 
-### 67. TC18 RCP — General Availability (v3.0.0)
+### 67. §13.1 Config-Block Privilege Separation + Fault-Injection Use-After-Free (v2.23.0)
+
+Two unrelated defects, both found by an independent audit of this
+repository, both fixed together because both are critical and neither is
+large: one lets a non-root RC Client write register-map data the
+specification reserves to the ROOT_CLIENT, the other is a genuine
+use-after-free.
+
+**The access-control bug (cpp-RCP-D2).** §13.1 grants an RC Client other
+than the ROOT_CLIENT write access only to the *functional* config
+(`EP_FUNC_config`) of the endpoints allocated to it. §13.2 frames the
+counterpart block as the generic part of the endpoint register map, owned
+by the RC Server. `regmap::Ep0::check_write_access` collapsed that
+distinction: it applied one identical owner-based authorization test to
+both `ConfigBlock::Generic` and `ConfigBlock::Functional`, with only the
+*lock* branch — not the *authorization* branch — differing by block. So
+`write_generic_config` succeeded for any non-root client that merely owned
+the target endpoint.
+
+That is a privilege escalation, not a cosmetic conformance gap, because of
+what the generic block holds: `hw_pin_indices` (which physical pins the
+endpoint claims), `request_queue_size`/`response_queue_size`, and the
+per-endpoint `ep_req_crc_enable`/`ep_ack_crc_enable`/`ep_rsp_crc_enable`
+E2E-CRC toggles added at v2.6.0. A non-root client could therefore repoint
+an endpoint's hardware pin mapping or silently switch off a safety
+mechanism on an endpoint it happens to own — all data the specification
+puts under the RC Server's and root client's exclusive control.
+
+The fix is the asymmetry itself: authorization now depends on the targeted
+block, so generic-block writes require the root client and functional-block
+writes accept root-or-owner. `block` keeps defaulting to
+`ConfigBlock::Generic`, which is now the *stricter* of the two, so a call
+site that forgets to name a block fails closed. `write_functional_config`,
+`write_whole_map`, `check_read_access`, and the cpp-RCP-N2-01/N2-02 size
+invariants are untouched.
+
+The pre-existing test `tests/test_regmap.cpp` case "A non-root client may
+only write the endpoint config it owns" was asserting the bug as correct
+behavior — it wrote the *generic* block as a non-root owner and required
+success. It is split in two: the owner grant is retested against the
+functional block where it belongs, and a new case pins the generic block as
+root-only, checking both `write_generic_config` and `check_write_access`
+directly (including the default-argument path) and asserting the refused
+write left the config untouched. The generic-block lock test now claims the
+root client first, so the lock is still what refuses that write rather than
+the new authorization check masking it.
+
+**The use-after-free (cpp-RCP-D6).** `faultinject::Interceptor::pick_rule`
+returned a `Rule*` pointing into its own `std::vector<Rule>` and erased that
+very element before returning whenever the firing exhausted the rule's
+count. `send()` then dereferenced the erased element to read `type` and
+`latency`. Erasing a trailing element does not reallocate on common
+libstdc++/libc++ builds, so unsanitized builds read stale-but-mapped memory
+and appeared to work — which is exactly why the existing count-expiry test
+never failed. The same pointer was also a data race: `rules_` is guarded
+only for the duration of `pick_rule()`, so `send()` read into the container
+with no lock held while another thread could be reallocating it via
+`add_rule`, emptying it via `clear_rules`, or expiring rules of its own —
+in a class that holds a `std::mutex` precisely because it is meant to be
+used concurrently.
+
+`pick_rule` now returns `std::optional<Rule>`, copied out while the lock is
+still held and before any erase; `send()` acts on that value. `Rule` is four
+scalars, so the copy is free.
+
+**Verification.** Full local build and `ctest` (53/53 suites) pass. Both
+fixes were mutation-checked. For cpp-RCP-D6 that check is the more
+interesting one: building `tests/test_faultinject` with
+`-fsanitize=address,undefined` against the *pre-fix* header aborts with
+`AddressSanitizer: container-overflow` at the `switch (rule->type)` in
+`send()` — reached from the pre-existing "Slow rule adds latency" case, from
+the new single-shot expiry case, and from a worker thread in the new
+concurrent case — and passes clean against the fixed header. That the
+existing suite already reproduced the abort, yet CI stayed green, is itself
+the finding: the ASan/UBSan job was scoped to `test_regmap` alone. It now
+builds and runs `test_faultinject` under the same flags, so this class of
+defect is gated rather than merely fixed once.
+
+**Compatibility.** No wire-format change and no public API signature change.
+`pick_rule` is private, so its return type is an implementation detail. The
+one observable behavior change is the intended one: a non-root client's
+generic-config write that previously succeeded now returns
+`UNAUTHORIZED_ACCESS`. `kVersion`/`CMakeLists.txt` bump 2.22.0 → 2.23.0,
+the same minor-bump convention milestones 63/64/65/66 used during this
+pre-GA v2.x line.
+
+### 68. TC18 RCP — General Availability (v3.0.0)
 
 - First release where cpp-RCP's `RCP` conforms to the OPEN Alliance TC18
   Remote Control Protocol Specification at the wire level: an RC Client

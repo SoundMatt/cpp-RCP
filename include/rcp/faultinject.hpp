@@ -34,6 +34,7 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -82,7 +83,11 @@ public:
                           acf::AcfMessageInfo& out, std::vector<uint8_t>& out_payload) {
         if (closed_.load(std::memory_order_acquire)) return ErrClosed;
 
-        Rule* rule = pick_rule();
+        // pick_rule returns a *value* copy rather than a pointer into
+        // rules_: the element it describes may already have been erased by
+        // the time this function reads it, and rules_ is only mutex-guarded
+        // inside pick_rule() (cpp-RCP-D6 — see pick_rule below).
+        const std::optional<Rule> rule = pick_rule();
         if (!rule) return inner_(ctx, req, payload, out, out_payload);
 
         switch (rule->type) {
@@ -118,22 +123,44 @@ private:
     std::mutex mu_;
     std::vector<Rule> rules_;
 
-    // Returns the first active rule (or nullptr) and decrements its count.
-    Rule* pick_rule() {
+    // Returns a copy of the first active rule (or std::nullopt) after
+    // accounting for this firing against its count.
+    //
+    // The copy is not incidental (cpp-RCP-D6). This used to return `Rule*`
+    // pointing at the live vector element, which was wrong twice over:
+    //
+    //  1. Use-after-free. A rule whose count is exhausted by *this* firing is
+    //     erased here, and the pointer returned to send() then referred to an
+    //     erased element — send() dereferences it immediately (rule->type,
+    //     rule->latency). erase() of a trailing element does not reallocate
+    //     on common libstdc++/libc++ builds, so an unsanitized build usually
+    //     read stale-but-mapped memory and appeared to work; AddressSanitizer
+    //     reports it as a container-overflow.
+    //  2. Data race. rules_ is only guarded for the duration of this
+    //     function; the lock is released on return, so a pointer into rules_
+    //     was read by send() with no lock held while another thread could be
+    //     concurrently add_rule()ing (reallocating the buffer),
+    //     clear_rules()ing, or expiring rules of its own. This class holds a
+    //     std::mutex precisely because it is meant to be used concurrently.
+    //
+    // Copying the Rule out while the lock is still held closes both: the
+    // value send() acts on is its own, and it stays valid however rules_ is
+    // subsequently mutated. Rule is four scalars, so the copy is free.
+    std::optional<Rule> pick_rule() {
         std::lock_guard<std::mutex> lk(mu_);
         for (auto it = rules_.begin(); it != rules_.end(); ) {
             if (it->count == 0) {
                 it = rules_.erase(it);
                 continue;
             }
-            Rule* r = &(*it);
-            ++r->fired;
-            if (r->count > 0 && r->fired >= r->count) {
-                it = rules_.erase(it);
+            ++it->fired;
+            const Rule picked = *it; // copy out before any possible erase
+            if (picked.count > 0 && picked.fired >= picked.count) {
+                rules_.erase(it);
             }
-            return r;
+            return picked;
         }
-        return nullptr;
+        return std::nullopt;
     }
 };
 

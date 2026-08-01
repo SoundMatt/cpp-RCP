@@ -209,14 +209,23 @@ jobs:
           find tests -name '*.cpp' | \
             xargs clang-tidy -p build --warnings-as-errors='*'
 
-  # ── ASan/UBSan (regmap) ───────────────────────────────────────────────────────
-  # Scoped to test_regmap: rcp/regmap.hpp's Ep0 does raw std::vector<T>
-  # indexing across per-endpoint access-control checks and the config
-  # vectors those checks gate (cpp-RCP-N2-01/N2-02, issues #64/#65), so this
-  # is the header most worth sanitizer coverage on a fast, gating job. This
-  # is additive to build-and-test above, not a replacement for it.
+  # ── ASan/UBSan (regmap + faultinject) ─────────────────────────────────────────
+  # Scoped to the two suites whose headers hand out raw references into
+  # containers they also mutate:
+  #
+  #  - rcp/regmap.hpp's Ep0 does raw std::vector<T> indexing across
+  #    per-endpoint access-control checks and the config vectors those checks
+  #    gate (cpp-RCP-N2-01/N2-02, issues #64/#65).
+  #  - rcp/faultinject.hpp's Interceptor picks a rule out of a std::vector it
+  #    erases from in the same pass (cpp-RCP-D6). That defect was live and
+  #    the *existing* test_faultinject cases already reproduced it under
+  #    ASan — this job simply wasn't running them, which is why CI stayed
+  #    green. Keeping it in scope makes that class of defect gated rather
+  #    than fixed once.
+  #
+  # This is additive to build-and-test above, not a replacement for it.
   asan-ubsan-regmap:
-    name: ASan/UBSan (regmap)
+    name: ASan/UBSan (regmap + faultinject)
     runs-on: ubuntu-22.04
     needs: build-and-test
     steps:
@@ -239,14 +248,20 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
             -G Ninja
 
-      - name: Build test_regmap
-        run: cmake --build build-asan --target test_regmap --parallel
+      - name: Build test_regmap and test_faultinject
+        run: cmake --build build-asan --target test_regmap test_faultinject --parallel
 
       - name: Run test_regmap under ASan/UBSan
         env:
           ASAN_OPTIONS: halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1,print_stacktrace=1
         run: ./build-asan/tests/test_regmap
+
+      - name: Run test_faultinject under ASan/UBSan
+        env:
+          ASAN_OPTIONS: halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1,print_stacktrace=1
+        run: ./build-asan/tests/test_faultinject
 
   # ── LCOV coverage ─────────────────────────────────────────────────────────────
   coverage:
