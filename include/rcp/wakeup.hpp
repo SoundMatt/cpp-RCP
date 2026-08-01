@@ -3,6 +3,9 @@
 // fusa:req REQ-WAKEUP-003
 // fusa:req REQ-WAKEUP-004
 // fusa:req REQ-WAKEUP-005
+// fusa:req REQ-WAKEUP-006
+// fusa:req REQ-WAKEUP-007
+// fusa:req REQ-WAKEUP-008
 
 // Wakeup control endpoint (ep_type 0x01) — the OPEN Alliance TC18 Remote
 // Control Protocol Specification v0.5.1_RC's fixed SleepCMD request,
@@ -138,6 +141,22 @@ private:
     bool            wake_handshake_pending_  = false;
     WakeSourceMask  wake_source_pins_        = 0;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-WAKEUP-006: TC18 §13.7.2.2 Table 36/Table 37's per-pin wake-source
+//     behavior selector is not modeled; sources are a flat pin mask.
+//   REQ-WAKEUP-007: TC18 §13.7.2.3's drain-then-acknowledge sleep sequence
+//     is not implemented; handle_sleep_cmd below sleeps immediately.
+//   REQ-WAKEUP-008: TC18 §13.7.2.2's write-one-to-clear wup_status is not
+//     modeled; clear_wake_source_pins clears the whole mask.
 
 } // namespace wakeup
 } // namespace rcp

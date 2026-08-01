@@ -6,6 +6,11 @@
 // fusa:req REQ-GPIO-006
 // fusa:req REQ-GPIO-007
 // fusa:req REQ-GPIO-008
+// fusa:req REQ-GPIO-009
+// fusa:req REQ-GPIO-010
+// fusa:req REQ-GPIO-011
+// fusa:req REQ-GPIO-012
+// fusa:req REQ-GPIO-013
 
 // GPIO endpoint (ep_type 0x02) — the OPEN Alliance TC18 Remote Control
 // Protocol Specification v0.5.1_RC's simplest endpoint type: a 32-pin
@@ -227,6 +232,27 @@ private:
     GpioState                 state_;
     endpoint::TriggerRegistry triggers_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-GPIO-010: TC18 §13.7.4.3 requires a write to a pin configured as an
+//     input to be ignored for that pin; apply_gpio_write above applies the
+//     operand to every bit regardless of GpioState::directions.
+//   REQ-GPIO-011: TC18 §13.7.4.1 Table 40's trigger-id numbering (0 =
+//     request execution done, then three contiguous ids per pin) is not what
+//     gpio_signal_id produces, and request-execution-done has no id at all.
+//   REQ-GPIO-012: TC18 §13.7.4.1's fewer-than-32-pin rule and Table 41's
+//     gpio_io_max register are not modeled; kMaxPins is fixed at 32.
+//   REQ-GPIO-013: TC18 §13.7.4.2 Table 41's functional-configuration
+//     registers and §13.7.4.3's debounce-dependent response timing are not
+//     modeled.
 
 } // namespace gpio
 } // namespace rcp

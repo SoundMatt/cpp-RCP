@@ -4,6 +4,7 @@
 // fusa:test REQ-WIRE-007
 // fusa:test REQ-WIRE-011
 // fusa:test REQ-WIRE-013
+// fusa:test REQ-WIRE-016
 
 // Tests for rcp/avtp.hpp — the TC18 AVTPDU header-framing half of the wire
 // codec (ROADMAP.md milestone 44, "Wire Format Core", v2.0.0; split from a
@@ -224,4 +225,33 @@ TEST_CASE("decode_tscf_header rejects a buffer shorter than the fixed header", "
     TscfHeader tscf_out;
     std::vector<uint8_t> too_short(kTscfHeaderLen - 1, 0);
     REQUIRE(decode_tscf_header(too_short.data(), too_short.size(), tscf_out));
+}
+
+// ── TC18 §13.3: an uncertain timestamp is handled as a certain one ──────────
+
+TEST_CASE("decode_tscf_header ignores the tu (timestamp-uncertain) bit", "[avtp][REQ-WIRE-016]") {
+    // §13.3 requires a request whose TSCF header marks the timestamp uncertain
+    // (tu=1) to be executed as if tu were 0. The decoder must therefore produce
+    // the same header for two buffers differing only in that bit — otherwise a
+    // downstream path could branch on it.
+    TscfHeader h;
+    h.stream_id           = StreamId::from_u64(0x0102030405060708ull);
+    h.sequence_num        = 0x42;
+    h.control_data_length = 0x0020;
+    h.timestamp_valid     = true;
+    h.avtp_timestamp      = 0xCAFEF00D;
+
+    auto certain = encode_tscf_header(h);
+    auto uncertain = certain;
+    uncertain[3] |= 0x01; // tu
+
+    TscfHeader out_certain, out_uncertain;
+    REQUIRE_FALSE(decode_tscf_header(certain.data(), certain.size(), out_certain));
+    REQUIRE_FALSE(decode_tscf_header(uncertain.data(), uncertain.size(), out_uncertain));
+
+    REQUIRE(out_uncertain.timestamp_valid     == out_certain.timestamp_valid);
+    REQUIRE(out_uncertain.avtp_timestamp      == out_certain.avtp_timestamp);
+    REQUIRE(out_uncertain.sequence_num        == out_certain.sequence_num);
+    REQUIRE(out_uncertain.control_data_length == out_certain.control_data_length);
+    REQUIRE(out_uncertain.stream_id.to_u64()  == out_certain.stream_id.to_u64());
 }

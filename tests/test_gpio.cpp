@@ -6,6 +6,7 @@
 // fusa:test REQ-GPIO-006
 // fusa:test REQ-GPIO-007
 // fusa:test REQ-GPIO-008
+// fusa:test REQ-GPIO-009
 
 // Tests for rcp/gpio.hpp — the GPIO endpoint type (ROADMAP.md milestone 47,
 // "Basic Endpoint Types I — GPIO & SPI", v2.3.0).
@@ -210,4 +211,35 @@ TEST_CASE("GpioErrc reports a non-empty message in its own category", "[gpio][RE
     auto ec = make_error_code(GpioErrc::pin_index_out_of_range);
     REQUIRE(ec.category() == gpio_category());
     REQUIRE_FALSE(ec.message().empty());
+}
+
+// ── TC18 §13.7.4.3: OR with an all-zero payload is a no-op ───────────────────
+
+TEST_CASE("An OR write with an all-zero payload leaves every pin unchanged",
+          "[gpio][REQ-GPIO-009]") {
+    // §13.7.4.3 states this case explicitly ("results in no change"), so it is
+    // asserted directly rather than left implied by the OR combinator's algebra.
+    for (PinMask before : {PinMask{0x00000000}, PinMask{0xFFFFFFFF}, PinMask{0xA5A50F0F}}) {
+        GpioState state;
+        state.values = before;
+        REQUIRE_FALSE(apply_gpio_write(WriteSemantics::Or, state, 0x00000000));
+        REQUIRE(state.values == before);
+    }
+}
+
+TEST_CASE("A zero-payload OR write through GpioEndpoint fires no trigger signals",
+          "[gpio][REQ-GPIO-009]") {
+    // "No change" must also mean no edge: an all-zero OR cannot flip a pin, so
+    // no change/rising/falling signal may be delivered.
+    GpioEndpoint ep;
+    ep.triggers().enable(gpio_signal_id(1, GpioEdge::Change));
+    ep.triggers().enable(gpio_signal_id(1, GpioEdge::Rising));
+
+    PinMask out = 0;
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Replace, 0x00000002, out));
+    (void)ep.triggers().drain(); // consume the edges the setup write produced
+
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Or, 0x00000000, out));
+    REQUIRE(out == 0x00000002);
+    REQUIRE(ep.triggers().drain().empty());
 }

@@ -3,6 +3,7 @@
 // fusa:test REQ-I2C-003
 // fusa:test REQ-I2C-004
 // fusa:test REQ-I2C-005
+// fusa:test REQ-I2C-006
 
 // Tests for rcp/i2c.hpp — the I2C endpoint type (ROADMAP.md milestone 48,
 // "Basic Endpoint Types II — I2C, UART, ADC, PWM_OUT, PWM_IN", v2.4.0).
@@ -97,4 +98,25 @@ TEST_CASE("I2cErrc reports a non-empty message in its own category", "[i2c][REQ-
     auto ec = make_error_code(I2cErrc::nack);
     REQUIRE(ec.category() == i2c_category());
     REQUIRE_FALSE(ec.message().empty());
+}
+
+// ── TC18 §13.7.7.4 Table 47: the trigger ids are an implementation choice ────
+
+TEST_CASE("I2C trigger signal ids occupy Table 47's first two slots and leave id 2 free",
+          "[i2c][REQ-I2C-006]") {
+    // Table 47 lists three I2C trigger-signal ids (0, 1, 2) with the Event
+    // column left blank for all three in v0.5.1_RC, so the specification
+    // assigns no meaning to any of them. TransferComplete/Nack are therefore
+    // this implementation's own assignment; pin the ids so the deviation stays
+    // visible if the table is ever filled in.
+    REQUIRE(i2c_signal_id(I2cSignal::TransferComplete) == 0);
+    REQUIRE(i2c_signal_id(I2cSignal::Nack)             == 1);
+
+    // Id 2 is not assigned by this implementation: an armed listener on it must
+    // never be notified by a transfer, acknowledged or not.
+    I2cEndpoint ep;
+    ep.triggers().enable(2);
+    REQUIRE_FALSE(ep.transfer({0xA0}, {0x01}));
+    REQUIRE(ep.transfer({0xA0}, {0x01}, /*acked=*/false));
+    REQUIRE(ep.triggers().drain().empty());
 }

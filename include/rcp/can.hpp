@@ -5,6 +5,9 @@
 // fusa:req REQ-CANEP-005
 // fusa:req REQ-CANEP-006
 // fusa:req REQ-CANEP-007
+// fusa:req REQ-CANEP-008
+// fusa:req REQ-CANEP-009
+// fusa:req REQ-CANEP-010
 
 // CAN controller endpoint (ep_type 0x0B) — the OPEN Alliance TC18 Remote
 // Control Protocol Specification v0.5.1_RC's Classical/FD/XL frame-format
@@ -282,6 +285,24 @@ private:
     CanDataFrame                      last_tx_;
     CanDataFrame                      last_rx_;
 };
+
+
+// ── TC18 conformance gaps (not implemented) ──────────────────────────────────
+// Normative surface of the OPEN Alliance TC18 Remote Control Protocol
+// Specification this header does NOT implement. Each item is carried as a
+// requirement entry in .fusa-reqs.json marked [NOT IMPLEMENTED], so the
+// requirements corpus stays an honest map of the specification rather than
+// only of what is built. Do not delete an item without either implementing
+// the behavior or updating the matching requirement entry.
+//
+//   REQ-CANEP-008: TC18 §13.7.11.3 Table 54's FrameFormat encoding
+//     (CBFF/CEFF/FBFF/FEFF/XL-classic/XL-new = 0..5, 6-7 reserved) is not
+//     what FrameFormat below defines.
+//   REQ-CANEP-009: TC18 §13.7.11.3's right-alignment rule for 11-bit
+//     identifiers has no expression here; this header has no CAN request
+//     wire codec.
+//   REQ-CANEP-010: TC18 §13.7.11.2 Table 53's register-map placement of the
+//     CAN functional configuration is not modeled.
 
 } // namespace can
 } // namespace rcp
