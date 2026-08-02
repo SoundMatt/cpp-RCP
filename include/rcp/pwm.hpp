@@ -34,23 +34,29 @@
 // unchanged — only the two fields' width and the addition of an explicit
 // wire codec are new.
 //
-// PWM_OUT write-semantics fix (issue #70, cpp-RCP-01, second half): this
-// header previously layered rcp/gpio.hpp's/rcp/endpoint.hpp's generic
-// 8-way evt[2:0] bitmask/saturating-write combinator
-// (rcp::endpoint::apply_bitmask_write) onto PWM_OUT's period/active pair.
-// The specification's own PWM_OUT request-handling section describes only
-// one write behavior: a request supplies both values and they take effect
-// directly (a request with PWM_Period of 0 stops generation; the whole
-// point of Add/Or/Xor-style combination — bitwise OR/AND/XOR or saturating
-// add/subtract against the *previous* period/active values — is never
-// described for this endpoint type, and does not obviously make sense for
-// a period/duty-cycle pair the way it does for GPIO's independent pin
-// bits). PwmOutEndpoint::handle_write below therefore no longer calls
-// apply_bitmask_write at all: WriteSemantics::Replace applies the request
-// directly, and every other semantics (Or/And/Xor/Add/Subtract/Reserved/
-// Reconfigure) is rejected via the same
-// EndpointErrc::non_combinable_write_semantics sentinel Reconfigure already
-// used, without reusing apply_bitmask_write's combinator logic itself.
+// PWM_OUT write-semantics correction (issue #104, cpp-RCP-14): issue #70
+// had narrowed PwmOutEndpoint::handle_write to WriteSemantics::Replace only,
+// on the reasoning that the PWM_OUT-specific request-handling section
+// (§13.7.5.3) describes only one write behavior. That reasoning missed that
+// §13.7.5.3 doesn't need to redescribe write semantics at all: §13.5 Table
+// 30 ("EP specific usage of evt-field") is the governing table for
+// evt[2:0]'s meaning across every endpoint type, and its GPIO/PWM_OUT row
+// explicitly assigns PWM_OUT the *same* eight write semantics as GPIO —
+// including Add/Subtract, whose own worked examples in that row name
+// PWM_out's duty cycle directly ("this can be used to increase/decrease the
+// duty cycle of PWM_out"). rcp::endpoint::saturating_add/saturating_subtract
+// (below, in endpoint.hpp) were built templated on the caller's unsigned
+// width specifically so GPIO's 32-bit pin mask and PWM_OUT's narrower
+// period/duration fields could share one implementation — v2.4.0's own
+// roadmap note this file's header used to cite — which issue #70 then
+// contradicted without updating. PwmOutEndpoint::handle_write below now
+// applies every non-Reconfigure write semantics via
+// rcp::endpoint::apply_bitmask_write, per field (period and
+// active_duration independently, each saturating within its own uint16_t
+// range per Table 30's saturation note). Reconfigure remains rejected: this
+// endpoint type has no EP_func addressed-write path implemented yet (a
+// separate, larger gap common to every endpoint but one in this codebase,
+// not specific to PWM_OUT's write-semantics bug this fixes).
 //
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
@@ -137,22 +143,55 @@ inline std::error_code make_error_code(PwmErrc e) noexcept {
     return {static_cast<int>(e), pwm_category()};
 }
 
+// apply_write_field is PWM_OUT's own field-width combinator: it mirrors
+// rcp::endpoint::apply_bitmask_write's case set exactly, but instantiates
+// saturating_add/saturating_subtract at uint16_t rather than uint32_t —
+// apply_bitmask_write itself is hardcoded to uint32_t (see its own
+// declaration in endpoint.hpp), so calling it directly against a uint16_t
+// field and narrowing the uint32_t result back down would compute the
+// Add/Subtract saturation bound at the wrong width (saturating at
+// 0xFFFFFFFF, then truncating — silently wrapping instead of the 0xFFFF
+// saturation Table 30's own note requires for a 16-bit field).
+inline std::error_code apply_write_field(endpoint::WriteSemantics op, uint16_t current,
+                                          uint16_t operand, uint16_t& out) noexcept {
+    switch (op) {
+    case endpoint::WriteSemantics::Replace:  out = operand;                                                 return {};
+    case endpoint::WriteSemantics::Or:       out = static_cast<uint16_t>(current | operand);                return {};
+    case endpoint::WriteSemantics::And:      out = static_cast<uint16_t>(current & operand);                return {};
+    case endpoint::WriteSemantics::Xor:      out = static_cast<uint16_t>(current ^ operand);                return {};
+    case endpoint::WriteSemantics::Add:      out = endpoint::saturating_add<uint16_t>(current, operand);      return {};
+    case endpoint::WriteSemantics::Subtract: out = endpoint::saturating_subtract<uint16_t>(current, operand); return {};
+    case endpoint::WriteSemantics::Reserved:
+        return endpoint::make_error_code(endpoint::EndpointErrc::reserved_write_semantics);
+    case endpoint::WriteSemantics::Reconfigure:
+    default:
+        return endpoint::make_error_code(endpoint::EndpointErrc::non_combinable_write_semantics);
+    }
+}
+
 // ── PwmOutEndpoint (ep_type 0x07) ────────────────────────────────────────────
-// handle_write applies WriteSemantics::Replace directly (the only write
-// behavior the spec's PWM_OUT request-handling section describes) and
-// rejects every other write semantics as non-combinable — see the header
-// comment above for why this no longer reuses
-// rcp::endpoint::apply_bitmask_write's generic bitmask/saturating-write
-// combinator the way rcp/gpio.hpp does.
+// handle_write applies every write semantics Table 30's GPIO/PWM_OUT row
+// defines — Replace/Or/And/Xor/Add/Subtract — via apply_write_field above,
+// independently against `period` and `active_duration` (each its own
+// uint16_t, so each combines and saturates within its own 16-bit range, per
+// Table 30's saturation note). Reconfigure is rejected: PWM_OUT has no
+// EP_func addressed-write path in this codebase yet (see the header comment
+// above), so there is nothing for it to target.
 class PwmOutEndpoint {
 public:
     std::error_code handle_write(endpoint::WriteSemantics op, PwmValue operand,
                                   PwmValue& out_value) noexcept {
-        if (op != endpoint::WriteSemantics::Replace) {
-            return endpoint::make_error_code(endpoint::EndpointErrc::non_combinable_write_semantics);
-        }
-        state_    = operand;
-        out_value = state_;
+        uint16_t new_period = 0;
+        auto ec = apply_write_field(op, state_.period, operand.period, new_period);
+        if (ec) return ec;
+
+        uint16_t new_active = 0;
+        ec = apply_write_field(op, state_.active_duration, operand.active_duration, new_active);
+        if (ec) return ec;
+
+        state_.period          = new_period;
+        state_.active_duration = new_active;
+        out_value               = state_;
         return {};
     }
 

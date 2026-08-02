@@ -257,9 +257,24 @@ TEST_CASE("capi: rcp_send against a real rcp::mock::Server GPIO endpoint", "[cap
     REQUIRE(rcp_ctrl_init(0, rcp::mock::kGpioByteBusId, mock_server_request_fn, &srv,
                           buf, sizeof(buf), &ctrl) == RCP_OK);
 
+    uint8_t out[8] = {};
+
+    // Pin 0 must be configured as output before a write to it can take
+    // effect (REQ-GPIO-009) — every pin defaults to input.
+    uint8_t reconfig_payload[4] = {0x00, 0x00, 0x00, 0x01};
+    rcp_request_t reconfig_req{};
+    reconfig_req.info.byte_bus_id = rcp::mock::kGpioByteBusId;
+    reconfig_req.info.op          = 1; // write
+    reconfig_req.info.evt_op      = 7; // WriteSemantics::Reconfigure
+    reconfig_req.payload           = reconfig_payload;
+    reconfig_req.payload_len        = sizeof(reconfig_payload);
+    rcp_response_t reconfig_resp{};
+    reconfig_resp.payload     = out;
+    reconfig_resp.payload_cap = sizeof(out);
+    REQUIRE(rcp_send(ctrl, &reconfig_req, &reconfig_resp, 0) == RCP_OK);
+
     // Write pins 0x00000001 (big-endian 4-byte GPIO payload), then read back.
     uint8_t write_payload[4] = {0x00, 0x00, 0x00, 0x01};
-    uint8_t out[8] = {};
 
     rcp_request_t req{};
     req.info.byte_bus_id = rcp::mock::kGpioByteBusId;

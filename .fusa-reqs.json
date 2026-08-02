@@ -2369,6 +2369,15 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-GPIO-009",
+      "title": "A write to a pin configured as input leaves that pin's value unchanged",
+      "text": "rcp::gpio::apply_gpio_write shall, for every non-Reconfigure write semantics, commit the write combinator's result to GpioState::values only for bit positions where GpioState::directions selects output, and shall leave GpioState::values unchanged at every bit position where directions selects input, regardless of what the request's operand or combinator result specify for that position.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§13.7.4.3 (\"A write request to an input pin is ignored for this input pin\")"
+    },
+    {
       "id": "REQ-SPI-001",
       "title": "SPI channel selection via evt[2:0]",
       "text": "rcp::spi::kMaxChannels shall be 6; rcp::spi::channel_of shall accept evt[2:0] values 0-5 as channel selectors (masking its input to the low 3 bits first) and return SpiErrc::channel_out_of_range for 6 and 7.",
@@ -2563,18 +2572,20 @@
     {
       "id": "REQ-PWM-002",
       "title": "PWM_OUT write semantics: Replace applies directly",
-      "text": "rcp::pwm::PwmOutEndpoint::handle_write shall apply WriteSemantics::Replace by directly assigning `period` and `active_duration` from the request, matching the single write behavior the OPEN Alliance TC18 Remote Control Protocol Specification's PWM_OUT request-handling section describes.",
+      "text": "rcp::pwm::PwmOutEndpoint::handle_write shall apply WriteSemantics::Replace by directly assigning `period` and `active_duration` from the request, matching one of the eight write semantics the OPEN Alliance TC18 Remote Control Protocol Specification's §13.5 Table 30 GPIO/PWM_OUT row defines.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 30 (GPIO/PWM_OUT row, evt[2:0]=000b)"
     },
     {
       "id": "REQ-PWM-003",
-      "title": "PWM_OUT write semantics: Or/And/Xor/Add/Subtract rejected as non-combinable",
-      "text": "rcp::pwm::PwmOutEndpoint::handle_write shall return rcp::endpoint::EndpointErrc::non_combinable_write_semantics without modifying its state for WriteSemantics::Or, ::And, ::Xor, ::Add, and ::Subtract, since the specification's PWM_OUT request-handling section defines no bitmask/saturating-write combination against the endpoint's previous period/active values.",
+      "title": "PWM_OUT write semantics: Or/And/Xor/Add/Subtract combine against the previous state, per field",
+      "text": "rcp::pwm::PwmOutEndpoint::handle_write shall apply WriteSemantics::Or/::And/::Xor/::Add/::Subtract independently against `period` and `active_duration`, each within its own uint16_t range (Add/Subtract saturating at 0x0000/0xFFFF rather than wrapping, per §13.5 Table 30's saturation note and independently of GPIO's own 32-bit saturation bound for the same write semantics).",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 30 (GPIO/PWM_OUT row, evt[2:0]=001b-011b,101b-110b), TC18.txt L3694-3714"
     },
     {
       "id": "REQ-PWM-004",
@@ -2594,11 +2605,12 @@
     },
     {
       "id": "REQ-PWM-006",
-      "title": "PWM_IN mid-pulse trigger signal",
-      "text": "rcp::pwm::PwmInEndpoint::record_measurement shall notify the MidPulse trigger signal on every call, observable via drain() only when MidPulse was armed via triggers().enable().",
+      "title": "PWM_IN rising/falling edge trigger signals (Table 44)",
+      "text": "rcp::pwm::PwmInEndpoint::record_measurement shall notify both the RisingEdge and FallingEdge trigger signals on every call (one full input-capture cycle spans both edges); record_edge shall notify exactly the one signal it is given, without the other, matching TC18 Table 44's two independent trigger outputs rather than an invented single combined signal.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.5.1 Table 44 (pwmi trigger outputs)"
     },
     {
       "id": "REQ-PWM-007",
