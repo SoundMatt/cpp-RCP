@@ -2386,6 +2386,36 @@ previous (incorrect) behavior — BREAKING. `rcp/pwm.hpp`/`rcp/gpio.hpp`
 are the only files touched; every other endpoint header, `rcp/endpoint.hpp`
 itself, and the shared AVTPDU/ACF framing are unmodified.
 
+### SHOULD/MAY extraction + references pass (v2.25.0)
+
+Mirroring c-RCP's own SHOULD/MAY audit (its ROADMAP milestone 116):
+grepped the full TC18 spec text for every SHOULD (12) and MAY (44)
+occurrence, excluded 6 legal-boilerplate hits, and individually
+classified the remaining 51. Six already-implemented optional
+capabilities got a real `tc18` citation added to their existing
+requirement entry (`REQ-E2E-011`, `REQ-PWR-001`, `REQ-LIFECYCLE-001`,
+`REQ-SPI-001`, `REQ-ADC-002`, `REQ-L2-007`); the non-testable lines are
+recorded with individual citations in new
+`docs/TC18-NON-NORMATIVE-CLAUSES.md`.
+
+This pass also surfaced four MAY-described capabilities this repo does
+not appear to distinctly implement or track yet, honestly flagged rather
+than papered over with a citation: presentation-time-too-far/gPTP
+admission for Timed requests (§11.2.2.5 — `request.hpp` has no
+`presentation_time`/gPTP-domain logic at all), the EP_USED bit (§13.2 —
+no `ep_used` concept found anywhere), Triggered requests' own field-level
+encode/decode (§11.2.2.3 Table 8 — the opcode/priority classification
+exists in `request.hpp` but no distinct requirement cluster the way
+Compound/CompoundWait have one), and the integrated-PHY-via-MDIO
+deployment case (§13.7.13.1 — `mdio.hpp` doesn't discuss it the way
+c-RCP's `ep_mdio.h` does, though it may already work fine by the same
+reasoning). Each is recorded in `docs/TC18-NON-NORMATIVE-CLAUSES.md`
+marked ⚠ for its own follow-up investigation.
+
+No code behavior changed this pass. A fuller MUST-clause citation
+backfill (this repo had only 4/376 requirements citing TC18 before this
+session's work) remains separate, larger, future work.
+
 ---
 ### Appendix A — Legacy Roadmap (v0.1.0–v1.11, superseded)
 ---
