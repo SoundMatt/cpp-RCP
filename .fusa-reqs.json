@@ -342,7 +342,8 @@
       "text": "rcp::e2e::endpoint_in_configured_safe_state shall return the caller-supplied force_high_impedance_asserted flag unchanged when RequestStreamConfig::rx_safety_measure is RxSafetyMeasure::ForceHighImpedance, and shall return whether rx_safestate_sequencer's current SequencerTable value equals rx_safe_sequencer_state (false if the index is out of range) when rx_safety_measure is RxSafetyMeasure::RunSafeSequencer.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.7.7 (\"a safe state may be enforced. The safe state to enter can be chosen via the Safety_Measure parameter\"), TC18.txt L2935"
     },
     {
       "id": "REQ-E2E-012",
@@ -502,7 +503,8 @@
       "text": "rcp::powerstate::PowerMode shall define exactly four modes (Normal, StandBy, Sleep, Unpowered), and a freshly constructed PowerManager shall report Normal as its initial mode() value.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.4 (\"The RC Server may support different power modes\"), TC18.txt L2268"
     },
     {
       "id": "REQ-PWR-002",
@@ -2014,7 +2016,8 @@
       "text": "rcp::lifecycle::ServerState shall encode HwUnconfigured as 0x00, HwConfigured as 0x55, and RcpConfigured as 0xAA, and a freshly constructed ServerLifecycle shall report HwUnconfigured as its initial state.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.3 (\"The three lifecycle states the device may be in are...\"), TC18.txt L2063"
     },
     {
       "id": "REQ-LIFECYCLE-002",
@@ -2383,7 +2386,8 @@
       "text": "rcp::spi::kMaxChannels shall be 6; rcp::spi::channel_of shall accept evt[2:0] values 0-5 as channel selectors (masking its input to the low 3 bits first) and return SpiErrc::channel_out_of_range for 6 and 7.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.3.1 (\"the SPI endpoint may support up to 6 pre-configurable sets of SPI configurations\"), TC18.txt L4192"
     },
     {
       "id": "REQ-SPI-002",
@@ -2527,7 +2531,8 @@
       "text": "rcp::adc::AdcEndpoint::request_reading shall average adc_avg_intervals_per_request raw samples per averaged-interval value (level 1), shall combine adc_combine_avg_values such averaged-interval values into the reported result (level 2), and shall return AdcErrc::invalid_averaging_config when either configuration field is 0.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.9.2 (\"an implementation may decide to fix\" the samples-per-interval field read-only; this implementation instead makes it writable, the more general of the two spec-permitted choices), TC18.txt L5040"
     },
     {
       "id": "REQ-ADC-003",
@@ -3002,7 +3007,8 @@
       "text": "rcp::l2::encode_l2_multi_frame/decode_l2_multi_frame shall round-trip two or more ACF_ABB/ACF_GBB messages packed into a single Ethernet frame's AVTPDU, per extraction \u00a712.9.1.1's multiple-requests-in-one-frame requirement, the same as rcp::udp::MultiFrame's equivalent guarantee.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "\u00a712.9.1.1 (\"An RCP frame may include multiple ACF-types (requests)\"), TC18.txt L3220"
     },
     {
       "id": "REQ-L2-008",
