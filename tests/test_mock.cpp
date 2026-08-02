@@ -126,6 +126,16 @@ TEST_CASE("GPIO write applies evt[2:0] semantics and read reflects the new state
     mock::Server server;
     REQUIRE_FALSE(server.advance_to_rcp_configured());
 
+    // Pins 0-3 must be configured as output before a write to them can take
+    // effect (REQ-GPIO-009) — every pin defaults to input.
+    auto reconfig_req = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                          static_cast<uint8_t>(WriteSemantics::Reconfigure));
+    auto reconfig_payload = gpio::encode_gpio_payload(0x0000'000F);
+    acf::AcfMessageInfo reconfig_resp;
+    std::vector<uint8_t> reconfig_resp_payload;
+    REQUIRE_FALSE(
+        server.dispatch(0, reconfig_req, reconfig_payload, reconfig_resp, reconfig_resp_payload));
+
     auto write_req = standard_request(mock::kGpioByteBusId, /*write=*/true,
                                        static_cast<uint8_t>(WriteSemantics::Or));
     auto payload = gpio::encode_gpio_payload(0x0000'000F);

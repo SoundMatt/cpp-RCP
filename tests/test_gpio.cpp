@@ -6,6 +6,7 @@
 // fusa:test REQ-GPIO-006
 // fusa:test REQ-GPIO-007
 // fusa:test REQ-GPIO-008
+// fusa:test REQ-GPIO-009
 
 // Tests for rcp/gpio.hpp — the GPIO endpoint type (ROADMAP.md milestone 47,
 // "Basic Endpoint Types I — GPIO & SPI", v2.3.0).
@@ -54,7 +55,8 @@ TEST_CASE("decode_gpio_payload rejects an over-long buffer (spec requires exactl
 
 TEST_CASE("apply_gpio_write applies Replace/Or/And/Xor to state.values", "[gpio][REQ-GPIO-002]") {
     GpioState state;
-    state.values = 0x0000FFFF;
+    state.directions = 0xFFFFFFFF; // every pin output, so masking is a no-op here
+    state.values      = 0x0000FFFF;
 
     REQUIRE_FALSE(apply_gpio_write(WriteSemantics::Or, state, 0xFFFF0000));
     REQUIRE(state.values == 0xFFFFFFFF);
@@ -73,7 +75,8 @@ TEST_CASE("apply_gpio_write applies Replace/Or/And/Xor to state.values", "[gpio]
 
 TEST_CASE("apply_gpio_write applies saturating Add/Subtract to state.values", "[gpio][REQ-GPIO-003]") {
     GpioState state;
-    state.values = 0xFFFFFFF0;
+    state.directions = 0xFFFFFFFF; // every pin output, so masking is a no-op here
+    state.values      = 0xFFFFFFF0;
 
     REQUIRE_FALSE(apply_gpio_write(WriteSemantics::Add, state, 0x20));
     REQUIRE(state.values == 0xFFFFFFFF); // saturates, does not wrap past max
@@ -102,6 +105,48 @@ TEST_CASE("apply_gpio_write's Reconfigure replaces state.directions, not state.v
     REQUIRE_FALSE(apply_gpio_write(WriteSemantics::Reconfigure, state, 0x0000FFFF));
     REQUIRE(state.directions == 0x0000FFFF);
     REQUIRE(state.values == 0xAAAAAAAA); // unaffected by a Reconfigure write
+}
+
+// ── Write masking against input-configured pins (TC18 §13.7.4.3) ────────────
+
+TEST_CASE("apply_gpio_write's Replace does not modify input-configured pins",
+          "[gpio][REQ-GPIO-009]") {
+    GpioState state;
+    state.directions = 0x0000000F; // pins 0-3 output, pins 4-31 input
+    state.values     = 0xABCD0005; // pin 4 (input) currently reads 1
+
+    REQUIRE_FALSE(apply_gpio_write(WriteSemantics::Replace, state, 0xFFFFFFF0));
+    // Output pins 0-3 take the request's bits (0x0); every input pin (4-31)
+    // keeps its prior value (0xABCD0000) untouched, including bit 4.
+    REQUIRE(state.values == 0xABCD0000);
+}
+
+TEST_CASE("apply_gpio_write's Or/And/Xor only affect output-configured pins",
+          "[gpio][REQ-GPIO-009]") {
+    GpioState state;
+    state.directions = 0x000000FF; // pins 0-7 output, rest input
+    state.values     = 0x00000F0F; // output byte = 0x0F, input bits = 0x000000_0
+
+    REQUIRE_FALSE(apply_gpio_write(WriteSemantics::Or, state, 0xFFFFFFF0));
+    // Combinator computes 0x0FFF (0x0F0F | 0xFFF0) but only the low 8 bits
+    // (output) may actually change; bits 8-31 (input) stay exactly as before.
+    REQUIRE(state.values == 0x00000FFF);
+
+    state.values = 0x0000FFFF; // output byte = 0xFF, input bits = 0x0000FF00
+    REQUIRE_FALSE(apply_gpio_write(WriteSemantics::And, state, 0x00000000));
+    REQUIRE(state.values == 0x0000FF00); // output byte actually cleared, input untouched
+}
+
+TEST_CASE("apply_gpio_write's Add/Subtract saturation still respects input masking",
+          "[gpio][REQ-GPIO-009]") {
+    GpioState state;
+    state.directions = 0x0000FFFF; // low 16 bits output, high 16 bits input
+    state.values     = 0xBEEF0000;
+
+    REQUIRE_FALSE(apply_gpio_write(WriteSemantics::Add, state, 0xFFFFFFFF));
+    // The 32-bit saturating add itself saturates to 0xFFFFFFFF, but masking
+    // still confines the committed change to the output half.
+    REQUIRE(state.values == 0xBEEFFFFF);
 }
 
 // ── Per-pin change/rising/falling trigger signals ────────────────────────────
@@ -185,7 +230,11 @@ TEST_CASE("GpioEndpoint::handle_write updates state and fires triggers in one ca
     ep.triggers().enable(gpio_signal_id(0, GpioEdge::Change));
     ep.triggers().enable(gpio_signal_id(0, GpioEdge::Rising));
 
+    // Pin 0 must be configured as output before a write to it can take
+    // effect (REQ-GPIO-009) — GpioState defaults every pin to input.
     PinMask out_value = 0;
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Reconfigure, /*operand=*/0x1, out_value));
+
     auto ec = ep.handle_write(WriteSemantics::Or, /*operand=*/0x1, out_value);
     REQUIRE_FALSE(ec);
     REQUIRE(out_value == 0x1);

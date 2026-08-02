@@ -2334,6 +2334,58 @@ None of these four are wire-format changes to any *other* endpoint type or
 to the shared AVTPDU/ACF framing; `rcp/endpoint.hpp`,
 `rcp/regmap.hpp`, and every other endpoint header are unmodified.
 
+### Post-hoc write-semantics fix pass (v2.24.0, issues #104, #105; BREAKING)
+
+A requirements-extraction pass flagged three items for follow-up: PWM_OUT's
+write semantics, GPIO's input-pin write handling, and CAN's evt/format
+usage. Investigating each against the OPEN Alliance TC18 Remote Control
+Protocol Specification directly:
+
+- `rcp/pwm.hpp` (issue #104): the "post-hoc wire-format fix pass" above
+  (issue #70) had narrowed `PwmOutEndpoint::handle_write` to
+  `WriteSemantics::Replace` only, reasoning that PWM_OUT's own
+  request-handling section (§13.7.5.3) describes no combination against
+  the endpoint's previous state. That reasoning missed that §13.7.5.3
+  doesn't need to redescribe write semantics: §13.5 Table 30 ("EP specific
+  usage of evt-field") is the table that governs evt[2:0] across every
+  endpoint type, and its GPIO/PWM_OUT row explicitly assigns PWM_OUT the
+  *same* eight write semantics as GPIO — including Add/Subtract, whose own
+  worked examples in that row name PWM_out's duty cycle directly. This is
+  a real regression, not a design choice: `rcp/endpoint.hpp`'s own
+  `saturating_add`/`saturating_subtract` were built templated on the
+  caller's unsigned width specifically so GPIO's 32-bit pin mask and
+  PWM_OUT's narrower period/duration fields could share one
+  implementation, per the v2.4.0 roadmap note issue #70's fix
+  contradicted without updating. `handle_write` now applies every
+  semantics via a dedicated 16-bit-width combinator (not
+  `apply_bitmask_write` directly — that function is hardcoded to
+  `uint32_t`, and calling it against a `uint16_t` field then narrowing the
+  result would saturate at the wrong width, silently wrapping instead of
+  clamping at 0xFFFF), independently per field.
+- `rcp/gpio.hpp` (issue #105): TC18 §13.7.4.3 states that a write request
+  to a pin currently configured as an input is ignored for that pin —
+  inputs are driven externally. `apply_gpio_write` never consulted
+  `GpioState::directions` before this fix: every write semantics,
+  including a bare Replace, overwrote every addressed bit regardless of
+  its configured direction, so a request could silently corrupt an input
+  pin's externally-driven value. The write combinator's result is now
+  committed only for bit positions where `directions` selects output,
+  preserving `values` unchanged wherever `directions` selects input.
+- CAN format: investigated and found to have no live code path. This
+  module (`rcp/can.hpp`) is validation-only — identifier range checks,
+  frame-format payload ceilings, XL acceptance filtering — with no
+  ACF-level wire encode/decode for CAN requests/responses anywhere in this
+  codebase. The `.fusa-reqs.json` entries for CAN accurately describe this
+  validation-only scope; there is no evt[2:0]-carries-format defect to fix
+  because there is no wire codec to have it. A full CAN ACF wire codec is
+  a separate, much larger feature gap than a bug fix and is out of scope
+  here — left as a known gap, not silently resolved.
+
+Both real fixes are behavior changes for any caller relying on the
+previous (incorrect) behavior — BREAKING. `rcp/pwm.hpp`/`rcp/gpio.hpp`
+are the only files touched; every other endpoint header, `rcp/endpoint.hpp`
+itself, and the shared AVTPDU/ACF framing are unmodified.
+
 ---
 ### Appendix A — Legacy Roadmap (v0.1.0–v1.11, superseded)
 ---

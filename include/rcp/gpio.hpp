@@ -6,6 +6,7 @@
 // fusa:req REQ-GPIO-006
 // fusa:req REQ-GPIO-007
 // fusa:req REQ-GPIO-008
+// fusa:req REQ-GPIO-009
 
 // GPIO endpoint (ep_type 0x02) — the OPEN Alliance TC18 Remote Control
 // Protocol Specification v0.5.1_RC's simplest endpoint type: a 32-pin
@@ -94,6 +95,17 @@ inline std::error_code make_error_code(GpioErrc e) noexcept {
 // Reconfigure by treating `operand` as the *new pin-direction mask*
 // (replacing, not combining, `state.directions`) rather than a value
 // combined with the pin-level state (extraction §5.3, §4.5 Group C).
+//
+// Input-pin write masking (issue #105, cpp-RCP-15): TC18 §13.7.4.3 states
+// that a write request to a pin currently configured as an input is ignored
+// for that pin — inputs are driven externally, and a write combinator's
+// result for those bit positions must not be committed to state.values.
+// This applied uniformly and without exception before this fix: every write
+// semantics (including a bare Replace) overwrote every addressed bit
+// regardless of state.directions, so a request could silently corrupt an
+// input pin's externally-driven value. The masking below commits the
+// combinator's result only for bits where directions == output (1),
+// preserving state.values unchanged wherever directions == input (0).
 inline std::error_code apply_gpio_write(endpoint::WriteSemantics op, GpioState& state,
                                          PinMask operand) noexcept {
     if (op == endpoint::WriteSemantics::Reconfigure) {
@@ -103,7 +115,7 @@ inline std::error_code apply_gpio_write(endpoint::WriteSemantics op, GpioState& 
     uint32_t out = 0;
     auto ec = endpoint::apply_bitmask_write(op, state.values, operand, out);
     if (ec) return ec;
-    state.values = out;
+    state.values = (out & state.directions) | (state.values & ~state.directions);
     return {};
 }
 

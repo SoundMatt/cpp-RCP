@@ -77,10 +77,12 @@ TEST_CASE("decode_pwm_payload rejects an over-long buffer (spec requires exactly
 }
 
 // ── PWM_OUT: Replace applies directly, every other semantics is rejected ────
-// The spec's PWM_OUT request-handling section describes only direct
-// application of the request's period/active values — no GPIO-style
-// bitmask/saturating-write combination against the previous state — so
-// handle_write no longer reuses rcp::endpoint::apply_bitmask_write.
+// TC18 §13.5 Table 30's GPIO/PWM_OUT row assigns PWM_OUT the same eight
+// write semantics as GPIO — Replace/Or/And/Xor/Add/Subtract combine against
+// the endpoint's current period/active_duration, each independently and
+// each saturating within its own uint16_t range (Table 30's own saturation
+// note); Reserved is rejected; Reconfigure has no target in this codebase
+// yet (no EP_func addressed-write path exists for any endpoint but one).
 
 TEST_CASE("PwmOutEndpoint::handle_write applies Replace directly", "[pwm][REQ-PWM-002]") {
     PwmOutEndpoint ep;
@@ -107,21 +109,43 @@ TEST_CASE("PwmOutEndpoint::handle_write applying a period of 0 is a normal Repla
     REQUIRE(ep.read().period == 0);
 }
 
-TEST_CASE("PwmOutEndpoint::handle_write rejects Or/And/Xor/Add/Subtract as non-combinable",
+TEST_CASE("PwmOutEndpoint::handle_write applies Or/And/Xor against the previous state, per field",
           "[pwm][REQ-PWM-003]") {
     PwmOutEndpoint ep;
     PwmValue out;
-    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Replace, {10, 5}, out));
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Replace, {0x0F00, 0x00F0}, out));
 
-    for (auto op : {WriteSemantics::Or, WriteSemantics::And, WriteSemantics::Xor,
-                     WriteSemantics::Add, WriteSemantics::Subtract}) {
-        auto ec = ep.handle_write(op, {999, 999}, out);
-        REQUIRE(ec == rcp::endpoint::make_error_code(
-                           rcp::endpoint::EndpointErrc::non_combinable_write_semantics));
-        // State is unchanged by a rejected write.
-        REQUIRE(ep.read().period == 10);
-        REQUIRE(ep.read().active_duration == 5);
-    }
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Or, {0x00F0, 0x000F}, out));
+    REQUIRE(out.period == 0x0FF0);
+    REQUIRE(out.active_duration == 0x00FF);
+
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::And, {0x0FF0, 0x00FF}, out));
+    REQUIRE(out.period == 0x0FF0);
+    REQUIRE(out.active_duration == 0x00FF);
+
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Xor, {0x00F0, 0x00FF}, out));
+    REQUIRE(out.period == 0x0F00);
+    REQUIRE(out.active_duration == 0x0000);
+}
+
+TEST_CASE("PwmOutEndpoint::handle_write applies saturating Add/Subtract per field, "
+          "independently of GPIO's 32-bit saturation bound",
+          "[pwm][REQ-PWM-003]") {
+    PwmOutEndpoint ep;
+    PwmValue out;
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Replace, {0xFFF0, 10}, out));
+
+    // Saturates at 0xFFFF (16-bit), not 0xFFFFFFFF (32-bit, GPIO's own
+    // bound) — the exact bug class this test guards against: applying
+    // GPIO's 32-bit combinator directly to a 16-bit field and truncating
+    // the result would wrap instead of saturate.
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Add, {0x0020, 5}, out));
+    REQUIRE(out.period == 0xFFFF);
+    REQUIRE(out.active_duration == 15);
+
+    REQUIRE_FALSE(ep.handle_write(WriteSemantics::Subtract, {0xFFFF, 20}, out));
+    REQUIRE(out.period == 0);
+    REQUIRE(out.active_duration == 0); // saturates at 0, does not wrap
 }
 
 TEST_CASE("PwmOutEndpoint::handle_write rejects Reserved without changing state",
