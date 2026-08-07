@@ -1,0 +1,35 @@
+{
+  "_readme": "Staging area for TC18 MUST/SHOULD/MAY requirements confirmed missing from .fusa-reqs.json (no corresponding requirement AND no implementation found). NOT consumed by cpfusa — entries here have no //fusa:req/test trace and would fail the repo's 100% traceability CI gate if merged into .fusa-reqs.json directly (RELAY spec section 20.1.2). Migrate an entry into .fusa-reqs.json only once real impl + test tags exist for it. Same schema as .fusa-reqs.json (id/title/text/standard/level/asil/tc18) plus a 'gap' field describing what's missing. See RELAY's project_xrcp_relay_master_checklist memory record for the cross-repo tracking convention this file follows.",
+  "requirements": [
+    {
+      "id": "REQ-SEQ-013",
+      "title": "Compound requires cmp_exec_delay and cmp_repetitions, not just start/next state",
+      "text": "A Compound request's decoded parameters shall include cmp_exec_delay (delay time, in multiples of the endpoint's ep_delay_time, between the sequencer reaching cmp_start_state and the request's execution) and cmp_repetitions (the number of times the request shall be repeated, 0 meaning indefinitely until the sequencer leaves cmp_start_state), in addition to the already-implemented cmp_start_state/cmp_next_state/cmp_sequencer gate.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.1 Figure 8 / Table 6 (\"cmp_exec_delay\", \"cmp_repetitions\"), TC18.txt L1214,L1223,L1262,L1266",
+      "gap": "Confirmed absent (2026-08-07): grepped include/ and src/ for cmp_exec_delay, cmp_repetitions, exec_delay, repetitions -- both terms appear ONLY inside comments in request.hpp/acf.hpp (L155-156, L245), never as a real field, variable, or consumed value. RequestRecord (request.hpp:505) has no field for either. decode_request_type only exposes a generic 7-byte params[] array; nothing downstream interprets bytes 3-6 of that array as exec_delay/repetitions for the Compound opcode. A Compound request today gates purely on expected_start_state with no delay or repeat-count behavior at all."
+    },
+    {
+      "id": "REQ-SEQ-014",
+      "title": "Triggered requires trigger_source_ep/trigger_signal_nr/trigger_threshold/trigger_exec_delay/trigger_repetitions",
+      "text": "A Triggered request's decoded parameters shall include trigger_source_ep (the endpoint issuing the trigger), trigger_signal_nr (which of that endpoint's trigger signals), trigger_threshold (how many occurrences of that signal must be observed before execution), trigger_exec_delay (delay after threshold is reached, in multiples of ep_delay_time), and trigger_repetitions (repeat count, 0 meaning indefinite) -- not merely recognize the Triggered opcode and its priority category.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.3 Figure 10 (\"trigger_source_ep\", \"trigger_signal_nr\", \"trigger_threshold\", \"trigger_exec_delay\", \"trigger_repetitions\"), TC18.txt L1420-1462",
+      "gap": "Confirmed absent (2026-08-07): all five field names appear nowhere in include/ or src/ except comments. RequestTypeOpcode::Triggered is recognized for opcode validity (request.hpp:203) and priority category (request.hpp:309-311) only. endpoint.hpp's TriggerRegistry (L217-247) is a real, working generic per-endpoint signal enable/notify/drain primitive (SignalId, not tied to any specific request), but nothing in request.hpp links a decoded Triggered request's params[] to a specific trigger_source_ep/trigger_signal_nr, queries TriggerRegistry for that pair, or counts occurrences against trigger_threshold. A Triggered request today has no mechanism to specify or check which signal it is actually waiting for."
+    },
+    {
+      "id": "REQ-SEQ-015",
+      "title": "Timed requires presentation_time (48-bit gPTP) admission scheduling",
+      "text": "A Timed request's decoded parameters shall include presentation_time, a 48-bit value in the gPTP time domain ((AS_sec × 10^9 + AS_ns) mod 2^48, rolling over every ~3.25 days), and execution shall be deferred until presentation_time is reached -- with an implementation-defined admission check permitted to reject a request whose presentation_time is unreasonably far in the future.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.5 Figure 12 / Table 10 (\"presentation_time\"), TC18.txt L1596-1649",
+      "gap": "Confirmed absent (2026-08-07): presentation_time appears nowhere in include/ or src/ except one comment. RequestTypeOpcode::Timed is recognized for opcode validity and priority category only (request.hpp:201,312) -- grepped for is_due/due_at/scheduled_time/delay_us/delay_ms and RequestTypeOpcode::Timed usage sitewide, found zero scheduling/dispatch logic anywhere. There is currently no mechanism in this codebase that defers a Timed request's execution until any point in time at all; the opcode is decodable but has no distinguishing runtime behavior from a standard request."
+    }
+  ]
+}
