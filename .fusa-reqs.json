@@ -262,7 +262,8 @@
       "text": "rcp::e2e::crc32 shall compute a 32-bit CRC using polynomial 0xF4ACFB13, initial value 0xFFFFFFFF, both input and output reflection enabled, and a final XOR of 0xFFFFFFFF.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-002",
@@ -270,7 +271,8 @@
       "text": "rcp::e2e::coverage_buffer shall assemble, in order, the 8-byte big-endian stream_id, the 4-byte big-endian avtp_timestamp (zero-filled when std::nullopt is passed, the NTSCF stand-in), the ACF Message Info block in its exact on-the-wire byte order, and the payload; rcp::e2e::compute_crc shall compute the CRC over exactly that buffer. The Message Info block is the contiguous 8-byte shared header for ACF_ABB, and for ACF_GBB is the 16-byte form in which the 64-bit big-endian message_timestamp is spliced between the shared header's two quadlets (block octets 0-3 = quadlet 0, octets 4-11 = message_timestamp, octets 12-15 = quadlet 1), so that the CRC covers byte-for-byte the octets rcp::acf::encode_acf_gbb transmits.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-003",
@@ -278,7 +280,8 @@
       "text": "rcp::e2e::apply_acf_length_adjustment shall add exactly kCrcLengthAdjustQuadlets (1) to AcfMessageInfo::acf_msg_length; rcp::e2e::apply_frame_length_adjustment shall add exactly kCrcLengthAdjustOctets (4) to an NtscfHeader's or TscfHeader's control_data_length.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-004",
@@ -286,7 +289,8 @@
       "text": "rcp::e2e::verify_crc shall return {} when the received CRC matches compute_crc's result and shall return E2eErrc::crc_error (CRC_ERROR) otherwise.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-005",
@@ -294,7 +298,8 @@
       "text": "rcp::e2e::crc_required shall report regmap::EndpointGenericConfig::ep_req_crc_enable, ep_ack_crc_enable, and ep_response_crc_enable independently for MessageRole::Request, Acknowledge, and Response respectively; rcp::e2e::implemented_options_bit shall report regmap::kOptSafetyRequests only when its safety_requests_implemented argument is true.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-006",
@@ -302,7 +307,8 @@
       "text": "rcp::e2e::RxStreamGuard::record_crc_result shall return CRC_ERROR for a failing request without affecting later requests when RequestStreamConfig::rx_enforce_e2e is clear, and shall additionally latch the whole stream (every subsequent call reports CRC_ERROR until reset_latch()) when rx_enforce_e2e is set.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-007",
@@ -310,7 +316,8 @@
       "text": "rcp::e2e::RxSequenceGuard::check shall accept every sequence number when RequestStreamConfig::rx_enforce_seq is clear, and shall return E2eErrc::sequence_violation for any sequence number that is not strictly greater than the last accepted one when rx_enforce_seq is set.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-008",
@@ -318,7 +325,8 @@
       "text": "rcp::e2e::RxWatchdog::overflowed shall return false when RequestStreamConfig::rx_wd_enable is clear or kick() has never been called, and shall return true once more than rx_wd_timeout_interval milliseconds have elapsed since the last kick().",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-009",
@@ -326,7 +334,8 @@
       "text": "rcp::e2e::apply_watchdog_overflow shall, when RequestStreamConfig::rx_wd_safestate_enable is set, latch the RxWatchdog into safe state and cancel every pending/started request on the ledger whose sequencer::RequestRecord::is_safety is false while leaving is_safety=true records untouched (via RequestLedger::cancel_all(true)); it shall purge nothing and not enter safe state when rx_wd_safestate_enable is clear.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-010",
@@ -334,7 +343,8 @@
       "text": "rcp::e2e::apply_queue_overflow shall implement the same purge-normal/retain-safety behavior as apply_watchdog_overflow, gated on RequestStreamConfig::rx_ovrflw_safestate_enable instead of rx_wd_safestate_enable.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-011",
@@ -343,7 +353,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§12.7.7 (\"a safe state may be enforced. The safe state to enter can be chosen via the Safety_Measure parameter\"), TC18.txt L2935"
+      "tc18": "§12.7.7 (\"a safe state may be enforced. The safe state to enter can be chosen via the Safety_Measure parameter\"), TC18.txt L2935",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-012",
@@ -351,7 +362,8 @@
       "text": "rcp::e2e::may_execute_now shall return true unconditionally for a sequencer::RequestRecord whose is_safety is false, and shall return its endpoint_in_safe_state argument unchanged for a record whose is_safety is true.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-013",
@@ -359,7 +371,8 @@
       "text": "rcp::e2e::RxWatchdog::should_emit_info_notification shall return true if and only if the watchdog is currently latched into safe state (enter_safe_state() called, clear_safe_state() not since called) and RequestStreamConfig::rx_wd_info_enable is set.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-E2E-014",
@@ -367,7 +380,8 @@
       "text": "Every rcp::e2e::E2eErrc value shall report rcp::e2e::e2e_category() as its category and shall have a non-empty diagnostic message distinct from every other E2eErrc value's message.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-WDG-001",
@@ -616,7 +630,8 @@
       "text": "rcp::ratelimit::Manager::admit shall return a success (falsy) std::error_code for a target EndpointKey whose token bucket has at least one token available.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-RL-002",
@@ -624,7 +639,8 @@
       "text": "rcp::ratelimit::TokenBucket::take shall refill tokens proportionally to the elapsed now_ms since the previous take() call on the same bucket, before evaluating admission, capped at Config::burst.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-RL-003",
@@ -632,7 +648,8 @@
       "text": "rcp::ratelimit::Manager::admit shall return ratelimit::ErrAdmissionDenied, unchanged, once fewer than one token remains in the target EndpointKey's bucket.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-RL-004",
@@ -640,7 +657,8 @@
       "text": "When Config::exempt_safety_tagged is true, rcp::ratelimit::Manager::admit shall return success for an is_safety_tagged=true request without consuming a token, regardless of the target bucket's remaining token count.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-RL-005",
@@ -648,7 +666,8 @@
       "text": "When Config::exempt_safety_tagged is false, rcp::ratelimit::Manager::admit shall subject an is_safety_tagged=true request to the same token-bucket admission check as any other request.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-RL-006",
@@ -656,7 +675,8 @@
       "text": "rcp::ratelimit::Manager shall maintain an independent token bucket per distinct EndpointKey, such that exhausting one EndpointKey's bucket shall not affect admission for any other EndpointKey.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-RL-007",
@@ -664,7 +684,8 @@
       "text": "rcp::ratelimit::Manager::reset shall discard the target EndpointKey's bucket state, such that its next admit() call is evaluated against a freshly constructed bucket at full Config::burst capacity.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-RL-008",
@@ -672,7 +693,8 @@
       "text": "ratelimit::ErrAdmissionDenied shall be a non-zero std::error_code in a category distinct from every other rcp error category.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-SIM-001",
@@ -848,7 +870,8 @@
       "text": "The secure channel option for rcp/udp.hpp's transport shall require both client and server to present valid X.509 certificates once a real (D)TLS backend is enabled.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-TLS-002",
@@ -856,7 +879,8 @@
       "text": "Certificates shall be verified against the configured CA bundle; self-signed certs shall be rejected unless the CA is the cert itself.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-TLS-003",
@@ -864,7 +888,8 @@
       "text": "Certificate verification shall be enabled by default.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-TLS-004",
@@ -872,7 +897,8 @@
       "text": "cert_file, key_file, and ca_file shall accept paths to PEM-formatted files.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-TLS-005",
@@ -880,7 +906,8 @@
       "text": "Without RCP_TLS_OPENSSL, SecureClient::request shall return function_not_supported for every call rather than transmitting an unencrypted AVTPDU-framed request.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-TLS-006",
@@ -888,7 +915,8 @@
       "text": "Without RCP_TLS_OPENSSL, SecureServer::ok() shall report false, so an embedding cannot mistake the stub for a securely bound server.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-TLS-007",
@@ -896,7 +924,8 @@
       "text": "Connections with TLS protocol version below 1.2 shall be rejected.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-TLS-008",
@@ -904,7 +933,8 @@
       "text": "NULL, RC4, EXPORT, and DES cipher suites shall be disabled.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-TLS-009",
@@ -912,7 +942,8 @@
       "text": "SecureClient::close and SecureServer::close shall perform a clean shutdown and be safe to call more than once.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-TLS-010",
@@ -920,7 +951,8 @@
       "text": "SecureClient and SecureServer shall expose the stream_id and Config they were constructed with, unchanged, for the embedding application to introspect.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-SHMEM-001",
@@ -1104,7 +1136,8 @@
       "text": "rcp::authz::AccessPolicy::permit shall return true only when at least one PolicyEntry for the given identity matches the given target stream, target endpoint, and request kind simultaneously; it shall return false if any one axis does not match.",
       "standard": "iec62443",
       "level": "SL-2",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-AUTH-002",
@@ -1112,7 +1145,8 @@
       "text": "A PolicyEntry with an empty streams set shall match any target stream. A PolicyEntry with an empty endpoints set shall match any target endpoint. A PolicyEntry with an empty kinds set shall match any request kind.",
       "standard": "iec62443",
       "level": "SL-2",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-AUTH-003",
@@ -1120,7 +1154,8 @@
       "text": "rcp::authz::AccessPolicy::permit shall return false for any identity with no PolicyEntry present in the policy, regardless of the requested stream, endpoint, or kind.",
       "standard": "iec62443",
       "level": "SL-2",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-AUTH-004",
@@ -1128,7 +1163,8 @@
       "text": "Concurrent calls to AccessPolicy::allow() and AccessPolicy::permit() from different threads shall not result in data races.",
       "standard": "iec62443",
       "level": "SL-2",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-AUTH-005",
@@ -1136,7 +1172,8 @@
       "text": "rcp::authz::check shall return authz::ErrForbidden, unchanged, whenever the equivalent AccessPolicy::permit() call would return false.",
       "standard": "iec62443",
       "level": "SL-2",
-      "asil": "ASIL-A"
+      "asil": "ASIL-A",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-AUTH-006",
@@ -1144,7 +1181,8 @@
       "text": "rcp::authz::check shall return a default-constructed (falsy) std::error_code whenever the equivalent AccessPolicy::permit() call would return true.",
       "standard": "iec62443",
       "level": "SL-2",
-      "asil": "ASIL-A"
+      "asil": "ASIL-A",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-AUTH-007",
@@ -1152,7 +1190,8 @@
       "text": "rcp::authz::AccessPolicy::permit shall return false for any identity for which AccessPolicy::allow() has never been called, i.e. the policy defaults to deny, not allow.",
       "standard": "iec62443",
       "level": "SL-2",
-      "asil": "ASIL-A"
+      "asil": "ASIL-A",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-AUTH-008",
@@ -1160,7 +1199,8 @@
       "text": "authz::ErrForbidden shall be a non-zero std::error_code in a category distinct from every other rcp error category.",
       "standard": "iec62443",
       "level": "SL-2",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-RED-001",
@@ -2073,7 +2113,8 @@
       "text": "rcp::regmap shall represent an endpoint's server-owned generic config (EndpointGenericConfig: HW pin indices, request/response queue sizes) and its endpoint-type-specific functional config (EndpointFunctionalConfig) as distinct, independently settable types.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-002",
@@ -2081,7 +2122,8 @@
       "text": "Ep0::check_read_access shall return no error for any in-range target, including EP0 itself, regardless of which client is asking, and Ep0::read_whole_map shall return the current RegisterMap contents to any caller.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-003",
@@ -2089,7 +2131,8 @@
       "text": "Ep0::write_whole_map shall return RegMapErrc::unauthorized_access and leave the RegisterMap unchanged when called by a client that is not the currently claimed root client (svr_root_client_index), and shall apply the write when called by the root client.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-004",
@@ -2097,7 +2140,8 @@
       "text": "Ep0::claim_root_client shall return RegMapErrc::request_rejected when a client distinct from the currently claimed root client attempts to claim the slot, shall treat the current root client re-claiming its own slot as a no-op success, and shall allow a new claim once Ep0::release_root_client has been called.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-005",
@@ -2105,7 +2149,8 @@
       "text": "Ep0::check_write_access (and the write_generic_config/write_functional_config calls built on it) shall permit a non-root client to write only the FUNCTIONAL config block of an endpoint it owns per Ep0::set_endpoint_owner (TC18 section 13.1 grants a non-ROOT_CLIENT write access to EP_FUNC_config only; section 13.2 places the generic block under the RC Server's ownership), shall return RegMapErrc::unauthorized_access for a non-root client writing the GENERIC config block of any endpoint including one it owns, shall return RegMapErrc::unauthorized_access for a non-root client writing either block of an endpoint it does not own, shall always permit the root client, and shall return RegMapErrc::invalid_parameter for an out-of-range endpoint id.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-006",
@@ -2113,7 +2158,8 @@
       "text": "Ep0::write_generic_config shall return RegMapErrc::locked_mem_access once ServerLifecycle::generic_config_locked is true, and Ep0::write_functional_config shall return RegMapErrc::locked_mem_access once ServerLifecycle::functional_config_locked is true, even when called by a client that REQ-REGMAP-005 would otherwise authorize for that block.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-007",
@@ -2121,7 +2167,8 @@
       "text": "RegisterMap shall hold magic, protocol_version_major/minor, vendor_id, device_id, endpoint_count, max_streams, max_queue_depth, svr_implemented_options, and a TablePointer (offset+capacity) for each of the HW pin-map, request-stream, response-stream, EP-ID mapping, and functional-config tables, all independently settable and retrievable.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-008",
@@ -2129,7 +2176,8 @@
       "text": "RegisterMap::hw_pin_map shall store an ordered list of HwPinMapEntry (pin_id, function) values and return them unchanged.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-009",
@@ -2137,7 +2185,8 @@
       "text": "regmap::RequestStreamConfig shall carry rx_wd_timeout_interval, rx_wd_enable, rx_wd_safestate_enable, rx_wd_info_enable, rx_enforce_e2e, rx_enforce_seq, rx_seq_safestate_enable, rx_ovrflw_safestate_enable, rx_safety_measure, rx_safestate_sequencer, and rx_safe_sequencer_state as independently settable fields, each defaulting to disabled/false/RxSafetyMeasure::ForceHighImpedance.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-010",
@@ -2145,7 +2194,8 @@
       "text": "RegisterMap::ep_id_mapping shall preserve EpIdMappingEntry values in the exact order a client inserted them, without the server re-deriving, validating, or re-sorting an ordering of its own.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-011",
@@ -2153,7 +2203,8 @@
       "text": "ResponseQueueConfig shall provide independently settable response_queue_size and ack_queue_size fields.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-012",
@@ -2161,7 +2212,8 @@
       "text": "RegisterMap::sequencer_states shall store one persistent 8-bit SequencerState value per configured slot, each independently settable and retrievable, ahead of the sequencing behavior introduced in v2.5.0.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-013",
@@ -2169,7 +2221,8 @@
       "text": "Ep0::check_read_access, Ep0::check_write_access, and Ep0::set_endpoint_owner shall return RegMapErrc::invalid_parameter for a target endpoint id outside the configured endpoint_count range, or (for set_endpoint_owner) for a request to assign an owner to EP0 itself.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-014",
@@ -2177,7 +2230,8 @@
       "text": "rcp::regmap::RegMapErrc shall define UNAUTHORIZED_ACCESS, LOCKED_MEM_ACCESS, REQUEST_REJECTED, and INVALID_PARAMETER as pairwise-distinct error codes in their own error_category, each with a non-empty diagnostic message.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-REGMAP-015",
@@ -2185,7 +2239,8 @@
       "text": "regmap::EndpointGenericConfig::ep_req_crc_enable, ep_ack_crc_enable, and ep_response_crc_enable shall each default to false and shall be independently settable without affecting one another.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-DISC-001",
@@ -2193,7 +2248,8 @@
       "text": "rcp::discovery::make_discovery_request shall build an unconditional ACF_ABB read (op=false) targeting byte_bus_id 0 (kDiscoveryByteBusId), and kDiscoveryRegisterAddress shall be 0, fixing discovery reads at the general bootstrap/magic-number register-map region.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-DISC-002",
@@ -2201,7 +2257,8 @@
       "text": "rcp::discovery::encode_discovery_request shall always produce an NTSCF-headed frame, and rcp::discovery::decode_discovery_request shall return DiscoveryErrc::tscf_headed_request_dropped without decoding further when given a frame whose AVTPDU subtype byte is TSCF.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-DISC-003",
@@ -2209,7 +2266,8 @@
       "text": "DiscoveryClaim::on_discovery_request shall return ClaimOutcome::Claimed and record `client` as the claim holder when no active claim currently exists and server_state is HwUnconfigured or HwConfigured.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-DISC-004",
@@ -2217,7 +2275,8 @@
       "text": "DiscoveryClaim shall treat a claim as lapsed once (now - claimed_at) is at least Discovery_TimeOut (kDefaultTimeout, ~20ms by default), after which may_configure shall return false for the prior holder and a subsequent discovery request from any client shall be able to claim the stream anew.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-DISC-005",
@@ -2225,7 +2284,8 @@
       "text": "DiscoveryClaim::on_discovery_request from a client other than the active holder shall return ClaimOutcome::HeldByOther without altering the existing claim, and shall never affect whether that client's underlying discovery read is answered; the same holder re-requesting before the claim lapses shall return ClaimOutcome::AlreadyHeld.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-DISC-006",
@@ -2233,7 +2293,8 @@
       "text": "DiscoveryClaim::on_configuration_request shall return true and consume (release) the claim only when called by the client currently holding an active, unlapsed claim; a call from any other client shall return false and shall leave an existing other-held claim untouched.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-DISC-007",
@@ -2241,7 +2302,8 @@
       "text": "DiscoveryClaim::on_discovery_request shall return ClaimOutcome::NotEligible and leave any existing claim state unchanged whenever server_state is RcpConfigured.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-DISC-008",
@@ -2249,7 +2311,8 @@
       "text": "rcp::discovery::make_error_code(DiscoveryErrc::tscf_headed_request_dropped) shall report rcp::discovery::discovery_category() as its category and shall have a non-empty diagnostic message.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-DISC-009",
@@ -2257,7 +2320,8 @@
       "text": "rcp::discovery::should_answer_discovery shall return true for HwUnconfigured, HwConfigured, and RcpConfigured alike, reflecting the mandatory-baseline requirement that discovery is answered regardless of lifecycle state.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-ENDPOINT-001",
