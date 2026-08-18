@@ -487,9 +487,73 @@ jobs:
       - name: Traceability gaps report (informational, non-gating)
         run: /tmp/cpfusa/build/cpfusa trace --gaps || true
 
-      # RELAY §20.1: every requirement MUST be traced AND tested (100%).
-      - name: Enforce 100% requirement coverage
+      # RELAY §20.1: every requirement MUST be traced (100%). NOTE: despite
+      # this job's own prior "traced AND tested" comment, --req-coverage
+      # only gates cpfusa's annotation_coverage (traced) metric -- confirmed
+      # by direct read of cpp-FuSa v0.18.0's trace.cpp, which wires
+      # --req-coverage to annotation_coverage alone, never to `tested`. The
+      # "AND tested" half was previously unenforced (this repo's own
+      # `tested`/`total` has happened to be 100% regardless, so nothing was
+      # ever observed to regress, but nothing was actually checking it).
+      - name: Enforce 100% requirement coverage (traced)
         run: /tmp/cpfusa/build/cpfusa trace --req-coverage 100
+
+      # RELAY §20.1's other half: every requirement MUST also be tested
+      # (100%). cpp-FuSa v0.18.0 has no CLI flag for this metric alone (its
+      # --sec-tested flag is a differently-named, differently-scoped gate --
+      # see the next step's own header -- and is NOT a substitute here: it
+      # currently has a bug, filed as SoundMatt/cpp-FuSa#64, that makes it
+      # silently check general test coverage instead of security-test
+      # coverage, so relying on it for "tested" would work today by
+      # coincidence and break the moment that bug is fixed). `cpfusa trace
+      # --format json`'s `coverage` object exposes `testedRequirements`/
+      # `totalRequirements` directly and correctly -- parsed here via jq,
+      # matching the same JSON-over-text-scraping choice SoundMatt/c-RCP#577
+      # made for the identical problem in that sibling repo's own CI.
+      - name: Enforce 100% requirement coverage (tested)
+        run: |
+          cov="$(/tmp/cpfusa/build/cpfusa trace --format json | jq '.coverage')"
+          echo "$cov"
+          total=$(echo "$cov" | jq '.totalRequirements')
+          tested=$(echo "$cov" | jq '.testedRequirements')
+          if [ "$tested" != "$total" ]; then
+            echo "::error::'tested' metric gate failed: tested=$tested total=$total (must be equal for a 100% gate)"
+            exit 1
+          fi
+          echo "OK: $tested/$total tested"
+
+      # Genuine security-test coverage: CYBERSECURITY.md's own six security
+      # layers cite exactly 64 requirement ids as security-relevant
+      # (REQ-TLS-001..010, REQ-AUTH-001..008, REQ-E2E-001..014,
+      # REQ-RL-001..008, REQ-DISC-001..009, REQ-REGMAP-001..015), each now
+      # marked `"severity": "cybersecurity"` in `.fusa-reqs.json` -- the
+      # field cpp-FuSa's own trace.cpp already reads to compute
+      # `secTestedRequirements` (a test annotation on a cybersecurity-marked
+      # requirement), previously never populated so this metric was always
+      # zero. Deliberately NOT using cpfusa's own `--sec-tested` CLI flag:
+      # confirmed by direct read of v0.18.0's trace.cpp/cli.cpp that it
+      # gates on the wrong variable (general test_coverage, not
+      # sec_tested/total) -- the exact same bug class SoundMatt/c-FuSa#147
+      # fixed in c-FuSa, filed upstream as SoundMatt/cpp-FuSa#64, not yet
+      # fixed. Parses `--format json`'s already-correct
+      # `secTestedRequirements` field directly instead, at a 17% floor
+      # (64/376 = 17.02%) -- NOT a claim that only 17% of this codebase is
+      # security-relevant, a regression floor against the exact,
+      # CYBERSECURITY.md-enumerated subset. Once cpp-FuSa#64 is fixed
+      # upstream, this step can switch to `cpfusa trace --sec-tested 17`
+      # directly.
+      - name: Enforce security-test coverage (17% floor, real CYBERSECURITY.md subset)
+        run: |
+          cov="$(/tmp/cpfusa/build/cpfusa trace --format json | jq '.coverage')"
+          echo "$cov"
+          total=$(echo "$cov" | jq '.totalRequirements')
+          sec=$(echo "$cov" | jq '.secTestedRequirements')
+          pct=$(( sec * 100 / total ))
+          if [ "$pct" -lt 17 ]; then
+            echo "::error::sec-tested gate failed: ${pct}% ($sec/$total) < required 17%"
+            exit 1
+          fi
+          echo "OK: ${pct}% ($sec/$total) security-tested"
 
   # ── cpp-FuSa: ctest integration → .fusa-evidence.json ────────────────────────
   cpfusa-verify:
