@@ -2515,7 +2515,9 @@
       "text": "rcp::i2c::compound_wait_matches_bits shall compare exactly the leading `bit_len` bits of `received` against `expected` (MSB-first within a byte, comparing only the top `bit_len % 8` bits of a partial final byte), shall return false when either buffer is shorter than `bit_len` requires, and shall return false for `bit_len == 0`.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "\u00a713.7.7.1 (\"Optionally the Client can request the I\u00b2C endpoint to wait for a pre-defined bit sequence has been received from a connected device.\"), TC18.txt L5203-5204",
+      "tc18_master_id": "TC18-13.7.7.1-003"
     },
     {
       "id": "REQ-I2C-003",
@@ -2523,7 +2525,9 @@
       "text": "rcp::i2c::I2cEndpoint::transfer shall record the exact byte sequences passed as `out_bytes` and `in_bytes` \u2014 including any address byte(s) the caller embeds in `out_bytes` \u2014 retrievable via last_sent()/last_received().",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "\u00a713.7.7.3 (\"The byte msg payload is the I2C payload including the address. The I2C endpoint does not know whether there is a 7- or 10-bit address, since the endpoint is just transparent.\"; Figure 30 \u2013 \"i2c request format\"), TC18.txt L5240-5257",
+      "tc18_master_id": "TC18-13.7.7.3-001"
     },
     {
       "id": "REQ-I2C-004",
@@ -2531,7 +2535,9 @@
       "text": "rcp::i2c::I2cEndpoint::transfer shall notify TransferComplete on every transfer, shall additionally notify Nack and return I2cErrc::nack when called with acked=false, and shall notify only TransferComplete for an acknowledged transfer.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "\u00a713.7.7.4 (\"An I\u00b2C endpoint optionally generates HW trigger events\"; Table 50's own Event column is blank in the extraction, so the concrete TransferComplete/Nack signal identities below this clause are this implementation's own, not spec-named), TC18.txt L5262-5264",
+      "tc18_master_id": "TC18-13.7.7.4-001"
     },
     {
       "id": "REQ-I2C-005",
@@ -2603,7 +2609,9 @@
       "text": "rcp::adc::compute_average shall compute the arithmetic mean of a non-empty sample set and shall return AdcErrc::no_signal for an empty sample set.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.9.3 (\"A measured value may contain the average of multiple ADC samples depending on the ADC EP functional configuration.\"), TC18.txt L5580",
+      "tc18_master_id": "TC18-13.7.9.3-003"
     },
     {
       "id": "REQ-ADC-002",
@@ -2612,7 +2620,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§13.7.9.2 (\"an implementation may decide to fix\" the samples-per-interval field read-only; this implementation instead makes it writable, the more general of the two spec-permitted choices), TC18.txt L5040"
+      "tc18": "§13.7.9.1 (\"For the readings acquired during the averaging interval given in number of samples (an implementation may decide to fix this to 1) the average is calculated. Finally, the COMBINE_NR_VAL defines how many measurement values (i.e. averaging results) will be put in one response frame.\"), TC18.txt L5455-5457 (correcting this entry's prior citation, which misattributed the quote to §13.7.9.2 L5040 — the quote is only found at §13.7.9.1 L5455-5457)",
+      "tc18_master_id": "TC18-13.7.9.1-006"
     },
     {
       "id": "REQ-ADC-003",
@@ -2620,7 +2629,9 @@
       "text": "rcp::adc::AdcEndpoint::request_reading shall invoke its sample source exactly adc_avg_intervals_per_request * adc_combine_avg_values times per call \u2014 no more, no fewer \u2014 and shall return AdcErrc::no_signal (this endpoint's analog of PWM_IN_NO_SIGNAL on the request path) the first time the sample source reports a missing capture, without free-running or pushing samples outside a call.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "\u00a713.7.9.1 (\"The ADC only samples the input, when a request is executed. Consequently, no trigger will occur when there is no request to sample.\"), TC18.txt L5476-5477",
+      "tc18_master_id": "TC18-13.7.9.1-010"
     },
     {
       "id": "REQ-ADC-004",
@@ -2628,7 +2639,9 @@
       "text": "rcp::adc::AdcEndpoint::request_reading_from_trigger_queue shall consume exactly adc_avg_intervals_per_request * adc_combine_avg_values entries from the front of the supplied trigger-sample queue, shall erase only the consumed entries on success, and shall return AdcErrc::no_signal on a queue holding fewer entries than required.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "\u00a713.7.9.1 (\"Reading ADC values from an endpoint can be triggered e.g. by a PWM output trigger event by using a Trigger request, which triggers on the PWM EP.\"), TC18.txt L5446-5447",
+      "tc18_master_id": "TC18-13.7.9.1-002"
     },
     {
       "id": "REQ-ADC-005",
@@ -2807,7 +2820,9 @@
       "text": "rcp::endpoint::kEndpointTypeLin shall equal 0x06.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.2 Table 32 (\"ep_type values\"; row \"0x06 LIN\"), TC18.txt L3998-4017",
+      "tc18_master_id": "TC18-13.2-002"
     },
     {
       "id": "REQ-LINEP-002",
@@ -2815,7 +2830,9 @@
       "text": "rcp::lin::LinEndpoint::transfer shall record the exact byte sequences passed as out_bytes and in_bytes, retrievable via last_sent()/last_received(), performing no checksum selection, PID generation, schedule-table lookup, or any other LIN frame-structure interpretation of either sequence, including for an empty byte sequence.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.10.3 (\"The Byte Msg Payload is the payload to be used on the Lin bus.\"; Figure 39 – \"lin request format\" shows only an opaque \"Lin payload\" region, with no PID/checksum/schedule sub-fields), TC18.txt L5719-5736",
+      "tc18_master_id": "TC18-13.7.10.3-001"
     },
     {
       "id": "REQ-LINEP-003",
@@ -2823,7 +2840,9 @@
       "text": "rcp::lin::LinEndpoint::transfer shall notify only TransferComplete for a responded transfer (responded=true) and shall notify only NoResponse and return LinErrc::no_response for an unresponded transfer (responded=false).",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.10.1 (\"It sends the bytes provided by the RC Client in the byte_msg_payload on the bus as response to a pending read request. With pending read-requests the LIN endpoint checks each received message against the byte_msg_payload and if a match under the conditions given by evt[2:0] is found a reply is sent if op = 0.\"), TC18.txt L5691-5693",
+      "tc18_master_id": "TC18-13.7.10.1-001"
     },
     {
       "id": "REQ-LINEP-004",
@@ -2839,7 +2858,9 @@
       "text": "rcp::endpoint::kEndpointTypeCan shall equal 0x0B.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.2 Table 32 (\"ep_type values\"; row \"0x0B CAN\"), TC18.txt L3998-4017",
+      "tc18_master_id": "TC18-13.2-002"
     },
     {
       "id": "REQ-CANEP-002",
@@ -2855,7 +2876,9 @@
       "text": "rcp::can::validate_frame shall accept a CanDataFrame whose data length is within its FrameFormat's own ceiling (kMaxClassicalPayload=8 for Classical, kMaxFdPayload=64 for Fd) and shall return CanErrc::payload_exceeds_format_limit when that ceiling is exceeded; this header shall define no remote-frame request or response shape.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.11.3 (\"Sending remote frames is not supported.\"; note: the 8-byte Classical / 64-byte FD numeric payload ceilings are standard CAN/CAN-FD facts this implementation applies, not independently restated with those numbers in the TC18 extract itself), TC18.txt L5887",
+      "tc18_master_id": "TC18-13.7.11.3-004"
     },
     {
       "id": "REQ-CANEP-004",
@@ -2863,7 +2886,9 @@
       "text": "rcp::can::validate_frame shall accept a FrameFormat::Xl frame whose data length is within kMaxXlPayloadSingleAvtpdu, shall return CanErrc::xl_payload_exceeds_single_avtpdu_bound for a length between kMaxXlPayloadSingleAvtpdu (exclusive) and kMaxXlPayloadSpec (inclusive), and shall return CanErrc::payload_exceeds_format_limit for a length exceeding kMaxXlPayloadSpec (2054), consistent with ROADMAP.md milestone 52's already-decided fragmentation no-go.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.11.3 (\"For CAN XL this can be up to 2054 bytes (2048 + 6, see below), which requires segmentation, which is supported by the fields 'ms' and 'segment_num'.\"), TC18.txt L5859-5860",
+      "tc18_master_id": "TC18-13.7.11.3-002"
     },
     {
       "id": "REQ-CANEP-005",
@@ -2871,7 +2896,9 @@
       "text": "rcp::can::CanEndpoint::configure_bit_timing shall store the arbitration, fd_data, and xl_data CanBitTimingPhase register sets independently of one another, retrievable unchanged via bit_timing().",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.11.2 Table 56 (\"can functional configuration\"; \"CAN bit time register 1\"/\"2\"/\"3\" rows at 0x000C/0x0010/0x0014 defining bit times for Classical CAN/CAN FD/CAN XL respectively), TC18.txt L5795-5836",
+      "tc18_master_id": "TC18-13.7.11.2-002"
     },
     {
       "id": "REQ-CANEP-006",
@@ -2879,7 +2906,9 @@
       "text": "rcp::can::CanEndpoint::receive shall accept every frame when its format-scoped filter bank is empty, shall drop a frame matching no entry in that bank when the bank is non-empty (per rcp::can::acceptance_filter_matches's masked-id comparison), and shall match a FrameFormat::Xl frame against xl_receive_filters rather than the general acceptance_filters bank whenever xl_receive_filters is non-empty.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.11.2 Table 56 (\"can functional configuration\"; \"acceptance filter 1\"-\"4\" rows, \"acceptance filter for CAN XL\", and \"receive filter 1\"-\"4\" rows, \"ID filter for frame reception\"; the extracted table's exact masked-id matching algorithm is this implementation's own, the register fields themselves are spec-sourced), TC18.txt L5801-5836",
+      "tc18_master_id": "TC18-13.7.11.2-002"
     },
     {
       "id": "REQ-CANEP-007",
@@ -2895,7 +2924,9 @@
       "text": "rcp::endpoint::kEndpointTypeIseled shall equal 0x0C.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.2 Table 32 (\"ep_type values\"; row \"0x0C ISELED\"), TC18.txt L3998-4017",
+      "tc18_master_id": "TC18-13.2-002"
     },
     {
       "id": "REQ-ISELED-002",
@@ -2903,7 +2934,9 @@
       "text": "rcp::iseled::IseledEndpoint::transact shall record the exact IseledRequest (instruction/address/data) and IseledResponse (address/data) fields passed to it, retrievable via last_request()/last_response(), for a request and response whose fields fit their documented wire widths.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.12.3 Figure 41 – \"iseled request format\" (Instruction | Address | Data1 | Data2 | Data3 | padding), TC18.txt L5981-5995; response shape per Figure 42 – \"iseled response format\" (Address | Data[11:0] | CRC (optional) | rsvd), TC18.txt L6006-6014",
+      "tc18_master_id": "TC18-13.7.12.3-001"
     },
     {
       "id": "REQ-ISELED-003",
@@ -2911,7 +2944,9 @@
       "text": "rcp::iseled::validate_request shall return IseledErrc::field_out_of_range when instruction exceeds kIseledInstructionMask (4 bits) or address exceeds kIseledFieldMask (12 bits); rcp::iseled::validate_response shall return IseledErrc::field_out_of_range when address or data exceeds kIseledFieldMask (12 bits); rcp::iseled::IseledEndpoint::transact shall propagate either failure without recording the request/response or firing TransferComplete.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.12.3 (\"A response always contains the 12 bit address and 12 bit data plus the optional 4 bit CRC.\"), TC18.txt L6004",
+      "tc18_master_id": "TC18-13.7.12.3-004"
     },
     {
       "id": "REQ-ISELED-004",
@@ -2919,7 +2954,9 @@
       "text": "rcp::iseled::IseledEndpoint::transact shall notify only TransferComplete for a transaction whose response native CRC verifies (or carries none), and shall notify only NativeCrcError and return IseledErrc::native_crc_mismatch for a transaction whose response native CRC does not verify.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.12.1 (\"The optional CRC generation as specified in the ISLED standard can be enabled. If so, the CRC will be generated and attached to the write messages to the ISELED network. For read data accordingly the CRC will be also calculated and checked.\"), TC18.txt L5910-5912 (correcting this entry's citation, which the original batch pointed at TC18-13.7.12.1-002 — the adjacent trigger-event clause — instead of this CRC-check clause, which actually matches the requirement's own NativeCrcError/native_crc_mismatch subject; NOTE: this entry's title/text still describe a NativeCrcError signal and IseledErrc::native_crc_mismatch that rcp/iseled.hpp's issue #71/cpp-RCP-02 fix already removed — the current header and tests/test_iseled.cpp only exercise the single TransferComplete signal; flagging the stale title/text for the maintainers rather than editing content outside this metadata-only pass's scope)",
+      "tc18_master_id": "TC18-13.7.12.1-001"
     },
     {
       "id": "REQ-ISELED-005",
@@ -2935,7 +2972,9 @@
       "text": "rcp::endpoint::kEndpointTypeMdio shall equal 0x0D.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.2 Table 32 (\"ep_type values\"; row \"0x0D MDIO\"), TC18.txt L3998-4017",
+      "tc18_master_id": "TC18-13.2-002"
     },
     {
       "id": "REQ-MDIO-002",
@@ -2943,7 +2982,9 @@
       "text": "rcp::mdio::payload_width_bits shall return 16 for MdioMode::MmdSingleWord, MdioMode::MmdMultiWord, and MdioMode::MmsSingleWord regardless of mms_is_0_or_1, and shall return 32 for MdioMode::MmsMultiWord only when mms_is_0_or_1 is true (16 otherwise); rcp::mdio::validate_request shall return MdioErrc::payload_exceeds_mode_width when mdio_payload exceeds that width and shall accept every payload at or below it.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.13.3 Table 60 (\"Usage of ABB message for mdio requests\"; \"mdio_payload for MMD, data fields are 16 bits. for MMS0 & 1: data fields are 32 bits. For other MMS, data fields are 16 bits\"), TC18.txt L6080-6088",
+      "tc18_master_id": "TC18-13.7.13.3-002"
     },
     {
       "id": "REQ-MDIO-003",
