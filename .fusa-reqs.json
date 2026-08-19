@@ -2955,8 +2955,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§13.7.12.1 (\"The ISELED endpoint creates a single trigger event, when transmission of a data packet has been completed on the ISELED network.\"), TC18.txt L5913-5914 (NOTE: this entry's title/text still describe a NativeCrcError signal and IseledErrc::native_crc_mismatch that rcp/iseled.hpp's issue #71/cpp-RCP-02 fix already removed — the current header and tests/test_iseled.cpp only exercise the single TransferComplete signal this clause covers; flagging the stale title/text for the maintainers rather than editing content outside this metadata-only pass's scope)",
-      "tc18_master_id": "TC18-13.7.12.1-002"
+      "tc18": "§13.7.12.1 (\"The optional CRC generation as specified in the ISLED standard can be enabled. If so, the CRC will be generated and attached to the write messages to the ISELED network. For read data accordingly the CRC will be also calculated and checked.\"), TC18.txt L5910-5912 (correcting this entry's citation, which the original batch pointed at TC18-13.7.12.1-002 — the adjacent trigger-event clause — instead of this CRC-check clause, which actually matches the requirement's own NativeCrcError/native_crc_mismatch subject; NOTE: this entry's title/text still describe a NativeCrcError signal and IseledErrc::native_crc_mismatch that rcp/iseled.hpp's issue #71/cpp-RCP-02 fix already removed — the current header and tests/test_iseled.cpp only exercise the single TransferComplete signal; flagging the stale title/text for the maintainers rather than editing content outside this metadata-only pass's scope)",
+      "tc18_master_id": "TC18-13.7.12.1-001"
     },
     {
       "id": "REQ-ISELED-005",
