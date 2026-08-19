@@ -389,7 +389,9 @@
       "text": "rcp::watchdog::StreamWatchdog::check shall report HealthEvent::overflowed only once more than RequestStreamConfig::rx_wd_timeout_interval milliseconds have elapsed since the stream's last kick_from_request call, and only while RequestStreamConfig::rx_wd_enable is set.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.7.7 Table 24 (\"rx_wd_timeout_intervall ... WatchDog time out for this Stream in clock tics ... 0dec: WD is disabled\"; \"rx_enforce_watchdog ... 0b: no watchdog for this stream / 1b: stream is blocked upon WD overflow and Safe state will be entered\"), TC18.txt L3233-3251",
+      "tc18_master_id": "TC18-12.7.7-001"
     },
     {
       "id": "REQ-WDG-002",
@@ -397,7 +399,9 @@
       "text": "rcp::watchdog::StreamWatchdog::kick_from_request shall reset that stream's watchdog on every call, regardless of the accepted request's kind or is_safety tag.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.7.7 (\"the watchdog is reset with each request received from this RC Client\"), TC18.txt L3301-3302",
+      "tc18_master_id": "TC18-12.7.7-001"
     },
     {
       "id": "REQ-WDG-003",
@@ -405,7 +409,9 @@
       "text": "rcp::watchdog::StreamWatchdog::check shall, on overflow while RequestStreamConfig::rx_wd_safestate_enable is set, latch the stream into safe state and cancel every pending/started non-safety request on the supplied RequestLedger while leaving is_safety=true records untouched, reporting HealthEvent::entered_safe_state and the purge count; it shall latch nothing and purge nothing when rx_wd_safestate_enable is clear.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2 (\"If the MSB of the identifier (0x8x) is set the request is treated as a safety request and will not be deleted when the EP needs to go to safe state.\"), TC18.txt L1257-1259",
+      "tc18_master_id": "TC18-11.2.2-001"
     },
     {
       "id": "REQ-WDG-004",
@@ -413,7 +419,9 @@
       "text": "Once rcp::watchdog::StreamWatchdog::check has latched a stream into safe state, subsequent check calls shall not re-detect overflow for that stream until clear_safe_state is called.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.7.7 Table 24 (\"rx_enforce_watchdog ... 1b: stream is blocked upon WD overflow and Safe state will be entered\"; \"rx_stream_status ... 1b: stream is blocked, requests are rejected\" — set automatically as a reaction to watchdog overflow when enabled, and not self-clearing), TC18.txt L3249-3260",
+      "tc18_master_id": "TC18-12.7.7-001"
     },
     {
       "id": "REQ-WDG-005",
@@ -518,7 +526,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§12.4 (\"The RC Server may support different power modes\"), TC18.txt L2268"
+      "tc18": "§12.4 (\"The RC Server may support different power modes.\" — Unpowered/Powered/Sleep/StandBy mode definitions), TC18.txt L2644-2651",
+      "tc18_master_id": "TC18-12.4-001"
     },
     {
       "id": "REQ-PWR-002",
@@ -534,7 +543,9 @@
       "text": "PowerManager::enter_standby/enter_sleep shall return PowerErrc::unacknowledged_wakeup_event without changing mode() whenever the associated WakeupEndpoint::wakeup_message_pending() reports true.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.5 (\"The RC Server will reject requests to enter sleep or standby mode and send an error message with error code = REQUEST_CANCELED, when ... The wake-up event register (wup_status) is not cleared\"), TC18.txt L2703-2706",
+      "tc18_master_id": "TC18-12.5-005"
     },
     {
       "id": "REQ-PWR-004",
@@ -542,7 +553,9 @@
       "text": "PowerManager::enter_standby/enter_sleep shall return PowerErrc::endpoint_not_idle without changing mode() whenever the configured Hooks::endpoints_idle predicate returns false.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.5 (\"At least one EP is not idle\"), TC18.txt L2707",
+      "tc18_master_id": "TC18-12.5-005"
     },
     {
       "id": "REQ-PWR-005",
@@ -550,7 +563,9 @@
       "text": "PowerManager::enter_standby/enter_sleep shall return PowerErrc::response_ack_queue_not_empty without changing mode() whenever the configured Hooks::response_ack_queues_empty predicate returns false.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.5 (\"In at least one responder queue there is a message pending for transmission.\"), TC18.txt L2708",
+      "tc18_master_id": "TC18-12.5-005"
     },
     {
       "id": "REQ-PWR-006",
@@ -566,7 +581,9 @@
       "text": "PowerManager::begin_wake_from_sleep shall, when mode() is Sleep, invoke the configured Hooks::reenable_network_interface hook exactly once and set wake_stage() to HandshakeActive while leaving mode() at Sleep, and shall return PowerErrc::not_asleep without side effects when mode() is not Sleep.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.4.1 (\"it will first enable the network interface, check if the network is available and if not initiate a WakeUp to be sent via the network\" — TC18 labels this the \"Hot-start-up procedure\"; this implementation instead drives it from Sleep, see commit notes), TC18.txt L2671-2673",
+      "tc18_master_id": "TC18-12.4.1-003"
     },
     {
       "id": "REQ-PWR-008",
@@ -590,7 +607,9 @@
       "text": "PowerManager::acknowledge_wakeup shall, while wake_stage() is HandshakeActive, call the associated WakeupEndpoint::acknowledge_wakeup, invoke the configured Hooks::reenable_response_ack_queues hook exactly once, set wake_stage() to Complete, and transition mode() to Normal.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.4.1 (\"After reception of valid message from the sleep request Client all used endpoints and response queues will be enabled.\"), TC18.txt L2677-2678",
+      "tc18_master_id": "TC18-12.4.1-003"
     },
     {
       "id": "REQ-PWR-011",
@@ -598,7 +617,9 @@
       "text": "PowerManager::notify_power_removed shall set mode() to Unpowered regardless of the current mode() or any entry-refusal condition that would otherwise apply to enter_standby/enter_sleep.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.4 (\"Unpowered is the mode in which no sufficient power supply is available.\"), TC18.txt L2645",
+      "tc18_master_id": "TC18-12.4-001"
     },
     {
       "id": "REQ-PWR-012",
@@ -606,7 +627,9 @@
       "text": "PowerManager::notify_power_restored shall set mode() to Normal and wake_stage() to Idle.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.4 (\"Powered is the mode in which sufficient power supply is available to run all functions.\"), TC18.txt L2646-2647",
+      "tc18_master_id": "TC18-12.4-001"
     },
     {
       "id": "REQ-PWR-013",
@@ -614,7 +637,9 @@
       "text": "rcp::powerstate::start_kind_on_exit shall return StartKind::Hot for PowerMode::StandBy and StartKind::Cold for PowerMode::Sleep, and PowerManager::pending_start_kind shall report start_kind_on_exit(mode()).",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.4.1 (\"There are two types of start-up: a cold start (after power-on or wake-up from sleep) and a hot start (=wake-up from StandBy).\"), TC18.txt L2663-2664",
+      "tc18_master_id": "TC18-12.4.1-001"
     },
     {
       "id": "REQ-PWR-014",
@@ -2073,7 +2098,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§12.3 (\"The three lifecycle states the device may be in are...\"), TC18.txt L2063"
+      "tc18": "§13.7.1.2 Table 36 (\"svr_lifecycle_state\" register: \"0x00: HW_UNCONFIGURED\" / \"0x55: HW_CONFIGURED\" / \"0xAA: RCP_CONFIGURED\"), TC18.txt L4388-4390",
+      "tc18_master_id": "TC18-13.7.1.2-001"
     },
     {
       "id": "REQ-LIFECYCLE-002",
@@ -2081,7 +2107,9 @@
       "text": "ServerLifecycle::advance shall accept only a request for the single next state in the HwUnconfigured -> HwConfigured -> RcpConfigured sequence, and shall return LifecycleErrc::invalid_transition without changing state for any request to skip a state, move backward, or repeat the current state.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.3.1.1 (\"A request to advance the state directly to RCP_CONFIGURED will be rejected with an error response.\"), TC18.txt L2544",
+      "tc18_master_id": "TC18-12.3.1.1-006"
     },
     {
       "id": "REQ-LIFECYCLE-003",
@@ -2089,7 +2117,9 @@
       "text": "ServerLifecycle::advance to HwConfigured shall invoke the configured HW plausibility check and return LifecycleErrc::hw_cfg_inconsistent without advancing state when that check returns false.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.3.1.1 (\"If not plausible the request will be rejected and an error response sent with HW_CFG_INCONSITENT.\"), TC18.txt L2545-2550",
+      "tc18_master_id": "TC18-12.3.1.1-007"
     },
     {
       "id": "REQ-LIFECYCLE-004",
@@ -2097,7 +2127,9 @@
       "text": "ServerLifecycle::advance to RcpConfigured shall invoke the configured RCP plausibility check and return LifecycleErrc::rcp_cfg_inconsistent without advancing state when that check returns false.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.3.1.2 (\"If not plausible the request will be rejected and an error response sent with RCP_CFG_INCONSISTENT\"), TC18.txt L2566-2572",
+      "tc18_master_id": "TC18-12.3.1.2-006"
     },
     {
       "id": "REQ-LIFECYCLE-005",
@@ -2105,7 +2137,9 @@
       "text": "ServerLifecycle::generic_config_locked shall report true from HwConfigured onward, and ServerLifecycle::functional_config_locked shall report true only at RcpConfigured, with both reporting false at HwUnconfigured.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.3.1.2 (\"access to the HW configuration of the RC Server shall have been concluded and as such all access to the HW_config and EP_generic_config are locked\"), TC18.txt L2553-2554",
+      "tc18_master_id": "TC18-12.3.1.2-001"
     },
     {
       "id": "REQ-LIFECYCLE-006",
@@ -2113,7 +2147,9 @@
       "text": "ServerLifecycle::deconfigure shall reset state to HwUnconfigured and clear both generic_config_locked and functional_config_locked regardless of the state deconfigure was called from, after which advance shall again accept the normal forward sequence.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.3.1.2 (\"it is also possible to go back to state HW_UNCONFIGURED via a write request to the server functional configuration entry svr_lifecycle_state\"), TC18.txt L2574-2575",
+      "tc18_master_id": "TC18-12.3.1.2-007"
     },
     {
       "id": "REQ-LIFECYCLE-007",
@@ -2345,7 +2381,9 @@
       "text": "rcp::endpoint::kEndpointTypeGpio shall equal 0x02 and rcp::endpoint::kEndpointTypeSpi shall equal 0x03, matching the ep_type ids this milestone assigns for the GPIO and SPI endpoint types.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.2 Table 32 (\"0x02 GPIO\" / \"0x03 SPI\"), TC18.txt L4000-4017",
+      "tc18_master_id": "TC18-13.2-002"
     },
     {
       "id": "REQ-ENDPOINT-002",
@@ -2353,7 +2391,9 @@
       "text": "rcp::endpoint::write_semantics_of shall map evt_op values 0-7 to Replace/Or/And/Xor/Reserved/Add/Subtract/Reconfigure respectively, masking its argument to the low 3 bits before conversion.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 33 (GPIO/PWM_OUT row: \"000b The byte_msg_payload is presented at the interface\" / \"001b\"-\"011b\" OR/AND/XOR / \"100b reserved\" / \"101b\"/\"110b\" add/subtract / \"111b\" reconfigure), TC18.txt L4093-4116",
+      "tc18_master_id": "TC18-13.5-001"
     },
     {
       "id": "REQ-ENDPOINT-003",
@@ -2361,7 +2401,9 @@
       "text": "rcp::endpoint::apply_bitmask_write shall compute Replace/Or/And/Xor of `current` and `operand` correctly for WriteSemantics::Replace/Or/And/Xor respectively.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 33 (\"The \\u201cbyte_msg_payload\\u201d bitwise OR/AND/XOR \\u201ccurrent interface status\\u201d is written to the interface\"), TC18.txt L4093-4105",
+      "tc18_master_id": "TC18-13.5-001"
     },
     {
       "id": "REQ-ENDPOINT-004",
@@ -2369,7 +2411,9 @@
       "text": "rcp::endpoint::apply_bitmask_write's Add and Subtract semantics, and the underlying rcp::endpoint::saturating_add/saturating_subtract helpers, shall clamp at the representable range's max/0 respectively rather than wrapping on overflow/underflow.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5 (\"While doing additions and subtractions neither overflows nor wrap-arounds shall occur. The values are saturated at 0x0000 on the low side and 0xFFFF at the high side.\"), TC18.txt L4118-4119",
+      "tc18_master_id": "TC18-13.5-003"
     },
     {
       "id": "REQ-ENDPOINT-005",
@@ -2377,7 +2421,9 @@
       "text": "rcp::endpoint::apply_bitmask_write shall return EndpointErrc::reserved_write_semantics for WriteSemantics::Reserved and EndpointErrc::non_combinable_write_semantics for WriteSemantics::Reconfigure, and EndpointErrc shall report a non-empty diagnostic message in its own error_category.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 33 (\"100b reserved \\u2013request shall be ignored and an err-response with error code = UNSUPPORTED_CMD shall be sent\"; \"111b The byte_msg_payload is not presented to the interface but used to change the configuration of the endpoint\"), TC18.txt L4106-4115",
+      "tc18_master_id": "TC18-13.5-001"
     },
     {
       "id": "REQ-ENDPOINT-006",
@@ -2385,7 +2431,9 @@
       "text": "rcp::endpoint::TriggerRegistry::notify shall queue a signal for drain() only when that signal id is currently enabled, disable() shall stop further notifications for that id from queuing, and drain() shall return queued signal ids in occurrence order and clear the queue.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.5 (\"Each endpoint may generate one or more trigger signals.\"), TC18.txt L1689",
+      "tc18_master_id": "TC18-11.2.2.5-002"
     },
     {
       "id": "REQ-GPIO-001",
