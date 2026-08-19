@@ -246,7 +246,9 @@
       "text": "rcp::udp::Client::request shall match each inbound response frame to the pending request whose AcfMessageInfo::byte_bus_id and AcfMessageInfo::transaction_num it echoes, so that two outstanding requests with distinct (byte_bus_id, transaction_num) pairs each receive their own response.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.9.1 (\"Response(s) and acknowledge(s) are associated to the requests by the byte_bus_id and transaction number.\"), TC18.txt L3610",
+      "tc18_master_id": "TC18-12.9.1-010"
     },
     {
       "id": "REQ-UDP-012",
@@ -2348,6 +2350,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "\u00a712.6.1 Table 18 (\"Byte_bus_id 00000000000b\"; \"op 1b (read request)\"), TC18.txt L2746-2758",
+      "tc18_master_id": "TC18-12.6.1-001",
       "severity": "cybersecurity"
     },
     {
@@ -2357,6 +2361,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "\u00a712.6.1 (\"AVTPDUs having a TSCF header are dropped without further response, as well as requests in ACF_GBB format.\"), TC18.txt L2743",
+      "tc18_master_id": "TC18-12.6.1-002",
       "severity": "cybersecurity"
     },
     {
@@ -2366,6 +2372,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "\u00a712.6 (\"The first discovery request the RC server receives in HW_UNCONFIGURED or HW_CONFIGURED state is used to set the discovery stream from which now on configuration requests will be accepted.\"), TC18.txt L2732-2733",
+      "tc18_master_id": "TC18-12.6-003",
       "severity": "cybersecurity"
     },
     {
@@ -2375,6 +2383,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "\u00a712.6 (\"If the RC Server does not receive configuration requests on the stream for a certain time (Discovery_TimeOut) it will drop the discovery stream and is open for a new discovery.\"), TC18.txt L2733-2735",
+      "tc18_master_id": "TC18-12.6-003",
       "severity": "cybersecurity"
     },
     {
@@ -2384,6 +2394,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "\u00a712.6 (\"If multiple discovery requests are received from different RC Clients all requests are responded with the server_config map, but only the first one will be allowed as configuration stream.\"), TC18.txt L2735-2737",
+      "tc18_master_id": "TC18-12.6-003",
       "severity": "cybersecurity"
     },
     {
@@ -2393,6 +2405,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "\u00a712.6 (\"If others send configuration requests they will be rejected and get an error response.\"), TC18.txt L2736-2737",
+      "tc18_master_id": "TC18-12.6-003",
       "severity": "cybersecurity"
     },
     {
@@ -2402,6 +2416,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "\u00a712.7.4 (\"Changes in configuration via a discovery request are no longer allowed.\"), TC18.txt L2879-2880",
+      "tc18_master_id": "TC18-12.7.4-001",
       "severity": "cybersecurity"
     },
     {
@@ -2420,6 +2436,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.6 (\"An RC Server may receive a “discovery request” in any state of the life-cycle and shall send a “discovery response” in return.\"), TC18.txt L2731-2732",
+      "tc18_master_id": "TC18-12.6-002",
       "severity": "cybersecurity"
     },
     {
@@ -3289,7 +3307,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a712.9.1.1 (\"An RCP frame may include multiple ACF-types (requests)\"), TC18.txt L3220"
+      "tc18": "\u00a712.9.1.1 (\"An RCP frame may include multiple ACF-types (requests).\"), TC18.txt L3617",
+      "tc18_master_id": "TC18-12.9.1.1-001"
     },
     {
       "id": "REQ-L2-008",
