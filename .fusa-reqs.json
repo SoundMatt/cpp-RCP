@@ -1936,7 +1936,9 @@
       "text": "rcp::avtp::encode_ntscf_header/decode_ntscf_header shall round-trip stream_id, sequence_num, and control_data_length unchanged for a Non-Time-Synchronous Control Format AVTPDU header.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.1 Figure 6, \"NTSCF-Header Version 0\" (stream_id, sequence_num_lsb, ntscf_data_length fields; layout confirmed via the §13.6 Figure 21 ACF_GBB/NTSCF worked example showing the same header fields), TC18.txt L1130-1138",
+      "tc18_master_id": "TC18-11.1-004"
     },
     {
       "id": "REQ-WIRE-002",
@@ -1944,7 +1946,9 @@
       "text": "rcp::avtp::encode_tscf_header/decode_tscf_header shall round-trip stream_id, sequence_num, control_data_length, and the 32-bit avtp_timestamp field unchanged for a Time-Synchronous Control Format AVTPDU header.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.1 Figure 5, \"TSCF-Header Version 0\" (stream_id, sequence_num_lsb, avtp_timestamp fields; layout confirmed via the §13.6 Figure 20 ACF_ABB/TSCF worked example showing the same header fields), TC18.txt L1120-1128",
+      "tc18_master_id": "TC18-11.1-002"
     },
     {
       "id": "REQ-WIRE-003",
@@ -1960,7 +1964,9 @@
       "text": "encode_acf_abb/decode_acf_abb shall round-trip the shared ACF header and payload for an ACF_ABB (0x0E) message, and the decoded AcfMessageInfo::mtv shall always be false for ACF_ABB since it defines no timestamp slot.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.3 Table 17 (\"acf_msg_type 0x0E - ABB message without message_timestamp / 0x0D - GBB message, with message_timestamp\" ... \"message_timestamp Present in ACF_GBB, omitted in ACF_ABB\"), TC18.txt L2242-2250",
+      "tc18_master_id": "TC18-11.3-003"
     },
     {
       "id": "REQ-WIRE-005",
@@ -1968,7 +1974,9 @@
       "text": "encode_acf_gbb/decode_acf_gbb shall round-trip the shared ACF header, a 64-bit message_timestamp value, and the payload unchanged for an ACF_GBB (0x0D) message, and shall place them on the wire in the order octets 0-3 = shared-header quadlet 0 (acf_msg_type/acf_msg_length/pad/mtv/rsv/byte_bus_id), octets 4-11 = message_timestamp big-endian, octets 12-15 = shared-header quadlet 1 (evt/rsv/hs/cs/transaction_num/op/rsp/err/ms/read_size_or_segment_num), octets 16 onwards = byte_msg_payload.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.3 Table 17 field order (acf_msg_type/acf_msg_length/pad/mtv/rsv/byte_bus_id, then message_timestamp, then evt/hs/cs/transaction_num/op/rsp/err/ms/read_size-or-segment_num) for the genuine-timestamp ACF_GBB case, matching the identical octet ordering shown in the §13.6 Figure 21 ACF_GBB/NTSCF worked example, TC18.txt L2241-2265",
+      "tc18_master_id": "TC18-11.3-003"
     },
     {
       "id": "REQ-WIRE-006",
@@ -1976,7 +1984,9 @@
       "text": "AcfMessageInfo encode/decode shall preserve acf_msg_type, acf_msg_length, pad, mtv, byte_bus_id, the evt ack flag and 3-bit sub-opcode, hs, cs, transaction_num, op, rsp, err, ms, and the dual-purpose read_size/segment_num field unchanged through an encode/decode round trip.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.1 Table 4, \"Usage of ABB message for standard requests\" (full byte_message_info field list: acf_msg_type, acf_msg_length, pad, mtv, rsv, byte_bus_id, evt, hs, cs, transaction_num, op, rsp, err, ms, read_size/segment_num) + §13.5 (\"evt[3] is used to request an acknowledge. I.e. evt[3] = 1 requests acknowledge.\"), TC18.txt L1218-1236,4072",
+      "tc18_master_id": "TC18-11.2.1-005"
     },
     {
       "id": "REQ-WIRE-007",
@@ -2000,7 +2010,9 @@
       "text": "rcp::acf::make_standard_request shall build a request using acf_msg_type ACF_ABB with rsp clear, representing the mandatory best-effort, unconditional standard request kind.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.1 (\"A request that is meant for best effort execution shall be sent in ACF_ABB format.\"; §11.2.1 heading itself: \"Standard request – unconditional execution of request (mandatory feature)\"), TC18.txt L1204-1205",
+      "tc18_master_id": "TC18-11.2.1-002"
     },
     {
       "id": "REQ-WIRE-010",
@@ -2008,7 +2020,9 @@
       "text": "rcp::acf::response_kind_of shall recover Acknowledge, WriteResponse, ReadResponse, or ErrorResponse from a header built by make_response with the corresponding ResponseKind, and the four kinds shall be pairwise distinguishable from the shared header fields alone.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.3.1-§11.3.4 (\"With evt[3:0] = 0xF the response is an acknowledge\"; \"With evt[3:0] < 0x9 and op = 1 the response is a write response\"; \"With evt[3:0] < 0x9 and op = 0 the response is a read response\"; \"With evt[3:0] < 0x9 and err = 1 the response is an error-response\"), TC18.txt L2283-2301",
+      "tc18_master_id": "TC18-11.3.1-001"
     },
     {
       "id": "REQ-WIRE-011",
@@ -2016,7 +2030,9 @@
       "text": "A TSCF header with timestamp_valid false shall be distinguishable from one with a valid, zero-valued avtp_timestamp; decode_tscf_header shall preserve the timestamp_valid flag independently of the avtp_timestamp value.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.1 Figure 5 (tv validity-marker bit held separately from the avtp_timestamp value field; layout confirmed via the §13.6 Figure 20 ACF_ABB/TSCF worked example: \"...mr rsv tv sequence_num_lsb reserved tu...AVTP Time avtp_timestamp\"), TC18.txt L1120-1128,4212-4218",
+      "tc18_master_id": "TC18-11.1-002"
     },
     {
       "id": "REQ-WIRE-012",
