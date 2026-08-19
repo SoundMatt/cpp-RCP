@@ -263,6 +263,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§13.6 Table 34 (\"CRC32 Polynomial\"), TC18.txt L4193-4208",
+      "tc18_master_id": "TC18-13.6-003",
       "severity": "cybersecurity"
     },
     {
@@ -272,6 +274,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§13.6 Figure 21 (\"ACF_GBB under NTSCF header (example)\"; \"The calculation of the CRC (marked in blue) for an ACF_GBB includes the fields marked in green\"), TC18.txt L4264-4268",
+      "tc18_master_id": "TC18-13.6-005",
       "severity": "cybersecurity"
     },
     {
@@ -281,6 +285,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§13.6 (\"adding the CRC to the byte_msg_payload increases the acf_msg_length by 1\"), TC18.txt L4272-4273",
+      "tc18_master_id": "TC18-13.6-006",
       "severity": "cybersecurity"
     },
     {
@@ -290,6 +296,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§13.6 (\"the request is not executed, and an error response is generated with error code: CRC_ERROR\"), TC18.txt L4188-4189",
+      "tc18_master_id": "TC18-13.6-001",
       "severity": "cybersecurity"
     },
     {
@@ -308,6 +316,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.7.7 Table 24 (\"rx_enforce_crc ... 0b: stream is not blocked, when CRC check at EP fails / 1b: stream is blocked until released, when CRC check at EP fails and Safe state will be entered\"), TC18.txt L3239-3243",
+      "tc18_master_id": "TC18-12.7.7-001",
       "severity": "cybersecurity"
     },
     {
@@ -317,6 +327,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.7.7 Table 24 (\"rx_enforce_sequence ... 0b: stream is not blocked upon out of order reception / 1b: stream is blocked upon out of order reception and Safe state will be entered\"), TC18.txt L3244-3248",
+      "tc18_master_id": "TC18-12.7.7-001",
       "severity": "cybersecurity"
     },
     {
@@ -326,6 +338,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.7.7 Table 24 (\"rx_wd_timeout_intervall ... WatchDog time out for this Stream in clock tics ... 0dec: WD is disabled\"; \"rx_enforce_watchdog ... 0b: no watchdog for this stream / 1b: stream is blocked upon WD overflow and Safe state will be entered\"), TC18.txt L3233-3251",
+      "tc18_master_id": "TC18-12.7.7-001",
       "severity": "cybersecurity"
     },
     {
@@ -335,6 +349,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§11.2.2 (\"the MSB of the identifier (0x8x) is set the request is treated as a safety request and will not be deleted when the EP needs to go to safe state\"), TC18.txt L1258-1259",
+      "tc18_master_id": "TC18-11.2.2-001",
       "severity": "cybersecurity"
     },
     {
@@ -344,6 +360,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§11.2.2 (\"the MSB of the identifier (0x8x) is set the request is treated as a safety request and will not be deleted when the EP needs to go to safe state\"), TC18.txt L1258-1259",
+      "tc18_master_id": "TC18-11.2.2-001",
       "severity": "cybersecurity"
     },
     {
@@ -353,7 +371,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§12.7.7 (\"a safe state may be enforced. The safe state to enter can be chosen via the Safety_Measure parameter\"), TC18.txt L2935",
+      "tc18": "§12.7.7 (\"a safe state may be enforced. The safe state to enter can be chosen via the Safety_Measure parameter\"), TC18.txt L3300",
+      "tc18_master_id": "TC18-12.7.7-001",
       "severity": "cybersecurity"
     },
     {
@@ -363,6 +382,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§11.2.2 (\"the MSB of the identifier (0x8x) is set the request is treated as a safety request and will not be deleted when the EP needs to go to safe state\"), TC18.txt L1258-1259",
+      "tc18_master_id": "TC18-11.2.2-001",
       "severity": "cybersecurity"
     },
     {
@@ -2166,6 +2187,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§13.2 (\"13.2 Generic part of endpoint register map (owned by the RC Server)\"), TC18.txt L3932",
+      "tc18_master_id": "TC18-13.2-001",
       "severity": "cybersecurity"
     },
     {
@@ -2175,6 +2198,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.3.1.1 (\"Via EP0 the entire register map (i.e. all endpoints) can be accessed (read and write access).\"), TC18.txt L2541",
+      "tc18_master_id": "TC18-12.3.1.1-004",
       "severity": "cybersecurity"
     },
     {
@@ -2184,6 +2209,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§13.7.1.2 (\"Write requests to EP0 via all other streams are limited to EP0 and not beyond (i.e. other EPs).\"), TC18.txt L4400-4401",
+      "tc18_master_id": "TC18-13.7.1.2-002",
       "severity": "cybersecurity"
     },
     {
@@ -2193,6 +2220,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§13.7.1.2 (\"The svr_root_client_index is an index that selects the request stream which is in HW_CONFIGURED still allowed to access all registers of the register map.\"), TC18.txt L4397-4399",
+      "tc18_master_id": "TC18-13.7.1.2-002",
       "severity": "cybersecurity"
     },
     {
@@ -2202,6 +2231,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§13.1 (\"If within the RC Server's SERVER_config the ROOT_CLIENT is configured only the ROOT_CLIENT has write access to all RC Server configuration register maps. For other RC Clients than the ROOT_CLIENT write access is only given to EP_functional configuration of endpoints which are allocated to the RC Client within the EP_ID_config register map.\"), TC18.txt L3914-3916",
+      "tc18_master_id": "TC18-13.1-004",
       "severity": "cybersecurity"
     },
     {
@@ -2211,6 +2242,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.3.1.2 (\"access to the HW configuration of the RC Server shall have been concluded and as such all access to the HW_config and EP_generic_config are locked\"), TC18.txt L2553-2554",
+      "tc18_master_id": "TC18-12.3.1.2-001",
       "severity": "cybersecurity"
     },
     {
@@ -2220,6 +2253,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.7.5 Table 20 (\"RC Server configuration static part\"), TC18.txt L2895-3050",
+      "tc18_master_id": "TC18-12.7.5-001",
       "severity": "cybersecurity"
     },
     {
@@ -2229,6 +2264,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.7.6 Table 21 (\"HW_config\"), TC18.txt L3077-3108",
+      "tc18_master_id": "TC18-12.7.6-003",
       "severity": "cybersecurity"
     },
     {
@@ -2238,6 +2275,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.7.7 Table 24 (\"Request stream configuration\"), TC18.txt L3217-3293",
+      "tc18_master_id": "TC18-12.7.7-001",
       "severity": "cybersecurity"
     },
     {
@@ -2247,6 +2286,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.7.8 (\"The parameters Request_Stream_Index and BBID shall occur in ascending order. This has to be ensured by the instance that is sending the configuration to this table.\"), TC18.txt L3364-3365",
+      "tc18_master_id": "TC18-12.7.8-006",
       "severity": "cybersecurity"
     },
     {
@@ -2256,6 +2297,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.7.9 Table 27 (\"Responder QUEUE_config\"), TC18.txt L3402-3444",
+      "tc18_master_id": "TC18-12.7.9-007",
       "severity": "cybersecurity"
     },
     {
@@ -2265,6 +2308,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.7.10 Table 28 (\"SEQUENCER_config\"), TC18.txt L3460-3493",
+      "tc18_master_id": "TC18-12.7.10-004",
       "severity": "cybersecurity"
     },
     {
@@ -2274,6 +2319,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
+      "tc18": "§12.9.6 Table 30 (\"Error codes in responses\"), TC18.txt L3804-3844",
+      "tc18_master_id": "TC18-12.9.6-004",
       "severity": "cybersecurity"
     },
     {
@@ -2807,7 +2854,9 @@
       "text": "rcp::request::decode_request_type shall return RequestErrc::timestamp_not_repurposed when mtv is true, shall return RequestErrc::unknown_request_type when the top byte of message_timestamp is not one of the 8 defined opcodes, and shall otherwise recover the opcode and the remaining 7 parameter bytes exactly as produced by encode_request_type for the same inputs; rcp::request::make_conditional_request shall always build an ACF_GBB AcfMessageInfo with mtv clear. The repurposed slot is the ACF_GBB message_timestamp slot at wire octets 4-11 (see REQ-WIRE-005), whose first octet carries the opcode.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2 Table 5 (\"Different types of conditional requests\"), TC18.txt L1260-1267",
+      "tc18_master_id": "TC18-11.2.2-002"
     },
     {
       "id": "REQ-SEQ-002",
@@ -2815,7 +2864,9 @@
       "text": "rcp::request::category_of shall map the 3 cancellation opcodes to RequestCategory::Cancellation, each of the 5 conditional opcodes to its own category, and std::nullopt to RequestCategory::Standard; rcp::request::select_next_due shall pick the candidate with the lowest priority_rank among due candidates and shall break ties within a category by lowest arrival_seq (FIFO), returning std::nullopt for an empty input.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.9.2 (\"In case two or more requests are due for execution then the priorities are as follows: 1. cancellation 2. triggered 3. timed 4. compound 5. compound wait 6. chained 7. standard\"), TC18.txt L3652-3660",
+      "tc18_master_id": "TC18-12.9.2-003"
     },
     {
       "id": "REQ-SEQ-003",
@@ -2823,7 +2874,9 @@
       "text": "rcp::request::validate_feature_bundles shall return RequestErrc::compound_bundle_incomplete whenever FeatureSet::compound or FeatureSet::compound_wait is set unless compound, compound_wait, clear_non_safestate, and sequencer_count >= kMinCompoundSequencers (4) are all simultaneously true, and shall accept every other combination of triggered/chained/timed/clear_single independently of compound support.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.2 (\"Optional support of compound requests comes as bundle of - Support of compound requests (request types 0x0F and 0x8F) ... Implementation of at least four sequencers (see 12.10) - Clear all non-safestate requests from an EP request storage\"), TC18.txt L2408-2413",
+      "tc18_master_id": "TC18-12.2-004"
     },
     {
       "id": "REQ-SEQ-004",
@@ -2831,7 +2884,9 @@
       "text": "rcp::request::SequencerTable::ensure_size shall fill newly added slots with kDefaultState (1), never the storage's own zero-initialization default, shall never shrink existing storage, and try_advance shall increment a sequencer only when its current value equals the supplied expected_start, leaving it unchanged (and reporting out_advanced=false, not an error) otherwise; both accessors shall return RequestErrc::index_out_of_range for an out-of-bounds index.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.9.3 Table 29 (\"In RF state the state of sequencer cmp_sequencer is set to cmp_next_state if the sequencer state still equals the cmp_start_state, else the sequencer state is not changed.\"), TC18.txt L3702-3703",
+      "tc18_master_id": "TC18-12.9.3-002"
     },
     {
       "id": "REQ-SEQ-005",
@@ -2839,7 +2894,9 @@
       "text": "rcp::request::RequestLedger::cancel_single shall cancel a Pending/Started request and cascade cancellation to every transitive chained successor, and shall return RequestErrc::request_not_found for an unknown transaction or one that is UnderExecution/Finalized/already Canceled; cancel_all shall cancel every Pending/Started record (optionally skipping is_safety records when non_safestate_only is set) without disturbing any UnderExecution or Finalized record; a canceled request's outcome_of shall report RequestErrc::request_canceled.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.3 (\"If a request is cancelled to which a request is chained, then the chained successors shall be cancelled by the RC Server as well.\"), TC18.txt L1978-1979",
+      "tc18_master_id": "TC18-11.2.3-002"
     },
     {
       "id": "REQ-SEQ-006",
@@ -2847,7 +2904,9 @@
       "text": "rcp::request::RequestLedger shall only permit the single-step forward sequence Pending->Started->UnderExecution->Finalized, returning RequestErrc::invalid_lifecycle_transition for any other requested transition and RequestErrc::unknown_transaction for an untracked id; submit shall return RequestErrc::transaction_num_collision for a transaction_num already tracked; finalize shall drive SequencerTable::try_advance for a Compound/CompoundWait record's sequencer_index/expected_start_state as its side effect.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§12.9.3 (\"Once a request has been filed into an EP request storage, it is in the state \\\"request pending\\\". When the request is due for execution... it enters the state \\\"request started\\\" (RS)... The lifecycle advances to \\\"request under execution\\\" (RE)... and then to \\\"request finalized\\\" (RF)\"), TC18.txt L3679-3682",
+      "tc18_master_id": "TC18-12.9.3-001"
     },
     {
       "id": "REQ-SEQ-007",
@@ -2855,7 +2914,9 @@
       "text": "rcp::request::RequestLedger::finalize shall, for every record whose chained_predecessor equals the finalized transaction_num, cascade-cancel that successor iff rcp::request::should_execute_chained(successor.cs, errored) is false, and shall leave every such successor untouched when the predecessor finalized with errored=false.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.6 (\"cs Conditional start 0b: request will be executed even in case the previous request returned an error 1b: request will not be executed in case the previous request returned an error... error response with error code = CHAIN_ABORTED. In case the chain is repetitive as per initial request it starts over.\"), TC18.txt L1833-1838",
+      "tc18_master_id": "TC18-11.2.2.6-011"
     },
     {
       "id": "REQ-SEQ-008",
@@ -2863,7 +2924,9 @@
       "text": "rcp::request::compound_wait_check_of shall map cs=true to CompoundWaitCheck::Immediate and cs=false to CompoundWaitCheck::AfterChangeOnly; rcp::request::should_execute_chained shall return true whenever cs is true regardless of predecessor_errored, and shall return true iff predecessor_errored is false when cs is false.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.3 (\"If cs = 0, then compound wait request is due for execution, when the sequencer is in the cmpw_start_state. If cs = 1, then compound wait request is due for execution, when EP output state has changed after the sequencer reached the cmpw_start_state.\"), TC18.txt L1514-1516",
+      "tc18_master_id": "TC18-11.2.2.3-008"
     },
     {
       "id": "REQ-SEQ-009",
@@ -2879,7 +2942,9 @@
       "text": "rcp::request::is_valid_request_type and decode_request_type shall accept RequestTypeOpcode::CompoundSafety (0x8F), CompoundWaitSafety (0x8B), and TriggeredSafety (0x8E) as valid opcodes, round-tripping their parameter bytes exactly as the eight pre-existing opcodes do, and shall reject every other MSB-set byte value as RequestErrc::unknown_request_type.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2 Table 5 (\"0x0F, 0x8F Compound ... 0x0B, 0x8B Compound wait ... 0x0E, 0x8E Triggered\"), TC18.txt L1260-1267",
+      "tc18_master_id": "TC18-11.2.2-002"
     },
     {
       "id": "REQ-SEQ-011",
@@ -2887,7 +2952,9 @@
       "text": "rcp::request::is_safety_variant shall return true for exactly CompoundSafety/CompoundWaitSafety/TriggeredSafety and false for every other RequestTypeOpcode; rcp::request::category_of shall map each safety-tagged opcode to the same RequestCategory as its corresponding base opcode (Compound, CompoundWait, Triggered).",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2 (\"the MSB of the identifier (0x8x) is set the request is treated as a safety request and will not be deleted when the EP needs to go to safe state\"), TC18.txt L1258-1259",
+      "tc18_master_id": "TC18-11.2.2-001"
     },
     {
       "id": "REQ-SEQ-012",
@@ -2895,7 +2962,9 @@
       "text": "rcp::request::request_record_for shall set the returned RequestRecord's is_safety field to is_safety_variant(*type) when type has a value, to false when type is std::nullopt (the standard request kind), and the resulting record shall be excluded from cancellation by RequestLedger::cancel_all(non_safestate_only=true) if and only if is_safety is true.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§11.2.3.2 (\"Clear all non-safestate requests from an EP request storage that have been received in the same stream as the request for cancellation. In this case the request type (first byte in the message_timestamp field) is 0x06.\"), TC18.txt L2056-2057",
+      "tc18_master_id": "TC18-11.2.3.2-001"
     },
     {
       "id": "REQ-LINEP-001",
