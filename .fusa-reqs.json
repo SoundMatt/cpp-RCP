@@ -2393,7 +2393,9 @@
       "text": "rcp::gpio::kGpioPayloadLen shall be 4 and kMaxPins shall be 32; encode_gpio_payload/decode_gpio_payload shall round-trip a PinMask value in big-endian byte order, and decode_gpio_payload shall return avtp::AvtpErrc::short_buffer when given fewer than kGpioPayloadLen bytes.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.4.1 (\"A request not having exactly four bytes is rejected and an error response with error code = INVALID_PARAMETER will be sent\"), TC18.txt L4799-4800",
+      "tc18_master_id": "TC18-13.7.4.1-005"
     },
     {
       "id": "REQ-GPIO-002",
@@ -2401,7 +2403,9 @@
       "text": "rcp::gpio::apply_gpio_write shall apply Replace/Or/And/Xor to GpioState::values via rcp::endpoint::apply_bitmask_write.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 33 (\"The byte_msg_payload is presented at the interface\"; GPIO/PWM_OUT row, evt[2:0]=000b-011b), TC18.txt L4093-4105",
+      "tc18_master_id": "TC18-13.5-001"
     },
     {
       "id": "REQ-GPIO-003",
@@ -2409,7 +2413,9 @@
       "text": "rcp::gpio::apply_gpio_write shall apply the saturating Add/Subtract rule to GpioState::values, clamping instead of wrapping, using the same rcp::endpoint saturation helpers PWM_OUT is expected to reuse at v2.4.0.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5 (\"While doing additions and subtractions neither overflows nor wrap-arounds shall occur. The values are saturated at 0x0000 on the low side and 0xFFFF at the high side.\"), TC18.txt L4118-4119",
+      "tc18_master_id": "TC18-13.5-003"
     },
     {
       "id": "REQ-GPIO-004",
@@ -2417,7 +2423,9 @@
       "text": "rcp::gpio::apply_gpio_write shall return an error without modifying GpioState for WriteSemantics::Reserved, and shall replace GpioState::directions (leaving GpioState::values unchanged) for WriteSemantics::Reconfigure.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 33 (GPIO/PWM_OUT row, evt[2:0]=100b \"reserved – request shall be ignored and an err-response with error code = UNSUPPORTED_CMD shall be sent\"; evt[2:0]=111b \"used to change the configuration of the endpoint\"), TC18.txt L4106-4116",
+      "tc18_master_id": "TC18-13.5-001"
     },
     {
       "id": "REQ-GPIO-005",
@@ -2425,7 +2433,9 @@
       "text": "rcp::gpio::evaluate_gpio_triggers shall notify a pin's Change signal on any bit transition and additionally its Rising or Falling signal depending on transition direction, reporting only signals the caller's rcp::endpoint::TriggerRegistry had armed, and shall notify nothing for a pin whose bit did not change.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.4.1 (\"The GPIO endpoint optionally generates triggers for all its mapped IO-pins on the change, falling and rising edge.\"), TC18.txt L4816",
+      "tc18_master_id": "TC18-13.7.4.1-011"
     },
     {
       "id": "REQ-GPIO-006",
@@ -2458,7 +2468,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§13.7.4.3 (\"A write request to an input pin is ignored for this input pin\")"
+      "tc18": "§13.7.4.3 (\"A write request to an input pin is ignored for this input pin\"), TC18.txt L4890",
+      "tc18_master_id": "TC18-13.7.4.3-004"
     },
     {
       "id": "REQ-SPI-001",
@@ -2467,7 +2478,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§13.7.3.1 (\"the SPI endpoint may support up to 6 pre-configurable sets of SPI configurations\"), TC18.txt L4192"
+      "tc18": "§13.7.3.2 (\"up to 6 CS signals may be handled by the SPI endpoint via its configurations\"; \"the SPI bus functional configuration supports up to 6 different configurations in parallel. Which configuration is used within an SPI request is determined by evt[2:0].\"), TC18.txt L4730-4739",
+      "tc18_master_id": "TC18-13.7.3.2-006"
     },
     {
       "id": "REQ-SPI-002",
@@ -2475,7 +2487,9 @@
       "text": "rcp::spi::compound_wait_matches shall compare only the first kCompoundWaitCompareLen (4) bytes of a status transfer against the expected pattern, ignoring any difference beyond that window, shall reject a status transfer longer than kMaxStatusBytes (20), and shall return false when the truncated comparison window is empty.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5.1 (\"the interface status shall be capped to the length of the byte message payload. For SPI this means that e.g. only the first four out of 20 received bytes will be checked when the byte_msg_payload in the compound wait has only four bytes.\"), TC18.txt L4136-4139",
+      "tc18_master_id": "TC18-13.5.1-001"
     },
     {
       "id": "REQ-SPI-003",
@@ -2483,7 +2497,9 @@
       "text": "rcp::spi::SpiEndpoint::transfer shall record the sent and received bytes for the given channel independently of every other channel's last transfer, and shall return SpiErrc::channel_out_of_range for a channel >= kMaxChannels without recording anything.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.3.1 (\"The RC Client can request the SPI endpoint to send one or more bytes that are delivered as byte_msg_payload of an ACF_ABB/GBB to the endpoint.\"), TC18.txt L4597-4598",
+      "tc18_master_id": "TC18-13.7.3.1-003"
     },
     {
       "id": "REQ-SPI-004",
@@ -2491,7 +2507,9 @@
       "text": "rcp::spi::SpiEndpoint::transfer shall notify CsAssert, then TransferComplete, then CsDeassert for the transferred channel's rcp::endpoint::TriggerRegistry, spi_signal_id shall assign a distinct SignalId to every (channel, signal) pair, and a channel's armed signals shall not affect notification delivery for any other channel.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.3.1 Table 41 (\"spi trigger outputs\"; 0 = SPI execution done, 2+2n = CSn asserted, 3+2n = CSn de-asserted), TC18.txt L4603-4611",
+      "tc18_master_id": "TC18-13.7.3.1-007"
     },
     {
       "id": "REQ-SPI-005",
@@ -2553,7 +2571,9 @@
       "text": "rcp::uart::UartEndpoint::enqueue_tx shall append to a TX queue independent of the RX FIFO's contents, drain_tx shall return and clear exactly what was queued, and enqueue_tx shall return UartErrc::tx_queue_overflow rather than partially enqueueing when the push would exceed kTxQueueCapacity.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.8.1 (\"These two processes are independent from each other, thus the UART EP has two EP request storages, one for transmitting data and one for receiving data.\"), TC18.txt L5292-5293",
+      "tc18_master_id": "TC18-13.7.8.1-001"
     },
     {
       "id": "REQ-UART-002",
@@ -2561,7 +2581,9 @@
       "text": "rcp::uart::UartEndpoint::rx_fill shall append bytes to the RX FIFO, rx_available shall report its current occupancy, and rx_fill shall return UartErrc::rx_fifo_overflow rather than partially filling when the push would exceed kRxFifoCapacity.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.8.1 (\"While receiving the UART EP shifts the received data into a fifo-rx-buffer that has a length of uart_rx_fifo_size. The buffer is emptied by read requests. Overflow is flagged in the UART EP status register.\"), TC18.txt L5294-5295",
+      "tc18_master_id": "TC18-13.7.8.1-002"
     },
     {
       "id": "REQ-UART-003",
@@ -2569,7 +2591,9 @@
       "text": "rcp::uart::UartEndpoint::handle_read shall drain up to `read_size` bytes currently available in the RX FIFO, shall report out_timed_out=true only when read_size was not fully reached and elapsed_ms >= uart_timeout_ms, and shall return UartErrc::read_size_exceeds_bound for a read_size greater than kMaxReadSize without modifying the RX FIFO.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.8.1 (\"A read request will be started as soon as the fifo-rx-buffer is filled with as many bytes as requested in the read_size or when the uart_timeout has expired\"), TC18.txt L5297-5298",
+      "tc18_master_id": "TC18-13.7.8.1-004"
     },
     {
       "id": "REQ-UART-004",
@@ -2585,7 +2609,9 @@
       "text": "rcp::uart::pack_frame_to_octet shall mask a frame's value to its low bits_per_frame bits (zero-padding the remaining high bits of the octet), rcp::uart::unpack_frame_bits shall invert that masking, and both shall return UartErrc::bits_per_frame_out_of_range for bits_per_frame outside [kMinBitsPerFrame, kMaxBitsPerFrame].",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.8.3 (\"In case uart_nr_bits is not a multiple integer of 8, then the RC Client might need to append up to 'uart_nr_bits - 1' bits to create a payload in requests that fits into an integer multiple of octects. Equally the UART EP will append up to 'uart_nr_bits - 1' bits in such cases in the responses. When transmitting the EP ignores the last up to 'uart_nr_bits - 1' bits from the request payload, when the length of the payload is not an integer multiple of uart_nr_bits.\"), TC18.txt L5402-5406",
+      "tc18_master_id": "TC18-13.7.8.3-004"
     },
     {
       "id": "REQ-UART-006",
@@ -2665,7 +2691,9 @@
       "text": "rcp::pwm::PwmValue shall default both period and active_duration to 0, and both rcp::pwm::PwmOutEndpoint and rcp::pwm::PwmInEndpoint shall operate on this same two-field type.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.5.3 (\"The PWM_out request and response contain two values in the payload. The active time of the PWM signal as well as the period of the signal in clock ticks of the clock selected for this PWM_out endpoint.\"; Figure 27 – \"pwmo request format\"), TC18.txt L5031-5038",
+      "tc18_master_id": "TC18-13.7.5.3-001"
     },
     {
       "id": "REQ-PWM-002",
@@ -2674,7 +2702,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§13.5 Table 30 (GPIO/PWM_OUT row, evt[2:0]=000b)"
+      "tc18": "§13.5 Table 33 (\"The byte_msg_payload is presented at the interface\"; GPIO/PWM_OUT row, evt[2:0]=000b — this citation corrects the requirement text's own \"Table 30\", which is TC18's Table 30: Error codes in responses, not the evt-field table), TC18.txt L4093,L4116",
+      "tc18_master_id": "TC18-13.5-001"
     },
     {
       "id": "REQ-PWM-003",
@@ -2683,7 +2712,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§13.5 Table 30 (GPIO/PWM_OUT row, evt[2:0]=001b-011b,101b-110b), TC18.txt L3694-3714"
+      "tc18": "§13.5 Table 33 (GPIO/PWM_OUT row, evt[2:0]=001b-011b,101b-110b; \"While doing additions and subtractions neither overflows nor wrap-arounds shall occur. The values are saturated at 0x0000 on the low side and 0xFFFF at the high side.\" — this citation corrects the requirement text's own \"Table 30\" and the prior \"L3694-3714\" line range, both of which pointed at unrelated sequencer-state-machine text), TC18.txt L4094-4119",
+      "tc18_master_id": "TC18-13.5-003"
     },
     {
       "id": "REQ-PWM-004",
@@ -2691,7 +2721,9 @@
       "text": "rcp::pwm::PwmOutEndpoint::handle_write shall return an error without modifying its state for WriteSemantics::Reserved, and shall return rcp::endpoint::EndpointErrc::non_combinable_write_semantics for WriteSemantics::Reconfigure (PWM_OUT defines no Reconfigure target of its own).",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 33 (GPIO/PWM_OUT row, evt[2:0]=100b \"reserved – request shall be ignored and an err-response with error code = UNSUPPORTED_CMD shall be sent\"; evt[2:0]=111b \"used to change the configuration of the endpoint\"), TC18.txt L4106-4116",
+      "tc18_master_id": "TC18-13.5-001"
     },
     {
       "id": "REQ-PWM-005",
@@ -2699,7 +2731,9 @@
       "text": "rcp::pwm::PwmInEndpoint::handle_read shall return PwmErrc::no_signal before any record_measurement call and again after clear_signal(), and shall otherwise return the most recently recorded PwmValue.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.6.1 (\"If the period of the incoming signal exceeds the configured maximum allowed period or if the external PWM source stops, the PWM_IN endpoint will detect this and if enabled within the EP_config (EP_RESP_ON_ERR) notify the RC Client with an error response message.\"; error code PWM_IN_NO_SIGNAL(9), Table 30: Error codes in responses), TC18.txt L5078-5080",
+      "tc18_master_id": "TC18-13.7.6.1-001"
     },
     {
       "id": "REQ-PWM-006",
@@ -2708,7 +2742,8 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "§13.7.5.1 Table 44 (pwmi trigger outputs)"
+      "tc18": "§13.7.6.1 Table 47 (\"pwmi trigger outputs\"; 0 = rising edge of PWM_IN signal, 1 = falling edge of PWM_IN signal — this citation corrects the requirement's own \"§13.7.5.1 Table 44\", which is PWM_OUT's section and GPIO's functional-config table respectively, not PWM_IN's trigger table), TC18.txt L5078-5087",
+      "tc18_master_id": "TC18-13.7.6.1-002"
     },
     {
       "id": "REQ-PWM-007",
@@ -3016,7 +3051,9 @@
       "text": "rcp::endpoint::kEndpointTypeWakeup shall equal 0x01.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.2 Table 32 (\"ep_type values\"; row \"0x01 WakeUp\"), TC18.txt L3998-4017",
+      "tc18_master_id": "TC18-13.2-002"
     },
     {
       "id": "REQ-WAKEUP-002",
@@ -3024,7 +3061,9 @@
       "text": "rcp::wakeup::kSleepCmd shall equal 0xA5; rcp::wakeup::decode_sleep_cmd shall accept only that exact byte value and return WakeupErrc::not_sleep_cmd for every other byte (including 0x8x safety-tagged sequencer opcode bytes); rcp::wakeup::WakeupEndpoint::handle_sleep_cmd shall transition to asleep on kSleepCmd and shall leave state unchanged and return an error for any other byte.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.2.3 (\"SleepCMD is coded as 0xA5.\"), TC18.txt L4565",
+      "tc18_master_id": "TC18-13.7.2.3-004"
     },
     {
       "id": "REQ-WAKEUP-003",
@@ -3032,7 +3071,9 @@
       "text": "rcp::wakeup::WakeupEndpoint::record_wake_source_event shall set the corresponding bit in wake_source_pins() and shall clear is_asleep(), and clear_wake_source_pins() shall reset the accumulated mask to 0 without affecting is_asleep() or the handshake-pending state.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.2.2 Table 39 (\"wup_status...Indication of wake-up source, writing '1' clears the flag. Each bit represents a wake-up source\"), TC18.txt L4503-4506",
+      "tc18_master_id": "TC18-13.7.2.2-002"
     },
     {
       "id": "REQ-WAKEUP-004",
@@ -3040,7 +3081,9 @@
       "text": "rcp::wakeup::WakeupEndpoint::record_wake_source_event shall arm wakeup_message_pending() until acknowledge_wakeup() is called, wakeup_message_pending() shall continue reporting true across repeated calls while armed, and handle_sleep_cmd(kSleepCmd) shall clear any handshake left pending from a prior wake cycle.",
       "standard": "iso26262",
       "level": "ASIL-B",
-      "asil": "ASIL-B"
+      "asil": "ASIL-B",
+      "tc18": "§13.7.2.1 (\"After establishing a network connection, the WakeUp endpoint sends repetitive messages. The timing interval is configurable (flush_time).\"), TC18.txt L4488-4489",
+      "tc18_master_id": "TC18-13.7.2.1-002"
     },
     {
       "id": "REQ-WAKEUP-005",
