@@ -3,6 +3,8 @@
 // fusa:req REQ-I2C-003
 // fusa:req REQ-I2C-004
 // fusa:req REQ-I2C-005
+// fusa:req REQ-I2C-006
+// fusa:req REQ-I2C-007
 
 // I2C endpoint (ep_type 0x04) — controller-only raw byte-stream transfer
 // (including address bytes, per the OPEN Alliance TC18 Remote Control
@@ -18,6 +20,15 @@
 // — a single I2cEndpoint instance models one controller-mode I2C bus, and
 // the target device address travels inside the raw byte stream itself
 // rather than as a separate selector field.
+//
+// Table 30/33 Row 2 evt[2:0] validation pilot (post-v2.4.0): I2cEndpoint's
+// handle_request is this repo's first wiring of
+// rcp::endpoint::evt_row2_kind_of — the shared 3-way evt[2:0] classifier
+// for Table 33's {ADC, PWM_IN, I2C, LIN, CAN, UART, ISELED, MDIO} row — into
+// a concrete endpoint type's request decode. The other seven Row 2 endpoint
+// types are expected to add their own handle_request-shaped entry point
+// calling the same rcp::endpoint::evt_row2_kind_of in their own follow-up
+// PRs, matching this shape.
 //
 // OPEN ITEM, called out explicitly per the roadmap rather than guessed at:
 // the extraction leaves the mapping of I2C's `i2c_mode` field (device
@@ -68,6 +79,13 @@ constexpr I2cMode i2c_mode_of(bool hs) noexcept {
 
 enum class I2cErrc : int {
     nack = 1, // the addressed device did not acknowledge (controller-only view)
+    // evt_row2_kind_of classified the request as ConfigWrite (evt[2:0] ==
+    // 111b, §12.7.1). This milestone's pilot deliberately does not
+    // implement the configuration-write shape (relative EP_functional-
+    // config start address + configuration data) — see handle_request's own
+    // comment. Reported explicitly rather than silently accepted as a plain
+    // transfer or silently ignored.
+    config_write_not_supported = 2,
 };
 
 inline const std::error_category& i2c_category() noexcept {
@@ -76,7 +94,9 @@ inline const std::error_category& i2c_category() noexcept {
         std::string message(int ev) const override {
             switch (static_cast<I2cErrc>(ev)) {
             case I2cErrc::nack: return "rcp/i2c: addressed device did not acknowledge (NACK)";
-            default:            return "rcp/i2c: unknown error";
+            case I2cErrc::config_write_not_supported:
+                return "rcp/i2c: evt[2:0]=111b configuration-write requests are not yet implemented";
+            default: return "rcp/i2c: unknown error";
             }
         }
     };
@@ -151,6 +171,46 @@ public:
             return make_error_code(I2cErrc::nack);
         }
         return {};
+    }
+
+    // handle_request is I2C's request-decode entry point — the piece this
+    // header previously had none of (issue: cpp-RCP had zero Table 33 Row 2
+    // evt[2:0] validation anywhere). It classifies the incoming request's
+    // evt[2:0] field via rcp::endpoint::evt_row2_kind_of (Table 33's shared
+    // ADC/PWM_IN/I2C/LIN/CAN/UART/ISELED/MDIO rule) before doing anything
+    // else, so a Reserved value can never reach transfer() and be misread
+    // as an ordinary transfer, and a ConfigWrite value can never be
+    // silently accepted or silently dropped:
+    //   - Plain (evt[2:0] == 000b): delegates straight to transfer() with
+    //     `out_bytes`/`in_bytes`/`acked` unchanged — I2C's existing
+    //     controller-only raw byte-stream transfer model (extraction
+    //     §13.7.7.3) already IS this row's correct "plain request"
+    //     behavior; evt[2:0] carries no combinable value or channel
+    //     selector for this row the way it does for GPIO/PWM_OUT or SPI.
+    //   - Reserved (evt[2:0] in 001b-110b): returns
+    //     endpoint::EndpointErrc::reserved_evt_row2 without touching any
+    //     endpoint state or recording anything as sent/received — TC18
+    //     requires this be rejected with error code UNSUPPORTED_CMD.
+    //   - ConfigWrite (evt[2:0] == 111b): §12.7.1's configuration-write
+    //     shape targets the I2C EP's own functional-config block (relative
+    //     start address + configuration data), not a bus transfer at all.
+    //     Full handling is deliberately out of scope for this milestone's
+    //     pilot (nontrivial — it needs EP_functional-config wiring this
+    //     header does not yet have); this returns
+    //     I2cErrc::config_write_not_supported rather than crashing,
+    //     silently accepting the request as a transfer, or silently doing
+    //     nothing.
+    std::error_code handle_request(uint8_t evt_op, std::vector<uint8_t> out_bytes,
+                                    std::vector<uint8_t> in_bytes, bool acked = true) {
+        switch (endpoint::evt_row2_kind_of(evt_op)) {
+        case endpoint::EvtRow2Kind::Plain:
+            return transfer(std::move(out_bytes), std::move(in_bytes), acked);
+        case endpoint::EvtRow2Kind::Reserved:
+            return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2);
+        case endpoint::EvtRow2Kind::ConfigWrite:
+            return make_error_code(I2cErrc::config_write_not_supported);
+        }
+        return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2); // unreachable
     }
 
     const std::vector<uint8_t>& last_sent() const noexcept { return last_out_; }

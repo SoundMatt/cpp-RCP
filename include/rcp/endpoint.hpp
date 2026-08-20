@@ -4,6 +4,7 @@
 // fusa:req REQ-ENDPOINT-004
 // fusa:req REQ-ENDPOINT-005
 // fusa:req REQ-ENDPOINT-006
+// fusa:req REQ-ENDPOINT-007
 
 // Shared endpoint-registration and request-dispatch scaffolding — the pieces
 // every concrete OPEN Alliance TC18 Remote Control Protocol Specification
@@ -114,6 +115,50 @@ constexpr WriteSemantics write_semantics_of(uint8_t evt_op) noexcept {
     return static_cast<WriteSemantics>(evt_op & 0x07);
 }
 
+// ── evt[2:0] Row 2 classification (Table 33's ADC/PWM_IN/I2C/LIN/CAN/UART/ ──
+// ISELED/MDIO row) ──────────────────────────────────────────────────────────
+// The 3-way evt[2:0] classification shared by every endpoint type in Table
+// 33's second row (extraction §13.5): I2C (this milestone, rcp/i2c.hpp) and,
+// in later milestones, ADC, PWM_IN, LIN, CAN, UART, ISELED, and MDIO. Unlike
+// WriteSemantics above (GPIO/PWM_OUT's own row) and spi::channel_of (SPI's
+// own dedicated row), this row's evt[2:0] carries no combinable value or
+// channel selector at all: 000b is the only value a plain (non-
+// configuration) request in this row may carry, 001b-110b are reserved (a
+// request carrying one must be rejected with error code UNSUPPORTED_CMD,
+// never silently treated as a no-op or as if it were 000b), and 111b
+// selects an entirely different, configuration-write-shaped request
+// (§12.7.1) that a plain read/write decoder must never accept either.
+//
+// RESOLVED AMBIGUITY: Table 33's own literal text groups evt[2:0]=000b
+// together with 001b-110b as a single "reserved — reject" range for this
+// row, which read in isolation would make evt=000b illegal too, leaving
+// every endpoint type in this row permanently unusable for ordinary
+// requests. That reading is contradicted by TC18's own §13.7.9.3 worked
+// example for ADC (a member of this row) showing evt[2:0]=000b used in an
+// ordinary standard read request (Figure 34's own bit-level evt field is
+// all zero) that succeeds normally, not rejected. This implementation
+// follows the worked example — evt=000b is the ordinary, successful case —
+// the same resolution c-RCP's rcp_acf_evt_row2_is_plain() already shipped
+// for this identical ambiguity.
+//
+// This function is deliberately not scoped to I2C: every Row 2 endpoint
+// type is expected to call it from its own request-decode entry point,
+// same as write_semantics_of above is shared by GPIO and PWM_OUT.
+enum class EvtRow2Kind : uint8_t {
+    Plain       = 0, // evt[2:0] == 000b — the only valid plain-request value
+    ConfigWrite = 1, // evt[2:0] == 111b — §12.7.1 configuration-write shape
+    Reserved    = 2, // every other evt[2:0] value (001b-110b) — reject as UNSUPPORTED_CMD
+};
+
+// evt_row2_kind_of masks its argument down to the low 3 bits before
+// classifying, same discipline as write_semantics_of above.
+constexpr EvtRow2Kind evt_row2_kind_of(uint8_t evt_op) noexcept {
+    const uint8_t masked = static_cast<uint8_t>(evt_op & 0x07);
+    if (masked == 0x00) return EvtRow2Kind::Plain;
+    if (masked == 0x07) return EvtRow2Kind::ConfigWrite;
+    return EvtRow2Kind::Reserved;
+}
+
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 enum class EndpointErrc : int {
@@ -125,6 +170,10 @@ enum class EndpointErrc : int {
     // endpoint-type-specific — see e.g. gpio::apply_gpio_write) was passed
     // to it directly.
     non_combinable_write_semantics = 2,
+    // evt_row2_kind_of classified a Table 33 Row 2 request's evt[2:0] as
+    // Reserved (001b-110b) — TC18 requires this be rejected with error code
+    // UNSUPPORTED_CMD, never silently accepted or treated as Plain.
+    reserved_evt_row2 = 3,
 };
 
 inline const std::error_category& endpoint_category() noexcept {
@@ -136,6 +185,8 @@ inline const std::error_category& endpoint_category() noexcept {
                 return "rcp/endpoint: evt[2:0]=4 (Reserved) is not a valid write semantics";
             case EndpointErrc::non_combinable_write_semantics:
                 return "rcp/endpoint: write semantics does not combine via apply_bitmask_write";
+            case EndpointErrc::reserved_evt_row2:
+                return "rcp/endpoint: evt[2:0] is a reserved Table 33 Row 2 value (001b-110b)";
             default:
                 return "rcp/endpoint: unknown error";
             }

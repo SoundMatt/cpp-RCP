@@ -3,6 +3,8 @@
 // fusa:test REQ-I2C-003
 // fusa:test REQ-I2C-004
 // fusa:test REQ-I2C-005
+// fusa:test REQ-I2C-006
+// fusa:test REQ-I2C-007
 
 // Tests for rcp/i2c.hpp — the I2C endpoint type (ROADMAP.md milestone 48,
 // "Basic Endpoint Types II — I2C, UART, ADC, PWM_OUT, PWM_IN", v2.4.0).
@@ -91,10 +93,62 @@ TEST_CASE("I2cEndpoint::transfer fires only TransferComplete on a normal acked t
     REQUIRE(drained[0] == i2c_signal_id(I2cSignal::TransferComplete));
 }
 
+// ── Table 33 Row 2 evt[2:0] validation (handle_request) ─────────────────────
+
+TEST_CASE("I2cEndpoint::handle_request delegates a Plain (evt[2:0]==000b) request to transfer()",
+          "[i2c][REQ-I2C-006]") {
+    I2cEndpoint ep;
+    ep.triggers().enable(i2c_signal_id(I2cSignal::TransferComplete));
+
+    auto ec = ep.handle_request(/*evt_op=*/0, {0xA0, 0x10}, {0xFF});
+    REQUIRE_FALSE(ec);
+    REQUIRE(ep.last_sent() == std::vector<uint8_t>{0xA0, 0x10});
+    REQUIRE(ep.last_received() == std::vector<uint8_t>{0xFF});
+    REQUIRE(ep.triggers().drain() == std::vector<rcp::endpoint::TriggerRegistry::SignalId>{
+                                          i2c_signal_id(I2cSignal::TransferComplete)});
+}
+
+TEST_CASE("I2cEndpoint::handle_request rejects every reserved evt[2:0] value (001b-110b)",
+          "[i2c][REQ-I2C-006]") {
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        I2cEndpoint ep;
+        auto ec = ep.handle_request(evt_op, {0xA0}, {0xFF});
+        REQUIRE(ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+        // A rejected reserved evt must not record anything as sent/received.
+        REQUIRE(ep.last_sent().empty());
+        REQUIRE(ep.last_received().empty());
+    }
+}
+
+TEST_CASE("I2cEndpoint::handle_request reports config_write_not_supported for evt[2:0]==111b "
+          "without crashing or touching transfer state",
+          "[i2c][REQ-I2C-007]") {
+    I2cEndpoint ep;
+    auto ec = ep.handle_request(/*evt_op=*/7, {0x00, 0xAB}, {});
+    REQUIRE(ec == make_error_code(I2cErrc::config_write_not_supported));
+    REQUIRE(ep.last_sent().empty());
+    REQUIRE(ep.last_received().empty());
+}
+
+TEST_CASE("I2cEndpoint::handle_request masks evt_op down to 3 bits before classifying",
+          "[i2c][REQ-I2C-006]") {
+    I2cEndpoint ep;
+    REQUIRE_FALSE(ep.handle_request(/*evt_op=*/0xF8, {0xA0}, {0xFF})); // low 3 bits 000 -> Plain
+    auto ec = ep.handle_request(/*evt_op=*/0xF9, {0xA0}, {0xFF});      // low 3 bits 001 -> Reserved
+    REQUIRE(ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+}
+
 // ── I2cErrc category sanity ───────────────────────────────────────────────────
 
 TEST_CASE("I2cErrc reports a non-empty message in its own category", "[i2c][REQ-I2C-005]") {
     auto ec = make_error_code(I2cErrc::nack);
+    REQUIRE(ec.category() == i2c_category());
+    REQUIRE_FALSE(ec.message().empty());
+}
+
+TEST_CASE("I2cErrc::config_write_not_supported reports a non-empty message in its own category",
+          "[i2c][REQ-I2C-007]") {
+    auto ec = make_error_code(I2cErrc::config_write_not_supported);
     REQUIRE(ec.category() == i2c_category());
     REQUIRE_FALSE(ec.message().empty());
 }
