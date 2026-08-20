@@ -12,6 +12,8 @@
 // fusa:req REQ-MOCK-012
 // fusa:req REQ-MOCK-013
 // fusa:req REQ-MOCK-014
+// fusa:req REQ-MOCK-015
+// fusa:req REQ-MOCK-016
 
 // In-process RC Server simulator — a small, representative OPEN Alliance
 // TC18 Remote Control Protocol Specification v0.5.1_RC server built
@@ -37,11 +39,12 @@
 // mock::Server holds a real rcp::lifecycle::ServerLifecycle (v2.1.0), a
 // real rcp::regmap::RegisterMap plus rcp::regmap::Ep0 (v2.1.0, including
 // EP0 whole-map-read and root-client write semantics), and one instance
-// each of four fully-built endpoint types — rcp::gpio::GpioEndpoint and
-// rcp::spi::SpiEndpoint (both v2.3.0), plus rcp::i2c::I2cEndpoint and
-// rcp::adc::AdcEndpoint (v2.4.0, wired in by the Table 30/33 Row 2 evt[2:0]
-// validation pilot and its ADC follow-up, in that order) — as its
-// representative endpoint set. dispatch() below is the single
+// each of five fully-built endpoint types — rcp::gpio::GpioEndpoint and
+// rcp::spi::SpiEndpoint (both v2.3.0), plus rcp::i2c::I2cEndpoint,
+// rcp::adc::AdcEndpoint, and rcp::pwm::PwmInEndpoint (v2.4.0, wired in by
+// the Table 30/33 Row 2 evt[2:0] validation pilot and its ADC and PWM_IN
+// follow-ups, in that order) — as its representative endpoint set.
+// dispatch() below is the single
 // request/response entry point a test drives, decoding the standard
 // request kind's evt[2:0]/op fields (rcp/acf.hpp, v2.0.0) the same way a
 // real request-dispatch loop would. Conditional request kinds (v2.5.0),
@@ -62,14 +65,14 @@
 // in an internal structured extraction of the specification named above;
 // no text from that document is reproduced here. The concrete endpoint
 // numbering (GPIO at endpoint id / byte_bus_id 1, SPI at 2, I2C at 3, ADC at
-// 4), access-policy choice for operational requests (gated on lifecycle
-// state only, not per-endpoint ownership — see dispatch()'s own comment),
-// and EP0 partial-read encoding chosen in this file are this
+// 4, PWM_IN at 5), access-policy choice for operational requests (gated on
+// lifecycle state only, not per-endpoint ownership — see dispatch()'s own
+// comment), and EP0 partial-read encoding chosen in this file are this
 // implementation's own, purely for the purposes of being a usable
 // in-process simulator — full bit-for-bit conformance against other TC18
 // implementations is not claimed, same as the equivalent disclaimers in
 // rcp/regmap.hpp, rcp/lifecycle.hpp, rcp/gpio.hpp, rcp/spi.hpp, rcp/i2c.hpp,
-// and rcp/adc.hpp.
+// rcp/adc.hpp, and rcp/pwm.hpp.
 #pragma once
 
 #include <rcp/acf.hpp>
@@ -79,6 +82,7 @@
 #include <rcp/gpio.hpp>
 #include <rcp/i2c.hpp>
 #include <rcp/lifecycle.hpp>
+#include <rcp/pwm.hpp>
 #include <rcp/regmap.hpp>
 #include <rcp/spi.hpp>
 
@@ -103,14 +107,16 @@ namespace mock {
 
 using regmap::EndpointId;
 
-constexpr EndpointId   kGpioEndpointId = 1;
-constexpr EndpointId   kSpiEndpointId  = 2;
-constexpr EndpointId   kI2cEndpointId  = 3;
-constexpr EndpointId   kAdcEndpointId  = 4;
-constexpr avtp::ByteBusId kGpioByteBusId = static_cast<avtp::ByteBusId>(kGpioEndpointId);
-constexpr avtp::ByteBusId kSpiByteBusId  = static_cast<avtp::ByteBusId>(kSpiEndpointId);
-constexpr avtp::ByteBusId kI2cByteBusId  = static_cast<avtp::ByteBusId>(kI2cEndpointId);
-constexpr avtp::ByteBusId kAdcByteBusId  = static_cast<avtp::ByteBusId>(kAdcEndpointId);
+constexpr EndpointId   kGpioEndpointId  = 1;
+constexpr EndpointId   kSpiEndpointId   = 2;
+constexpr EndpointId   kI2cEndpointId   = 3;
+constexpr EndpointId   kAdcEndpointId   = 4;
+constexpr EndpointId   kPwmInEndpointId = 5;
+constexpr avtp::ByteBusId kGpioByteBusId  = static_cast<avtp::ByteBusId>(kGpioEndpointId);
+constexpr avtp::ByteBusId kSpiByteBusId   = static_cast<avtp::ByteBusId>(kSpiEndpointId);
+constexpr avtp::ByteBusId kI2cByteBusId   = static_cast<avtp::ByteBusId>(kI2cEndpointId);
+constexpr avtp::ByteBusId kAdcByteBusId   = static_cast<avtp::ByteBusId>(kAdcEndpointId);
+constexpr avtp::ByteBusId kPwmInByteBusId = static_cast<avtp::ByteBusId>(kPwmInEndpointId);
 
 // A discovery-shaped EP0 read only ever answers with the register map's
 // magic number below — see this header's own scope note above.
@@ -145,6 +151,10 @@ inline acf::WireErrorCode wire_error_code_for(const std::error_code& ec) noexcep
         return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
     if (ec == make_error_code(adc::AdcErrc::no_signal))
         return acf::WireErrorCode::EpError; // internal no-valid-sample condition, not a TC18-defined ADC error code (see adc.hpp's own comment) — mirrors i2c::I2cErrc::nack's mapping above
+    if (ec == make_error_code(pwm::PwmErrc::config_write_not_supported))
+        return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
+    if (ec == make_error_code(pwm::PwmErrc::no_signal))
+        return acf::WireErrorCode::PwmInNoSignal; // Table 27's own dedicated PWM_IN_NO_SIGNAL(9) code — unlike adc::AdcErrc::no_signal above, TC18 defines a real numbered code for this condition, so this maps to it directly rather than falling back to EpError
     return acf::WireErrorCode::UnsupportedCmd;
 }
 
@@ -175,6 +185,7 @@ public:
     spi::SpiEndpoint&   spi() noexcept { return spi_; }
     i2c::I2cEndpoint&   i2c() noexcept { return i2c_; }
     adc::AdcEndpoint&   adc() noexcept { return adc_; }
+    pwm::PwmInEndpoint& pwm_in() noexcept { return pwm_in_; }
 
     // set_spi_poci scripts the bytes a subsequent dispatch()/transfer()
     // call on `channel` reads back as POCI-in data. A real SPI peripheral's
@@ -210,6 +221,24 @@ public:
     // already implements when `take_sample` returns std::nullopt.
     void set_adc_response(std::vector<uint16_t> samples) {
         adc_samples_.assign(samples.begin(), samples.end());
+    }
+
+    // set_pwm_in_response scripts the PwmValue (period, active_duration) a
+    // subsequent dispatch()-driven plain (evt[2:0]==000b) PWM_IN request
+    // answers with — the same "test scripts the sensor, this mock does not
+    // model actual hardware" pattern set_spi_poci/set_i2c_response/
+    // set_adc_response above already establish. Unlike set_adc_response's
+    // FIFO queue, this calls pwm::PwmInEndpoint::record_measurement
+    // directly: PWM_IN's own read model (rcp/pwm.hpp) reports the most
+    // recently recorded measurement persistently, not a one-shot consumed
+    // sample the way ADC's take_sample callback models, so there is
+    // nothing to queue — the scripted value stays in effect (and fires
+    // both Table 44 trigger signals, per record_measurement's own
+    // contract) until this is called again, or pwm_in().clear_signal() is
+    // used to model signal loss (a subsequent plain request then answers
+    // PwmErrc::no_signal / wire error code PWM_IN_NO_SIGNAL again).
+    void set_pwm_in_response(pwm::PwmValue value) {
+        pwm_in_.record_measurement(value);
     }
 
     // advance_to_rcp_configured is a convenience for tests/simulators that
@@ -249,6 +278,7 @@ public:
         if (req.byte_bus_id == kSpiByteBusId) return dispatch_spi(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kI2cByteBusId) return dispatch_i2c(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kAdcByteBusId) return dispatch_adc(req, req_payload, out_resp, out_resp_payload);
+        if (req.byte_bus_id == kPwmInByteBusId) return dispatch_pwm_in(req, req_payload, out_resp, out_resp_payload);
 
         return set_error_response(req, make_error_code(regmap::RegMapErrc::invalid_parameter),
                                    out_resp, out_resp_payload);
@@ -269,14 +299,15 @@ private:
 
     static regmap::RegisterMap make_initial_register_map() {
         regmap::RegisterMap regs;
-        regs.endpoint_count = 4;
-        regs.generic_configs.resize(4);
-        regs.functional_configs.resize(4);
+        regs.endpoint_count = 5;
+        regs.generic_configs.resize(5);
+        regs.functional_configs.resize(5);
         regs.ep_id_mapping = {
-            {kGpioEndpointId, kGpioByteBusId},
-            {kSpiEndpointId,  kSpiByteBusId},
-            {kI2cEndpointId,  kI2cByteBusId},
-            {kAdcEndpointId,  kAdcByteBusId},
+            {kGpioEndpointId,  kGpioByteBusId},
+            {kSpiEndpointId,   kSpiByteBusId},
+            {kI2cEndpointId,   kI2cByteBusId},
+            {kAdcEndpointId,   kAdcByteBusId},
+            {kPwmInEndpointId, kPwmInByteBusId},
         };
         return regs;
     }
@@ -412,6 +443,40 @@ private:
         return {};
     }
 
+    // PWM_IN is a response-only read model (§13.7.6.3, rcp/pwm.hpp's own
+    // header comment) with no functional request payload at all — this
+    // dispatch path does not branch on req.op either, same rationale as
+    // dispatch_adc's own comment (no write semantics implemented for this
+    // endpoint type, not an inherently full-duplex protocol). Every
+    // request addressed here drives one PwmInEndpoint::handle_request,
+    // which checks Table 33 Row 2's 3-way Plain/Reserved/ConfigWrite
+    // classification (rcp::endpoint::evt_row2_kind_of) before ever
+    // touching the endpoint's last-measured state — so a Reserved or
+    // ConfigWrite evt can never read or disturb it. Unlike dispatch_adc,
+    // there is no scripted-sample queue to consume: PWM_IN's read model
+    // reports the most recently recorded measurement persistently (see
+    // set_pwm_in_response's own comment), so a Plain request simply
+    // answers whatever is currently recorded, or PwmErrc::no_signal
+    // (wire error code PwmInNoSignal) if nothing has been recorded yet or
+    // the signal was cleared. `payload` is unused: §13.7.6.3 states the
+    // PWM_IN request itself carries no functional byte_msg_payload.
+    std::error_code dispatch_pwm_in(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& /*payload*/,
+                                     acf::AcfMessageInfo& out_resp,
+                                     std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (!operational_requests_allowed()) {
+            return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
+                                       out_resp, out_resp_payload);
+        }
+        pwm::PwmValue value{};
+        auto ec = pwm_in_.handle_request(req.evt_op, value);
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
+        auto wire = pwm::encode_pwm_payload(value);
+        out_resp_payload.assign(wire.begin(), wire.end());
+        out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
+                                                          : acf::ResponseKind::ReadResponse);
+        return {};
+    }
+
     lifecycle::ServerLifecycle lifecycle_;
     regmap::RegisterMap        regs_;
     regmap::Ep0                ep0_;
@@ -419,6 +484,7 @@ private:
     spi::SpiEndpoint           spi_;
     i2c::I2cEndpoint           i2c_;
     adc::AdcEndpoint           adc_;
+    pwm::PwmInEndpoint         pwm_in_;
     std::array<std::vector<uint8_t>, spi::kMaxChannels> spi_poci_{};
     std::vector<uint8_t>       i2c_response_{};
     bool                       i2c_acked_ = true;

@@ -5,6 +5,8 @@
 // fusa:test REQ-PWM-005
 // fusa:test REQ-PWM-006
 // fusa:test REQ-PWM-007
+// fusa:test REQ-PWM-008
+// fusa:test REQ-PWM-009
 
 // Tests for rcp/pwm.hpp — the PWM_OUT and PWM_IN endpoint types
 // (ROADMAP.md milestone 48, "Basic Endpoint Types II — I2C, UART, ADC,
@@ -237,10 +239,90 @@ TEST_CASE("PwmInEndpoint::record_edge fires exactly the requested edge", "[pwm][
     REQUIRE(drained[0] == pwm_in_signal_id(PwmInSignal::FallingEdge));
 }
 
+// ── Table 33 Row 2 evt[2:0] validation (handle_request) ─────────────────────
+// Table 33 Row 2's shared evt[2:0] classification (Plain/Reserved/
+// ConfigWrite, exercised for all 8 evt_op values by
+// tests/test_endpoint.cpp's own "evt_row2_kind_of classifies all 8 evt[2:0]
+// values" case) applied to PWM_IN's own request-decode entry point,
+// mirroring tests/test_i2c.cpp's and tests/test_adc.cpp's "Table 33 Row 2
+// evt[2:0] validation (handle_request)" sections exactly — see
+// rcp/pwm.hpp's own PwmInEndpoint::handle_request comment.
+
+TEST_CASE("PwmInEndpoint::handle_request delegates a Plain (evt[2:0]==000b) request to "
+          "handle_read()",
+          "[pwm][REQ-PWM-008]") {
+    PwmInEndpoint ep;
+    ep.record_measurement({200, 75});
+
+    PwmValue out;
+    auto ec = ep.handle_request(/*evt_op=*/0, out);
+    REQUIRE_FALSE(ec);
+    REQUIRE(out.period == 200);
+    REQUIRE(out.active_duration == 75);
+}
+
+TEST_CASE("PwmInEndpoint::handle_request Plain surfaces no_signal before any measurement, "
+          "same as handle_read()",
+          "[pwm][REQ-PWM-008]") {
+    PwmInEndpoint ep;
+    PwmValue out;
+    auto ec = ep.handle_request(/*evt_op=*/0, out);
+    REQUIRE(ec == make_error_code(PwmErrc::no_signal));
+}
+
+TEST_CASE("PwmInEndpoint::handle_request rejects every reserved evt[2:0] value (001b-110b) "
+          "without touching out_value",
+          "[pwm][REQ-PWM-008]") {
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        PwmInEndpoint ep;
+        ep.record_measurement({111, 22});
+
+        PwmValue out;
+        auto ec = ep.handle_request(evt_op, out);
+        REQUIRE(ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+        REQUIRE(out.period == 0); // untouched — still default-constructed
+        REQUIRE(out.active_duration == 0);
+    }
+}
+
+TEST_CASE("PwmInEndpoint::handle_request reports config_write_not_supported for evt[2:0]==111b "
+          "without touching out_value",
+          "[pwm][REQ-PWM-009]") {
+    PwmInEndpoint ep;
+    ep.record_measurement({111, 22});
+
+    PwmValue out;
+    auto ec = ep.handle_request(/*evt_op=*/7, out);
+    REQUIRE(ec == make_error_code(PwmErrc::config_write_not_supported));
+    REQUIRE(out.period == 0);
+    REQUIRE(out.active_duration == 0);
+}
+
+TEST_CASE("PwmInEndpoint::handle_request masks evt_op down to 3 bits before classifying",
+          "[pwm][REQ-PWM-008]") {
+    PwmInEndpoint ep;
+    ep.record_measurement({9, 4});
+
+    PwmValue out;
+    REQUIRE_FALSE(ep.handle_request(/*evt_op=*/0xF8, out)); // low 3 bits 000 -> Plain
+    REQUIRE(out.period == 9);
+    REQUIRE(out.active_duration == 4);
+
+    auto ec = ep.handle_request(/*evt_op=*/0xF9, out); // low 3 bits 001 -> Reserved
+    REQUIRE(ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+}
+
 // ── PwmErrc category sanity ───────────────────────────────────────────────────
 
 TEST_CASE("PwmErrc reports a non-empty message in its own category", "[pwm][REQ-PWM-007]") {
     auto ec = make_error_code(PwmErrc::no_signal);
+    REQUIRE(ec.category() == pwm_category());
+    REQUIRE_FALSE(ec.message().empty());
+}
+
+TEST_CASE("PwmErrc::config_write_not_supported reports a non-empty message in its own category",
+          "[pwm][REQ-PWM-009]") {
+    auto ec = make_error_code(PwmErrc::config_write_not_supported);
     REQUIRE(ec.category() == pwm_category());
     REQUIRE_FALSE(ec.message().empty());
 }
