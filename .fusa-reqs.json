@@ -82,8 +82,8 @@
     },
     {
       "id": "REQ-MOCK-001",
-      "title": "Server starts HW_UNCONFIGURED with a representative seven-endpoint register map",
-      "text": "rcp::mock::Server shall construct with rcp::lifecycle::ServerLifecycle in state HwUnconfigured and an rcp::regmap::RegisterMap whose endpoint_count, generic_configs, functional_configs, and ep_id_mapping describe exactly seven endpoints: GPIO at endpoint id/byte_bus_id 1, SPI at endpoint id/byte_bus_id 2, I2C at endpoint id/byte_bus_id 3, ADC at endpoint id/byte_bus_id 4, PWM_IN at endpoint id/byte_bus_id 5, LIN at endpoint id/byte_bus_id 6, and CAN at endpoint id/byte_bus_id 7.",
+      "title": "Server starts HW_UNCONFIGURED with a representative eight-endpoint register map",
+      "text": "rcp::mock::Server shall construct with rcp::lifecycle::ServerLifecycle in state HwUnconfigured and an rcp::regmap::RegisterMap whose endpoint_count, generic_configs, functional_configs, and ep_id_mapping describe exactly eight endpoints: GPIO at endpoint id/byte_bus_id 1, SPI at endpoint id/byte_bus_id 2, I2C at endpoint id/byte_bus_id 3, ADC at endpoint id/byte_bus_id 4, PWM_IN at endpoint id/byte_bus_id 5, LIN at endpoint id/byte_bus_id 6, CAN at endpoint id/byte_bus_id 7, and UART at endpoint id/byte_bus_id 8.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -246,6 +246,24 @@
       "id": "REQ-MOCK-020",
       "title": "Operational CAN requests are rejected before RCP_CONFIGURED, same gating as GPIO/SPI/I2C/ADC/PWM_IN/LIN",
       "text": "rcp::mock::Server::dispatch, for a request addressed to the CAN endpoint while the server's lifecycle state is not RcpConfigured, shall return regmap::RegMapErrc::request_rejected and an ErrorResponse without touching the endpoint's live state, the same operational-request gating REQ-MOCK-006/REQ-MOCK-012/REQ-MOCK-014/REQ-MOCK-016/REQ-MOCK-018 already apply to GPIO/SPI/I2C/ADC/PWM_IN/LIN.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-021",
+      "title": "UART dispatch applies Table 33 Row 2 evt[2:0] classification before touching either queue, routing Plain requests on req.op",
+      "text": "rcp::mock::Server::dispatch, for a request addressed to the UART endpoint while RcpConfigured, shall decode the request's evt[2:0] field via endpoint::evt_row2_kind_of and drive uart::UartEndpoint::handle_request with it: a Plain (000b) write request shall enqueue the request payload onto the TX queue and be answered as a WriteResponse with an empty byte_msg_payload, a Plain (000b) read request shall drain the RX FIFO (up to the request's read_size, non-blocking) and be answered as a ReadResponse carrying the drained bytes, a Reserved (001b-110b) evt shall be rejected with endpoint::EndpointErrc::reserved_evt_row2 (wire error code UNSUPPORTED_CMD) without touching either queue, and a ConfigWrite (111b) evt shall be rejected with uart::UartErrc::config_write_not_supported (wire error code UNSUPPORTED_CMD) rather than crashing or being treated as a plain TX/RX operation.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 33 (\"ADC, PWM_IN, I²C, LIN, CAN, UART, ISELED, MDIO: 000b to 110b reserved – request to be rejected with error code = UNSUPPORTED_CMD\" / \"111b: The byte_msg_payload is not presented to the interface but used to change the configuration of the endpoint (see 12.7.1)\"), TC18.txt L4085-4092; corroborating worked example resolving the evt=000b ambiguity in Table 33's own favor: §13.7.9.3 Figure 34 (\"RC Client sends a standard read request\", ADC endpoint, evt field all-zero), TC18.txt L5590-5607",
+      "tc18_master_id": "TC18-13.5-001"
+    },
+    {
+      "id": "REQ-MOCK-022",
+      "title": "Operational UART requests are rejected before RCP_CONFIGURED, same gating as GPIO/SPI/I2C/ADC/PWM_IN/LIN/CAN",
+      "text": "rcp::mock::Server::dispatch, for a request addressed to the UART endpoint while the server's lifecycle state is not RcpConfigured, shall return regmap::RegMapErrc::request_rejected and an ErrorResponse without touching the endpoint's live state, the same operational-request gating REQ-MOCK-006/REQ-MOCK-012/REQ-MOCK-014/REQ-MOCK-016/REQ-MOCK-018/REQ-MOCK-020 already apply to GPIO/SPI/I2C/ADC/PWM_IN/LIN/CAN.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2862,6 +2880,27 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-UART-008",
+      "title": "UartEndpoint::handle_request applies Table 33 Row 2 evt[2:0] classification before routing on req.op to enqueue_tx or handle_read",
+      "text": "rcp::uart::UartEndpoint::handle_request shall classify its evt_op argument via rcp::endpoint::evt_row2_kind_of (masking to the low 3 bits first) and, for EvtRow2Kind::Plain, shall route on its is_write argument: true delegates to enqueue_tx(tx_bytes) with the TX queue unchanged from that function's own behavior, false delegates to handle_read(read_size, elapsed_ms, uart_timeout_ms, out_data, out_timed_out) unchanged; for EvtRow2Kind::Reserved, shall return endpoint::EndpointErrc::reserved_evt_row2 without invoking enqueue_tx or handle_read and without touching the TX queue or RX FIFO.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 33 (\"ADC, PWM_IN, I²C, LIN, CAN, UART, ISELED, MDIO: 000b to 110b reserved – request to be rejected with error code = UNSUPPORTED_CMD\"), TC18.txt L4085-4092; corroborating worked example resolving the evt=000b ambiguity in Table 33's own favor: §13.7.9.3 Figure 34 (\"RC Client sends a standard read request\", ADC endpoint, evt field all-zero), TC18.txt L5590-5607",
+      "tc18_master_id": "TC18-13.5-001",
+      "severity": "cybersecurity"
+    },
+    {
+      "id": "REQ-UART-009",
+      "title": "UartEndpoint::handle_request reports config-write (evt[2:0]==111b) as not yet supported",
+      "text": "rcp::uart::UartEndpoint::handle_request, for EvtRow2Kind::ConfigWrite (evt[2:0]==111b), shall return UartErrc::config_write_not_supported without invoking enqueue_tx or handle_read, without touching the TX queue or RX FIFO, and without crashing, rather than silently accepting the request as an ordinary TX/RX operation or silently doing nothing; full §12.7.1 configuration-write handling is deliberately deferred to a follow-up milestone, the same scope decision I2C's I2cErrc::config_write_not_supported, ADC's AdcErrc::config_write_not_supported, PWM_IN's PwmErrc::config_write_not_supported, LIN's LinErrc::config_write_not_supported, and CAN's CanErrc::config_write_not_supported already made. UartErrc::config_write_not_supported shall report a non-empty diagnostic message in its own error_category.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.7.1 (\"This can be done by setting evt[2:0] = 111b in request as described above.\"; Figure 19 – \"Configuration request\"; \"The data of the byte_msg_payload from a write request is written into the section of the EP that is addressed by the byte_bus_id.\"), TC18.txt L2844-2865",
+      "tc18_master_id": "TC18-12.7.1-001"
     },
     {
       "id": "REQ-ADC-001",

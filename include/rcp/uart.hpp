@@ -5,6 +5,8 @@
 // fusa:req REQ-UART-005
 // fusa:req REQ-UART-006
 // fusa:req REQ-UART-007
+// fusa:req REQ-UART-008
+// fusa:req REQ-UART-009
 
 // UART endpoint (ep_type 0x05) — independent TX/RX queues, RX FIFO
 // fill/drain semantics, read completion on either a configured `read_size`
@@ -14,9 +16,26 @@
 // ROADMAP.md milestone 48, "Basic Endpoint Types II — I2C, UART, ADC,
 // PWM_OUT, PWM_IN (v2.4.0)": UART follows the request-dispatch shape
 // rcp/gpio.hpp and rcp/spi.hpp establish, but — unlike either — has no
-// evt[2:0]/channel decode of its own; TX and RX are independent queues
-// addressed by separate calls (enqueue_tx/handle_read below) rather than by
-// a shared selector field.
+// evt[2:0]/channel *selector* of its own the way SPI's evt[2:0] picks a
+// channel; TX and RX are independent queues addressed by separate calls
+// (enqueue_tx/handle_read below) rather than by a shared selector field.
+//
+// CORRECTION (Table 30/33 Row 2 evt[2:0] validation, sixth endpoint type
+// after I2C, ADC, PWM_IN, LIN, and CAN): the "no evt[2:0] decode of its
+// own" claim above described only the *absence of a channel/value
+// selector*; it did not mean UART is exempt from Table 33's shared
+// Plain/Reserved/ConfigWrite classification. Table 33's own text lists
+// UART explicitly, by name, in its second row alongside ADC, PWM_IN, I2C,
+// LIN, CAN, ISELED, and MDIO (extraction §13.5, TC18.txt L4085-4092) — the
+// exact same row every other endpoint type in that list has already had
+// this classification wired in for. handle_request below is that wiring
+// for UART, following the exact shape rcp/i2c.hpp's I2cEndpoint::
+// handle_request, rcp/adc.hpp's AdcEndpoint::handle_request, rcp/pwm.hpp's
+// PwmInEndpoint::handle_request, rcp/lin.hpp's LinEndpoint::handle_request,
+// and rcp/can.hpp's CanEndpoint::handle_request established, adapted for
+// UART's own two-entry-point (TX/RX) shape — see handle_request's own
+// comment for why that adaptation is needed and how it stays exactly one
+// choke point rather than two independent, unvalidated ones.
 //
 // ACCEPTED LIMITATION, documented explicitly per the roadmap rather than
 // left implicit: ROADMAP.md milestone 52 ("Fragmentation — Go/No-Go
@@ -37,8 +56,11 @@
 // text from that document is reproduced here. The concrete queue-capacity
 // values and sub-octet padding convention chosen in this file are this
 // implementation's own, same as the equivalent disclaimers in rcp/avtp.hpp,
-// rcp/regmap.hpp, rcp/endpoint.hpp, rcp/gpio.hpp, and rcp/spi.hpp.
+// rcp/regmap.hpp, rcp/endpoint.hpp, rcp/gpio.hpp, rcp/spi.hpp, rcp/i2c.hpp,
+// rcp/adc.hpp, rcp/pwm.hpp, rcp/lin.hpp, and rcp/can.hpp.
 #pragma once
+
+#include <rcp/endpoint.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -76,6 +98,14 @@ enum class UartErrc : int {
     rx_fifo_overflow        = 2, // rx_fill would push the RX FIFO past kRxFifoCapacity
     tx_queue_overflow        = 3, // enqueue_tx would push the TX queue past kTxQueueCapacity
     bits_per_frame_out_of_range = 4, // bits_per_frame outside [kMinBitsPerFrame, kMaxBitsPerFrame]
+    // evt_row2_kind_of classified the request as ConfigWrite (evt[2:0] ==
+    // 111b, §12.7.1). This milestone deliberately does not implement the
+    // configuration-write shape (relative EP_functional-config start
+    // address + configuration data) — see UartEndpoint::handle_request's
+    // own comment. Reported explicitly rather than silently accepted as a
+    // plain TX/RX operation or silently ignored, same as I2C's, ADC's,
+    // PWM_IN's, LIN's, and CAN's own config_write_not_supported variants.
+    config_write_not_supported = 5,
 };
 
 inline const std::error_category& uart_category() noexcept {
@@ -91,6 +121,8 @@ inline const std::error_category& uart_category() noexcept {
                 return "rcp/uart: TX queue overflow";
             case UartErrc::bits_per_frame_out_of_range:
                 return "rcp/uart: bits_per_frame out of accepted range";
+            case UartErrc::config_write_not_supported:
+                return "rcp/uart: evt[2:0]=111b configuration-write requests are not yet implemented";
             default:
                 return "rcp/uart: unknown error";
             }
@@ -187,6 +219,78 @@ public:
         std::vector<uint8_t> out(rx_fifo_.begin(), rx_fifo_.end());
         rx_fifo_.clear();
         return out;
+    }
+
+    // handle_request is UART's single request-decode entry point — the
+    // piece this header previously had none of, mirroring rcp::i2c::
+    // I2cEndpoint::handle_request's shape (this repo's sixth Table 33 Row 2
+    // endpoint type after I2C, ADC, PWM_IN, LIN, and CAN) with one
+    // necessary adaptation: every other Row 2 endpoint type funnels its
+    // Plain request into a single unified transfer()/transmit()/
+    // request_reading() call, but UART's TX and RX are genuinely
+    // independent operations reached via two different existing entry
+    // points (enqueue_tx, handle_read — extraction §13.7.8.1's "these two
+    // processes are independent from each other"). Rather than leave two
+    // separate, individually-unvalidated request-decode entry points (which
+    // would let a Reserved or ConfigWrite evt reach either one directly),
+    // handle_request classifies evt[2:0] via rcp::endpoint::
+    // evt_row2_kind_of exactly once and then routes on `is_write` (the
+    // caller's own req.op — this header has no AcfMessageInfo of its own to
+    // read it from, same reason every out-parameter below is passed
+    // explicitly rather than pulled from a wire type):
+    //   - Plain (evt[2:0] == 000b) + is_write: delegates straight to
+    //     enqueue_tx(tx_bytes), unchanged — UART's existing TX-queue model
+    //     already IS this row's correct "plain write request" behavior.
+    //     out_data/out_timed_out are left exactly as the caller passed
+    //     them: a write request produces no read data.
+    //   - Plain (evt[2:0] == 000b) + !is_write: delegates straight to
+    //     handle_read(read_size, elapsed_ms, uart_timeout_ms, out_data,
+    //     out_timed_out), unchanged — UART's existing read-completion rule
+    //     already IS this row's correct "plain read request" behavior.
+    //   - Reserved (evt[2:0] in 001b-110b): returns
+    //     endpoint::EndpointErrc::reserved_evt_row2 without touching either
+    //     queue (neither enqueue_tx nor handle_read/rx_fifo_ is invoked) —
+    //     TC18 requires this be rejected with error code UNSUPPORTED_CMD.
+    //   - ConfigWrite (evt[2:0] == 111b): §12.7.1's configuration-write
+    //     shape targets the UART EP's own functional-config block (Table
+    //     51 — baud rate, parity, stop bits, uart_timeout itself, ...), not
+    //     a TX/RX operation at all. Full handling is deliberately out of
+    //     scope for this milestone (nontrivial — it needs
+    //     EP_functional-config wiring this header does not yet have, the
+    //     same gap I2C's, ADC's, PWM_IN's, LIN's, and CAN's own
+    //     handle_request comments defer for the identical reason); this
+    //     returns UartErrc::config_write_not_supported rather than
+    //     crashing, silently accepting the request as a TX/RX operation,
+    //     or silently doing nothing.
+    //
+    // NOT to be confused with §13.7.8.3's own, entirely separate rules —
+    // "A read request having a byte_msg_payload will be rejected with
+    // error code = UNKNOWN_CMD" (the payload-less-read-only rule) and the
+    // read_size-reached-vs-uart_timeout-elapsed race handle_read already
+    // implements. Both operate only once a request has already been
+    // classified Plain by the switch above; neither is folded into
+    // evt[2:0] decoding here, and reading evt[2:0] as if it also gated or
+    // combined with either would be exactly the kind of invented,
+    // non-spec-derived encoding this codebase has had to remove elsewhere
+    // once discovered (e.g. rcp/iseled.hpp's and rcp/mdio.hpp's own header
+    // comments, and rcp/lin.hpp's/rcp/can.hpp's own handle_request comments
+    // on the identical class of mistake for their own endpoint types). The
+    // payload-less-read-only rule itself remains unimplemented by this
+    // header — called out explicitly here rather than silently conflated
+    // with Table 33 classification or silently assumed.
+    std::error_code handle_request(uint8_t evt_op, bool is_write, const std::vector<uint8_t>& tx_bytes,
+                                    uint16_t read_size, uint32_t elapsed_ms, uint32_t uart_timeout_ms,
+                                    std::vector<uint8_t>& out_data, bool& out_timed_out) {
+        switch (endpoint::evt_row2_kind_of(evt_op)) {
+        case endpoint::EvtRow2Kind::Plain:
+            if (is_write) return enqueue_tx(tx_bytes);
+            return handle_read(read_size, elapsed_ms, uart_timeout_ms, out_data, out_timed_out);
+        case endpoint::EvtRow2Kind::Reserved:
+            return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2);
+        case endpoint::EvtRow2Kind::ConfigWrite:
+            return make_error_code(UartErrc::config_write_not_supported);
+        }
+        return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2); // unreachable
     }
 
 private:
