@@ -2,6 +2,8 @@
 // fusa:req REQ-LINEP-002
 // fusa:req REQ-LINEP-003
 // fusa:req REQ-LINEP-004
+// fusa:req REQ-LINEP-005
+// fusa:req REQ-LINEP-006
 
 // LIN commander endpoint (ep_type 0x06) — the OPEN Alliance TC18 Remote
 // Control Protocol Specification v0.5.1_RC's raw-byte-pusher model for LIN:
@@ -30,12 +32,49 @@
 // transfer`'s raw byte-stream shape for exactly this reason: both endpoint
 // types push/pull opaque bytes and leave interpretation to the caller.
 //
+// Table 30/33 Row 2 evt[2:0] validation (post-v2.7.0, fourth endpoint type
+// after I2C, ADC, and PWM_IN): LinEndpoint::handle_request is this header's
+// own wiring of rcp::endpoint::evt_row2_kind_of — the shared 3-way evt[2:0]
+// classifier for Table 33's {ADC, PWM_IN, I2C, LIN, CAN, UART, ISELED,
+// MDIO} row — into LIN's request decode, following the exact shape
+// rcp/i2c.hpp's I2cEndpoint::handle_request, rcp/adc.hpp's
+// AdcEndpoint::handle_request, and rcp/pwm.hpp's PwmInEndpoint::
+// handle_request established. Plain (evt[2:0]==000b) delegates straight to
+// the existing transfer() above, unchanged — LIN's raw-byte-pusher model
+// already IS this row's correct "plain request" behavior, the same
+// reasoning I2C's own handle_request gave for its identical shape. Reserved
+// (001b-110b) is rejected with endpoint::EndpointErrc::reserved_evt_row2
+// without touching out_bytes/in_bytes or any transfer state. ConfigWrite
+// (evt[2:0]==111b, §12.7.1) is reported as the new
+// LinErrc::config_write_not_supported rather than crashing or silently
+// accepted as a plain transfer — LIN has no EP_functional-config wiring in
+// this codebase yet (same gap I2C's, ADC's, and PWM_IN's own handle_request
+// comments call out for their own endpoint types), so full §12.7.1 handling
+// is out of scope here too.
+//
+// NOT to be confused with §13.7.10.1's separate "conditions given by
+// evt[2:0]" text describing pending-read-request byte-sequence matching
+// against bus traffic (LIN's own analog of I2C's compound_wait_matches_bits
+// — a different mechanism, out of this milestone's scope, not modeled by
+// this header at all): that text is about compound-wait match conditions,
+// not about Table 33's top-level Plain/Reserved/ConfigWrite request
+// classification handle_request implements below. Reading the two as one
+// "evt[2:0] selects a comparison mode" scheme would be exactly the kind of
+// invented, non-spec-derived encoding this codebase has had to remove
+// elsewhere once discovered (e.g. rcp/iseled.hpp's and rcp/mdio.hpp's own
+// header comments on previously invented, non-spec-derived field encodings
+// later corrected) — handle_request below calls the same shared
+// evt_row2_kind_of every other Row 2 endpoint type uses and invents nothing
+// of its own; §13.7.10.1's pending-read match semantics remain unimplemented
+// here, called out rather than silently guessed at.
+//
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
 // text from that document is reproduced here. The concrete transfer-shape
 // and trigger-signal id encoding chosen in this file are this
 // implementation's own, same as the equivalent disclaimers in rcp/avtp.hpp,
-// rcp/regmap.hpp, rcp/endpoint.hpp, and rcp/i2c.hpp.
+// rcp/regmap.hpp, rcp/endpoint.hpp, rcp/i2c.hpp, rcp/adc.hpp, and
+// rcp/pwm.hpp.
 #pragma once
 
 #include <rcp/endpoint.hpp>
@@ -57,6 +96,14 @@ namespace lin {
 
 enum class LinErrc : int {
     no_response = 1,
+    // evt_row2_kind_of classified the request as ConfigWrite (evt[2:0] ==
+    // 111b, §12.7.1). This milestone's follow-up deliberately does not
+    // implement the configuration-write shape (relative EP_functional-
+    // config start address + configuration data) — see handle_request's
+    // own comment. Reported explicitly rather than silently accepted as a
+    // plain transfer or silently ignored, same as I2C's, ADC's, and
+    // PWM_IN's own config_write_not_supported variants.
+    config_write_not_supported = 2,
 };
 
 inline const std::error_category& lin_category() noexcept {
@@ -65,7 +112,9 @@ inline const std::error_category& lin_category() noexcept {
         std::string message(int ev) const override {
             switch (static_cast<LinErrc>(ev)) {
             case LinErrc::no_response: return "rcp/lin: no response observed on the bus";
-            default:                   return "rcp/lin: unknown error";
+            case LinErrc::config_write_not_supported:
+                return "rcp/lin: evt[2:0]=111b configuration-write requests are not yet implemented";
+            default: return "rcp/lin: unknown error";
             }
         }
     };
@@ -112,6 +161,47 @@ public:
         }
         triggers_.notify(lin_signal_id(LinSignal::TransferComplete));
         return {};
+    }
+
+    // handle_request is LIN's request-decode entry point — the piece this
+    // header previously had none of, mirroring rcp::i2c::I2cEndpoint::
+    // handle_request's shape exactly (this repo's fourth Table 33 Row 2
+    // endpoint type after I2C, ADC, and PWM_IN). It classifies the incoming
+    // request's evt[2:0] field via rcp::endpoint::evt_row2_kind_of before
+    // doing anything else, so a Reserved value can never reach transfer()
+    // and be misread as an ordinary transfer, and a ConfigWrite value can
+    // never be silently accepted or silently dropped:
+    //   - Plain (evt[2:0] == 000b): delegates straight to transfer() with
+    //     `out_bytes`/`in_bytes`/`responded` unchanged — LIN's existing
+    //     raw-byte-pusher transfer model (extraction §13.7.10.3) already IS
+    //     this row's correct "plain request" behavior; evt[2:0] carries no
+    //     combinable value or channel selector for this row the way it
+    //     does for GPIO/PWM_OUT or SPI.
+    //   - Reserved (evt[2:0] in 001b-110b): returns
+    //     endpoint::EndpointErrc::reserved_evt_row2 without touching any
+    //     endpoint state or recording anything as sent/received — TC18
+    //     requires this be rejected with error code UNSUPPORTED_CMD.
+    //   - ConfigWrite (evt[2:0] == 111b): §12.7.1's configuration-write
+    //     shape targets the LIN EP's own functional-config block (relative
+    //     start address + configuration data), not a bus transfer at all.
+    //     Full handling is deliberately out of scope for this milestone
+    //     (nontrivial — it needs EP_functional-config wiring this header
+    //     does not yet have, the same gap I2C's, ADC's, and PWM_IN's own
+    //     handle_request comments defer for the identical reason); this
+    //     returns LinErrc::config_write_not_supported rather than
+    //     crashing, silently accepting the request as a transfer, or
+    //     silently doing nothing.
+    std::error_code handle_request(uint8_t evt_op, std::vector<uint8_t> out_bytes,
+                                    std::vector<uint8_t> in_bytes, bool responded = true) {
+        switch (endpoint::evt_row2_kind_of(evt_op)) {
+        case endpoint::EvtRow2Kind::Plain:
+            return transfer(std::move(out_bytes), std::move(in_bytes), responded);
+        case endpoint::EvtRow2Kind::Reserved:
+            return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2);
+        case endpoint::EvtRow2Kind::ConfigWrite:
+            return make_error_code(LinErrc::config_write_not_supported);
+        }
+        return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2); // unreachable
     }
 
     const std::vector<uint8_t>& last_sent() const noexcept { return last_out_; }
