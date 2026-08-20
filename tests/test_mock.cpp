@@ -20,6 +20,8 @@
 // fusa:test REQ-MOCK-020
 // fusa:test REQ-MOCK-021
 // fusa:test REQ-MOCK-022
+// fusa:test REQ-MOCK-023
+// fusa:test REQ-MOCK-024
 
 // Tests for rcp/mock.hpp — the in-process RC Server simulator (ROADMAP.md
 // milestone 56, "Test & Simulation Harness Rebuild", v2.12.0). See
@@ -46,14 +48,14 @@ acf::AcfMessageInfo standard_request(avtp::ByteBusId bus_id, bool write, uint8_t
 
 // ── Construction / register map ──────────────────────────────────────────────
 
-TEST_CASE("Server starts HW_UNCONFIGURED with an eight-endpoint register map",
+TEST_CASE("Server starts HW_UNCONFIGURED with a nine-endpoint register map",
           "[mock][REQ-MOCK-001]") {
     mock::Server server;
     REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
-    REQUIRE(server.registers().endpoint_count == 8);
-    REQUIRE(server.registers().generic_configs.size() == 8);
-    REQUIRE(server.registers().functional_configs.size() == 8);
-    REQUIRE(server.registers().ep_id_mapping.size() == 8);
+    REQUIRE(server.registers().endpoint_count == 9);
+    REQUIRE(server.registers().generic_configs.size() == 9);
+    REQUIRE(server.registers().functional_configs.size() == 9);
+    REQUIRE(server.registers().ep_id_mapping.size() == 9);
     REQUIRE(server.registers().ep_id_mapping[0].ep_id == mock::kGpioEndpointId);
     REQUIRE(server.registers().ep_id_mapping[0].byte_bus_id == mock::kGpioByteBusId);
     REQUIRE(server.registers().ep_id_mapping[1].ep_id == mock::kSpiEndpointId);
@@ -70,6 +72,8 @@ TEST_CASE("Server starts HW_UNCONFIGURED with an eight-endpoint register map",
     REQUIRE(server.registers().ep_id_mapping[6].byte_bus_id == mock::kCanByteBusId);
     REQUIRE(server.registers().ep_id_mapping[7].ep_id == mock::kUartEndpointId);
     REQUIRE(server.registers().ep_id_mapping[7].byte_bus_id == mock::kUartByteBusId);
+    REQUIRE(server.registers().ep_id_mapping[8].ep_id == mock::kIseledEndpointId);
+    REQUIRE(server.registers().ep_id_mapping[8].byte_bus_id == mock::kIseledByteBusId);
 }
 
 TEST_CASE("advance_to_rcp_configured drives the lifecycle straight to RCP_CONFIGURED",
@@ -745,6 +749,108 @@ TEST_CASE("UART request is rejected before RCP_CONFIGURED, same operational gati
     acf::AcfMessageInfo resp;
     std::vector<uint8_t> resp_payload;
     auto ec = server.dispatch(0, req, {0xAA}, resp, resp_payload);
+    REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+}
+
+// ── ISELED ────────────────────────────────────────────────────────────────────
+// Table 30/33 Row 2 evt[2:0] validation, seventh endpoint type after I2C, ADC,
+// PWM_IN, LIN, CAN, and UART: IseledEndpoint wired into dispatch() at
+// byte_bus_id 9 for the FIRST time (this file had zero ISELED wiring before
+// this pass — see mock.hpp's own header comment and dispatch_iseled's own
+// comment). Unlike CAN's fire-a-frame-with-no-readback shape, ISELED pairs a
+// request with a full Address/Data response, decoded/encoded through
+// rcp/iseled.hpp's own pre-existing Figure 40/41 codec — see
+// dispatch_iseled's and set_iseled_response's own comments in rcp/mock.hpp
+// for why there is a set_iseled_response() hook and why a successful Plain
+// request answers ReadResponse with the encoded response payload.
+
+TEST_CASE("ISELED plain request (evt[2:0]==000b) decodes the payload, transacts against the "
+          "scripted response, and answers ReadResponse with the encoded response",
+          "[mock][REQ-MOCK-023]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    iseled::IseledResponse scripted;
+    scripted.address = 0x0102;
+    scripted.data    = 0x0BEF;
+    server.set_iseled_response(scripted);
+
+    iseled::IseledRequest request;
+    request.instruction = 0x3;
+    request.address      = 0x0102;
+    request.data         = {0x11, 0x22};
+    auto payload = iseled::encode_iseled_request(request);
+
+    auto req = standard_request(mock::kIseledByteBusId, /*write=*/true, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(server.dispatch(0, req, payload, resp, resp_payload));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
+    REQUIRE(resp_payload == iseled::encode_iseled_response(scripted));
+    REQUIRE(server.iseled().last_request().instruction == 0x3);
+    REQUIRE(server.iseled().last_request().address == 0x0102);
+    REQUIRE(server.iseled().last_request().data == std::vector<uint8_t>{0x11, 0x22});
+    REQUIRE(server.iseled().last_response().data == 0x0BEF);
+}
+
+TEST_CASE("ISELED request with a reserved evt[2:0] (001b-110b) is rejected with wire error code "
+          "UNSUPPORTED_CMD and does not touch endpoint state",
+          "[mock][REQ-MOCK-023]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    iseled::IseledRequest request;
+    request.address = 0x0010;
+    auto payload = iseled::encode_iseled_request(request);
+
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        auto req = standard_request(mock::kIseledByteBusId, /*write=*/true, evt_op);
+        acf::AcfMessageInfo resp;
+        std::vector<uint8_t> resp_payload;
+        auto ec = server.dispatch(0, req, payload, resp, resp_payload);
+        REQUIRE(ec == endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2));
+        REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+        REQUIRE(resp_payload ==
+                std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+        REQUIRE(server.iseled().last_request().address == 0);
+        REQUIRE(server.iseled().last_response().address == 0);
+    }
+}
+
+TEST_CASE("ISELED request with evt[2:0]==111b (config-write) is rejected with wire error code "
+          "UNSUPPORTED_CMD rather than crashing or being treated as a plain transaction",
+          "[mock][REQ-MOCK-023]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    iseled::IseledRequest request;
+    request.address = 0x0010;
+    auto payload = iseled::encode_iseled_request(request);
+
+    auto req = standard_request(mock::kIseledByteBusId, /*write=*/true, /*evt_op=*/7);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, payload, resp, resp_payload);
+    REQUIRE(ec == iseled::make_error_code(iseled::IseledErrc::config_write_not_supported));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload ==
+            std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+    REQUIRE(server.iseled().last_request().address == 0);
+}
+
+TEST_CASE("ISELED request is rejected before RCP_CONFIGURED, same operational gating as "
+          "GPIO/SPI/I2C/ADC/PWM_IN/LIN/CAN/UART",
+          "[mock][REQ-MOCK-024]") {
+    mock::Server server;
+    REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
+
+    iseled::IseledRequest request;
+    auto payload = iseled::encode_iseled_request(request);
+    auto req = standard_request(mock::kIseledByteBusId, /*write=*/true, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, payload, resp, resp_payload);
     REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
     REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
 }
