@@ -2873,7 +2873,7 @@
       "level": "ASIL-B",
       "asil": "ASIL-B",
       "tc18": "§13.7.9.3 (\"16 bit ADC value 0\"/\"16 bit ADC value 1\" fields, Figure 34/Figure 35 - ADC response with 8 measurements), TC18.txt L5590-5628",
-      "tc18_master_id": "TC18-13.5-001"
+      "tc18_master_id": "TC18-13.7.9.3-006"
     },
     {
       "id": "REQ-ADC-008",
