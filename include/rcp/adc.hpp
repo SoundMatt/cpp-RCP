@@ -4,6 +4,9 @@
 // fusa:req REQ-ADC-004
 // fusa:req REQ-ADC-005
 // fusa:req REQ-ADC-006
+// fusa:req REQ-ADC-007
+// fusa:req REQ-ADC-008
+// fusa:req REQ-ADC-009
 
 // ADC endpoint (ep_type 0x09) — the three-level averaging model
 // (adc_sample_interval -> adc_avg_intervals_per_request ->
@@ -46,19 +49,46 @@
 // cannot produce a valid sample) without pretending to be, or to map to,
 // any numbered TC18 error code.
 //
+// Table 30/33 Row 2 evt[2:0] validation (post-v2.4.0, second endpoint type
+// after I2C): AdcEndpoint::handle_request is this header's own wiring of
+// rcp::endpoint::evt_row2_kind_of — the shared 3-way evt[2:0] classifier for
+// Table 33's {ADC, PWM_IN, I2C, LIN, CAN, UART, ISELED, MDIO} row — into
+// ADC's request decode, following the exact shape rcp/i2c.hpp's
+// I2cEndpoint::handle_request established as the pilot. ADC is in fact the
+// row's own worked example (§13.7.9.3 Figure 34, "RC Client sends a standard
+// read request", evt field all-zero) that resolved the row's evt=000b
+// textual ambiguity in the first place — see rcp/endpoint.hpp's own "RESOLVED
+// AMBIGUITY" comment on evt_row2_kind_of, which cites this exact section.
+// Plain (evt[2:0]==000b) delegates to request_reading — the SelfTimed
+// cadence pattern below, ADC's on-demand "standard read request" behavior,
+// matching Figure 34 — not to request_reading_from_trigger_queue, whose
+// ExternalTrigger cadence remains a separate entry point this milestone does
+// not fold into handle_request. Reserved (001b-110b) is rejected with
+// endpoint::EndpointErrc::reserved_evt_row2. ConfigWrite (evt[2:0]==111b,
+// §12.7.1) is reported as AdcErrc::config_write_not_supported rather than
+// crashing or silently accepted as a plain read — ADC has no EP_functional-
+// config wiring in this codebase yet (same gap I2C's own handle_request
+// comment calls out for I2C), so full §12.7.1 handling is out of scope here
+// too.
+//
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
 // text from that document is reproduced here. The concrete averaging
-// combinator (arithmetic mean at both levels) and cadence-pattern API shape
-// chosen in this file are this implementation's own, same as the equivalent
-// disclaimers in rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
-// rcp/gpio.hpp, and rcp/spi.hpp.
+// combinator (arithmetic mean at both levels), cadence-pattern API shape,
+// and single-value wire codec (encode_adc_value) chosen in this file are
+// this implementation's own, same as the equivalent disclaimers in
+// rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp, rcp/gpio.hpp, rcp/spi.hpp,
+// and rcp/i2c.hpp.
 #pragma once
+
+#include <rcp/avtp.hpp>
+#include <rcp/endpoint.hpp>
 
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace rcp {
@@ -84,6 +114,13 @@ enum class AdcCadence : uint8_t {
 enum class AdcErrc : int {
     no_signal                = 1, // internal condition: no valid sample before timeout/underrun — not a TC18 error code (see header comment; Table 27 has no ADC-specific no-signal entry)
     invalid_averaging_config = 2, // adc_avg_intervals_per_request or adc_combine_avg_values is 0
+    // evt_row2_kind_of classified the request as ConfigWrite (evt[2:0] ==
+    // 111b, §12.7.1). This milestone deliberately does not implement the
+    // configuration-write shape (relative EP_functional-config start
+    // address + configuration data) — see AdcEndpoint::handle_request's own
+    // comment. Reported explicitly rather than silently accepted as a plain
+    // read or silently ignored, same as I2C's I2cErrc::config_write_not_supported.
+    config_write_not_supported = 3,
 };
 
 inline const std::error_category& adc_category() noexcept {
@@ -96,6 +133,8 @@ inline const std::error_category& adc_category() noexcept {
                        "TC18's Table 27 defines no ADC-specific no-signal error code)";
             case AdcErrc::invalid_averaging_config:
                 return "rcp/adc: adc_avg_intervals_per_request/adc_combine_avg_values must be >= 1";
+            case AdcErrc::config_write_not_supported:
+                return "rcp/adc: evt[2:0]=111b configuration-write requests are not yet implemented";
             default:
                 return "rcp/adc: unknown error";
             }
@@ -107,6 +146,24 @@ inline const std::error_category& adc_category() noexcept {
 
 inline std::error_code make_error_code(AdcErrc e) noexcept {
     return {static_cast<int>(e), adc_category()};
+}
+
+// ── Wire codec ────────────────────────────────────────────────────────────────
+// A single measurement value is a 16-bit big-endian "ADC value" field on the
+// wire (§13.7.9.3's own field labels, Figure 34/Figure 35), reusing
+// rcp/avtp.hpp's put_u16 rather than re-deriving byte order here, the same
+// discipline rcp/pwm.hpp's encode_pwm_payload and rcp/gpio.hpp's
+// encode_gpio_payload already follow. Only a single scripted-value encoding
+// is provided — the multi-measurement (readsize > 2, Figure 35) response
+// shape a real averaging/combine-count response can carry is out of scope
+// for this milestone, same "data model, not full wire codec" scope split
+// documented in rcp/regmap.hpp.
+constexpr size_t kAdcValueLen = sizeof(uint16_t);
+
+inline std::vector<uint8_t> encode_adc_value(uint16_t value) {
+    std::vector<uint8_t> buf(kAdcValueLen);
+    avtp::detail::put_u16(buf.data(), value);
+    return buf;
 }
 
 // ── Level 1 / level 2 combinators ─────────────────────────────────────────────
@@ -201,6 +258,50 @@ public:
         triggered_samples.erase(triggered_samples.begin(),
                                  triggered_samples.begin() + static_cast<long>(needed));
         return compute_average(averaged_intervals, out_value);
+    }
+
+    // handle_request is ADC's request-decode entry point — the piece this
+    // header previously had none of, mirroring rcp::i2c::I2cEndpoint::
+    // handle_request's shape exactly (this repo's second Table 33 Row 2
+    // endpoint type after I2C). It classifies the incoming request's
+    // evt[2:0] field via rcp::endpoint::evt_row2_kind_of before doing
+    // anything else, so a Reserved value can never reach request_reading and
+    // be misread as an ordinary read, and a ConfigWrite value can never be
+    // silently accepted or silently dropped:
+    //   - Plain (evt[2:0] == 000b): delegates to request_reading (the
+    //     SelfTimed cadence pattern above) with `cfg`/`take_sample`/
+    //     `out_value` unchanged — ADC's "standard read request" behavior,
+    //     matching §13.7.9.3 Figure 34's own worked example (the same
+    //     figure rcp/endpoint.hpp's evt_row2_kind_of cites to resolve Table
+    //     33's evt=000b ambiguity in the first place). This does not
+    //     delegate to request_reading_from_trigger_queue — the
+    //     ExternalTrigger cadence pattern remains its own separate entry
+    //     point, not folded into handle_request by this milestone.
+    //   - Reserved (evt[2:0] in 001b-110b): returns
+    //     endpoint::EndpointErrc::reserved_evt_row2 without invoking
+    //     `take_sample` or touching `out_value` — TC18 requires this be
+    //     rejected with error code UNSUPPORTED_CMD.
+    //   - ConfigWrite (evt[2:0] == 111b): §12.7.1's configuration-write
+    //     shape targets the ADC EP's own functional-config block (relative
+    //     start address + configuration data), not a sampling read at all.
+    //     Full handling is deliberately out of scope for this milestone
+    //     (nontrivial — it needs EP_functional-config wiring this header
+    //     does not yet have, the same gap I2C's own handle_request defers
+    //     for the identical reason); this returns
+    //     AdcErrc::config_write_not_supported rather than crashing, silently
+    //     accepting the request as a read, or silently doing nothing.
+    template <typename SampleFn>
+    std::error_code handle_request(uint8_t evt_op, const AdcAveragingConfig& cfg, SampleFn take_sample,
+                                    uint16_t& out_value) {
+        switch (endpoint::evt_row2_kind_of(evt_op)) {
+        case endpoint::EvtRow2Kind::Plain:
+            return request_reading(cfg, std::move(take_sample), out_value);
+        case endpoint::EvtRow2Kind::Reserved:
+            return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2);
+        case endpoint::EvtRow2Kind::ConfigWrite:
+            return make_error_code(AdcErrc::config_write_not_supported);
+        }
+        return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2); // unreachable
     }
 };
 
