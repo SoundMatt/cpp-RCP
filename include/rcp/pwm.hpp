@@ -5,6 +5,8 @@
 // fusa:req REQ-PWM-005
 // fusa:req REQ-PWM-006
 // fusa:req REQ-PWM-007
+// fusa:req REQ-PWM-008
+// fusa:req REQ-PWM-009
 
 // PWM_OUT (ep_type 0x07) and PWM_IN (ep_type 0x08) endpoints — the shared
 // period/active-duration two-field payload shape, PWM_OUT's fixed 4-byte
@@ -58,6 +60,32 @@
 // separate, larger gap common to every endpoint but one in this codebase,
 // not specific to PWM_OUT's write-semantics bug this fixes).
 //
+// Table 30/33 Row 2 evt[2:0] validation (post-v2.4.0, third endpoint type
+// after I2C and ADC): PwmInEndpoint::handle_request is this header's own
+// wiring of rcp::endpoint::evt_row2_kind_of — the shared 3-way evt[2:0]
+// classifier for Table 33's {ADC, PWM_IN, I2C, LIN, CAN, UART, ISELED,
+// MDIO} row — into PWM_IN's request decode, following the exact shape
+// rcp/i2c.hpp's I2cEndpoint::handle_request and rcp/adc.hpp's
+// AdcEndpoint::handle_request established. PWM_IN's own request-handling
+// section (§13.7.6.3) does not redescribe evt-bit semantics itself — it
+// says only "The interpretation of the evt-bits is described in the
+// section 'The usage of evt bits in requests'", i.e. §13.5 Table 33 — so
+// this milestone's classification is not a new spec fact, just PWM_IN's
+// own wiring of the rule Table 33 already states. Plain (evt[2:0]==000b)
+// delegates to handle_read (PWM_IN's existing response-only read model
+// above, unchanged by this milestone): the most recently recorded
+// measurement, or PwmErrc::no_signal if none has ever been captured (or
+// the signal was subsequently lost). Reserved (001b-110b) is rejected
+// with endpoint::EndpointErrc::reserved_evt_row2 without touching
+// `out_value`. ConfigWrite (evt[2:0]==111b, §12.7.1) is reported as
+// PwmErrc::config_write_not_supported rather than crashing or silently
+// accepted as a plain read — PWM_IN has no EP_functional-config wiring in
+// this codebase yet (same gap I2C's and ADC's own handle_request comments
+// call out for their own endpoint types), so full §12.7.1 handling is out
+// of scope here too. PWM_OUT's own write path (PwmOutEndpoint::
+// handle_write, GPIO/PWM_OUT's Table 33 row) is unrelated and untouched by
+// this milestone.
+//
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
 // text from that document is reproduced here. The concrete period/duration
@@ -65,7 +93,7 @@
 // rcp/regmap.hpp's own field-width disclaimers) and trigger-signal id
 // scheme chosen in this file are this implementation's own, same as the
 // equivalent disclaimers in rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
-// and rcp/gpio.hpp.
+// rcp/gpio.hpp, rcp/i2c.hpp, and rcp/adc.hpp.
 #pragma once
 
 #include <rcp/avtp.hpp>
@@ -123,6 +151,15 @@ inline std::error_code decode_pwm_payload(const uint8_t* buf, size_t len, PwmVal
 
 enum class PwmErrc : int {
     no_signal = 1, // PWM_IN_NO_SIGNAL: no pulse has been measured yet
+    // evt_row2_kind_of classified the request as ConfigWrite (evt[2:0] ==
+    // 111b, §12.7.1). This milestone deliberately does not implement the
+    // configuration-write shape (relative EP_functional-config start
+    // address + configuration data) — see PwmInEndpoint::handle_request's
+    // own comment. Reported explicitly rather than silently accepted as a
+    // plain read or silently ignored, same as I2C's
+    // I2cErrc::config_write_not_supported and ADC's
+    // AdcErrc::config_write_not_supported.
+    config_write_not_supported = 2,
 };
 
 inline const std::error_category& pwm_category() noexcept {
@@ -131,7 +168,9 @@ inline const std::error_category& pwm_category() noexcept {
         std::string message(int ev) const override {
             switch (static_cast<PwmErrc>(ev)) {
             case PwmErrc::no_signal: return "rcp/pwm: PWM_IN_NO_SIGNAL — no pulse measured";
-            default:                 return "rcp/pwm: unknown error";
+            case PwmErrc::config_write_not_supported:
+                return "rcp/pwm: evt[2:0]=111b configuration-write requests are not yet implemented";
+            default: return "rcp/pwm: unknown error";
             }
         }
     };
@@ -253,6 +292,48 @@ public:
         if (!has_signal_) return make_error_code(PwmErrc::no_signal);
         out_value = last_value_;
         return {};
+    }
+
+    // handle_request is PWM_IN's request-decode entry point — the piece
+    // this header previously had none of, mirroring rcp::i2c::I2cEndpoint::
+    // handle_request's and rcp::adc::AdcEndpoint::handle_request's shape
+    // exactly (this repo's third Table 33 Row 2 endpoint type after I2C
+    // and ADC). It classifies the incoming request's evt[2:0] field via
+    // rcp::endpoint::evt_row2_kind_of before doing anything else, so a
+    // Reserved value can never reach handle_read and be misread as an
+    // ordinary read, and a ConfigWrite value can never be silently
+    // accepted or silently dropped:
+    //   - Plain (evt[2:0] == 000b): delegates straight to handle_read()
+    //     with `out_value` unchanged — PWM_IN's existing response-only
+    //     read model above already IS this row's correct "plain request"
+    //     behavior (§13.7.6.3: "The interpretation of the evt-bits is
+    //     described in the section 'The usage of evt bits in requests'",
+    //     i.e. §13.5 Table 33).
+    //   - Reserved (evt[2:0] in 001b-110b): returns
+    //     endpoint::EndpointErrc::reserved_evt_row2 without touching
+    //     `out_value` or any measured state — TC18 requires this be
+    //     rejected with error code UNSUPPORTED_CMD.
+    //   - ConfigWrite (evt[2:0] == 111b): §12.7.1's configuration-write
+    //     shape targets the PWM_IN EP's own functional-config block
+    //     (relative start address + configuration data), not a
+    //     measurement read at all. Full handling is deliberately out of
+    //     scope for this milestone (nontrivial — it needs
+    //     EP_functional-config wiring this header does not yet have, the
+    //     same gap I2C's and ADC's own handle_request comments defer for
+    //     the identical reason); this returns
+    //     PwmErrc::config_write_not_supported rather than crashing,
+    //     silently accepting the request as a read, or silently doing
+    //     nothing.
+    std::error_code handle_request(uint8_t evt_op, PwmValue& out_value) {
+        switch (endpoint::evt_row2_kind_of(evt_op)) {
+        case endpoint::EvtRow2Kind::Plain:
+            return handle_read(out_value);
+        case endpoint::EvtRow2Kind::Reserved:
+            return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2);
+        case endpoint::EvtRow2Kind::ConfigWrite:
+            return make_error_code(PwmErrc::config_write_not_supported);
+        }
+        return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2); // unreachable
     }
 
     endpoint::TriggerRegistry& triggers() noexcept { return triggers_; }

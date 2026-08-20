@@ -12,6 +12,8 @@
 // fusa:test REQ-MOCK-012
 // fusa:test REQ-MOCK-013
 // fusa:test REQ-MOCK-014
+// fusa:test REQ-MOCK-015
+// fusa:test REQ-MOCK-016
 
 // Tests for rcp/mock.hpp — the in-process RC Server simulator (ROADMAP.md
 // milestone 56, "Test & Simulation Harness Rebuild", v2.12.0). See
@@ -38,14 +40,14 @@ acf::AcfMessageInfo standard_request(avtp::ByteBusId bus_id, bool write, uint8_t
 
 // ── Construction / register map ──────────────────────────────────────────────
 
-TEST_CASE("Server starts HW_UNCONFIGURED with a four-endpoint register map",
+TEST_CASE("Server starts HW_UNCONFIGURED with a five-endpoint register map",
           "[mock][REQ-MOCK-001]") {
     mock::Server server;
     REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
-    REQUIRE(server.registers().endpoint_count == 4);
-    REQUIRE(server.registers().generic_configs.size() == 4);
-    REQUIRE(server.registers().functional_configs.size() == 4);
-    REQUIRE(server.registers().ep_id_mapping.size() == 4);
+    REQUIRE(server.registers().endpoint_count == 5);
+    REQUIRE(server.registers().generic_configs.size() == 5);
+    REQUIRE(server.registers().functional_configs.size() == 5);
+    REQUIRE(server.registers().ep_id_mapping.size() == 5);
     REQUIRE(server.registers().ep_id_mapping[0].ep_id == mock::kGpioEndpointId);
     REQUIRE(server.registers().ep_id_mapping[0].byte_bus_id == mock::kGpioByteBusId);
     REQUIRE(server.registers().ep_id_mapping[1].ep_id == mock::kSpiEndpointId);
@@ -54,6 +56,8 @@ TEST_CASE("Server starts HW_UNCONFIGURED with a four-endpoint register map",
     REQUIRE(server.registers().ep_id_mapping[2].byte_bus_id == mock::kI2cByteBusId);
     REQUIRE(server.registers().ep_id_mapping[3].ep_id == mock::kAdcEndpointId);
     REQUIRE(server.registers().ep_id_mapping[3].byte_bus_id == mock::kAdcByteBusId);
+    REQUIRE(server.registers().ep_id_mapping[4].ep_id == mock::kPwmInEndpointId);
+    REQUIRE(server.registers().ep_id_mapping[4].byte_bus_id == mock::kPwmInByteBusId);
 }
 
 TEST_CASE("advance_to_rcp_configured drives the lifecycle straight to RCP_CONFIGURED",
@@ -357,6 +361,115 @@ TEST_CASE("ADC request is rejected before RCP_CONFIGURED, same operational gatin
     REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
 
     auto req = standard_request(mock::kAdcByteBusId, /*write=*/false, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+    REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+}
+
+// ── PWM_IN ────────────────────────────────────────────────────────────────────
+// Table 30/33 Row 2 evt[2:0] validation, third endpoint type after I2C and
+// ADC: PwmInEndpoint wired into dispatch() at byte_bus_id 5.
+
+TEST_CASE("PWM_IN plain request (evt[2:0]==000b) answers with the scripted measurement",
+          "[mock][REQ-MOCK-015]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    server.set_pwm_in_response({/*period=*/0x1234, /*active_duration=*/0x0056});
+
+    auto req = standard_request(mock::kPwmInByteBusId, /*write=*/false, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(server.dispatch(0, req, {}, resp, resp_payload));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
+    REQUIRE(resp_payload == std::vector<uint8_t>{0x12, 0x34, 0x00, 0x56});
+}
+
+TEST_CASE("PWM_IN plain requests keep answering the same scripted measurement (not consumed)",
+          "[mock][REQ-MOCK-015]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    server.set_pwm_in_response({100, 50});
+
+    auto req = standard_request(mock::kPwmInByteBusId, /*write=*/false, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+
+    REQUIRE_FALSE(server.dispatch(0, req, {}, resp, resp_payload));
+    REQUIRE(resp_payload == std::vector<uint8_t>{0x00, 0x64, 0x00, 0x32});
+
+    // A second dispatch against the same scripted value answers identically
+    // — unlike ADC's FIFO queue, PWM_IN's read model is not consume-once.
+    REQUIRE_FALSE(server.dispatch(0, req, {}, resp, resp_payload));
+    REQUIRE(resp_payload == std::vector<uint8_t>{0x00, 0x64, 0x00, 0x32});
+}
+
+TEST_CASE("PWM_IN plain request reports PwmInNoSignal before any measurement is scripted",
+          "[mock][REQ-MOCK-015]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kPwmInByteBusId, /*write=*/false, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+    REQUIRE(ec == pwm::make_error_code(pwm::PwmErrc::no_signal));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload ==
+            std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::PwmInNoSignal)});
+}
+
+TEST_CASE("PWM_IN request with a reserved evt[2:0] (001b-110b) is rejected with wire error code "
+          "UNSUPPORTED_CMD and does not disturb the scripted measurement",
+          "[mock][REQ-MOCK-015]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.set_pwm_in_response({200, 75});
+
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        auto req = standard_request(mock::kPwmInByteBusId, /*write=*/false, evt_op);
+        acf::AcfMessageInfo resp;
+        std::vector<uint8_t> resp_payload;
+        auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+        REQUIRE(ec == endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2));
+        REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+        REQUIRE(resp_payload ==
+                std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+    }
+
+    // The scripted measurement must still be there — no reserved evt disturbed it.
+    auto req = standard_request(mock::kPwmInByteBusId, /*write=*/false, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(server.dispatch(0, req, {}, resp, resp_payload));
+    REQUIRE(resp_payload == std::vector<uint8_t>{0x00, 0xC8, 0x00, 0x4B});
+}
+
+TEST_CASE("PWM_IN request with evt[2:0]==111b (config-write) is rejected with wire error code "
+          "UNSUPPORTED_CMD rather than crashing or being treated as a plain read",
+          "[mock][REQ-MOCK-015]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kPwmInByteBusId, /*write=*/false, /*evt_op=*/7);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+    REQUIRE(ec == pwm::make_error_code(pwm::PwmErrc::config_write_not_supported));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload ==
+            std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+}
+
+TEST_CASE("PWM_IN request is rejected before RCP_CONFIGURED, same operational gating as GPIO/SPI/I2C/ADC",
+          "[mock][REQ-MOCK-016]") {
+    mock::Server server;
+    REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
+
+    auto req = standard_request(mock::kPwmInByteBusId, /*write=*/false, /*evt_op=*/0);
     acf::AcfMessageInfo resp;
     std::vector<uint8_t> resp_payload;
     auto ec = server.dispatch(0, req, {}, resp, resp_payload);
