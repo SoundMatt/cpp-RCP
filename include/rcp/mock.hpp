@@ -16,6 +16,8 @@
 // fusa:req REQ-MOCK-016
 // fusa:req REQ-MOCK-017
 // fusa:req REQ-MOCK-018
+// fusa:req REQ-MOCK-019
+// fusa:req REQ-MOCK-020
 
 // In-process RC Server simulator — a small, representative OPEN Alliance
 // TC18 Remote Control Protocol Specification v0.5.1_RC server built
@@ -41,12 +43,13 @@
 // mock::Server holds a real rcp::lifecycle::ServerLifecycle (v2.1.0), a
 // real rcp::regmap::RegisterMap plus rcp::regmap::Ep0 (v2.1.0, including
 // EP0 whole-map-read and root-client write semantics), and one instance
-// each of six fully-built endpoint types — rcp::gpio::GpioEndpoint and
+// each of seven fully-built endpoint types — rcp::gpio::GpioEndpoint and
 // rcp::spi::SpiEndpoint (both v2.3.0), plus rcp::i2c::I2cEndpoint,
-// rcp::adc::AdcEndpoint, rcp::pwm::PwmInEndpoint, and rcp::lin::LinEndpoint
-// (v2.4.0/post-v2.7.0, wired in by the Table 30/33 Row 2 evt[2:0]
-// validation pilot and its ADC, PWM_IN, and LIN follow-ups, in that order)
-// — as its representative endpoint set. dispatch() below is the single
+// rcp::adc::AdcEndpoint, rcp::pwm::PwmInEndpoint, rcp::lin::LinEndpoint, and
+// rcp::can::CanEndpoint (v2.4.0/post-v2.7.0, wired in by the Table 30/33
+// Row 2 evt[2:0] validation pilot and its ADC, PWM_IN, LIN, and CAN
+// follow-ups, in that order) — as its representative endpoint set.
+// dispatch() below is the single
 // request/response entry point a test drives, decoding the standard
 // request kind's evt[2:0]/op fields (rcp/acf.hpp, v2.0.0) the same way a
 // real request-dispatch loop would. Conditional request kinds (v2.5.0),
@@ -67,19 +70,20 @@
 // in an internal structured extraction of the specification named above;
 // no text from that document is reproduced here. The concrete endpoint
 // numbering (GPIO at endpoint id / byte_bus_id 1, SPI at 2, I2C at 3, ADC at
-// 4, PWM_IN at 5, LIN at 6), access-policy choice for operational requests
-// (gated on lifecycle state only, not per-endpoint ownership — see
+// 4, PWM_IN at 5, LIN at 6, CAN at 7), access-policy choice for operational
+// requests (gated on lifecycle state only, not per-endpoint ownership — see
 // dispatch()'s own comment), and EP0 partial-read encoding chosen in this
 // file are this implementation's own, purely for the purposes of being a
 // usable in-process simulator — full bit-for-bit conformance against other
 // TC18 implementations is not claimed, same as the equivalent disclaimers
 // in rcp/regmap.hpp, rcp/lifecycle.hpp, rcp/gpio.hpp, rcp/spi.hpp,
-// rcp/i2c.hpp, rcp/adc.hpp, rcp/pwm.hpp, and rcp/lin.hpp.
+// rcp/i2c.hpp, rcp/adc.hpp, rcp/pwm.hpp, rcp/lin.hpp, and rcp/can.hpp.
 #pragma once
 
 #include <rcp/acf.hpp>
 #include <rcp/adc.hpp>
 #include <rcp/avtp.hpp>
+#include <rcp/can.hpp>
 #include <rcp/endpoint.hpp>
 #include <rcp/gpio.hpp>
 #include <rcp/i2c.hpp>
@@ -116,12 +120,14 @@ constexpr EndpointId   kI2cEndpointId   = 3;
 constexpr EndpointId   kAdcEndpointId   = 4;
 constexpr EndpointId   kPwmInEndpointId = 5;
 constexpr EndpointId   kLinEndpointId   = 6;
+constexpr EndpointId   kCanEndpointId   = 7;
 constexpr avtp::ByteBusId kGpioByteBusId  = static_cast<avtp::ByteBusId>(kGpioEndpointId);
 constexpr avtp::ByteBusId kSpiByteBusId   = static_cast<avtp::ByteBusId>(kSpiEndpointId);
 constexpr avtp::ByteBusId kI2cByteBusId   = static_cast<avtp::ByteBusId>(kI2cEndpointId);
 constexpr avtp::ByteBusId kAdcByteBusId   = static_cast<avtp::ByteBusId>(kAdcEndpointId);
 constexpr avtp::ByteBusId kPwmInByteBusId = static_cast<avtp::ByteBusId>(kPwmInEndpointId);
 constexpr avtp::ByteBusId kLinByteBusId   = static_cast<avtp::ByteBusId>(kLinEndpointId);
+constexpr avtp::ByteBusId kCanByteBusId   = static_cast<avtp::ByteBusId>(kCanEndpointId);
 
 // A discovery-shaped EP0 read only ever answers with the register map's
 // magic number below — see this header's own scope note above.
@@ -164,6 +170,14 @@ inline acf::WireErrorCode wire_error_code_for(const std::error_code& ec) noexcep
         return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
     if (ec == make_error_code(lin::LinErrc::no_response))
         return acf::WireErrorCode::EpError; // internal no-response condition, not a TC18-defined LIN error code — mirrors i2c::I2cErrc::nack's mapping above
+    if (ec == make_error_code(can::CanErrc::config_write_not_supported))
+        return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
+    if (ec == make_error_code(can::CanErrc::identifier_out_of_range))
+        return acf::WireErrorCode::InvalidParameter; // CanIdentifier::value exceeds its 11-/29-bit range
+    if (ec == make_error_code(can::CanErrc::payload_exceeds_format_limit))
+        return acf::WireErrorCode::InvalidParameter; // frame payload exceeds the selected FrameFormat's own ceiling
+    if (ec == make_error_code(can::CanErrc::xl_payload_exceeds_single_avtpdu_bound))
+        return acf::WireErrorCode::EpError; // internal single-AVTPDU capability bound, not a TC18-defined CAN error code — mirrors i2c::I2cErrc::nack's mapping above
     return acf::WireErrorCode::UnsupportedCmd;
 }
 
@@ -196,6 +210,7 @@ public:
     adc::AdcEndpoint&   adc() noexcept { return adc_; }
     pwm::PwmInEndpoint& pwm_in() noexcept { return pwm_in_; }
     lin::LinEndpoint&   lin() noexcept { return lin_; }
+    can::CanEndpoint&   can() noexcept { return can_; }
 
     // set_spi_poci scripts the bytes a subsequent dispatch()/transfer()
     // call on `channel` reads back as POCI-in data. A real SPI peripheral's
@@ -264,6 +279,22 @@ public:
         lin_responded_ = responded;
     }
 
+    // No set_can_response()-shaped hook here: deliberately, not an
+    // oversight. set_spi_poci/set_i2c_response/set_adc_response/
+    // set_pwm_in_response/set_lin_response above all script data this mock
+    // reads back into a *response* payload for the next dispatched request.
+    // CAN's request-side operation (extraction §13.7.11.3) is transmit() —
+    // a fire-a-frame TX call whose outcome is entirely determined by the
+    // request's own frame contents (identifier range + FrameFormat payload
+    // ceiling, both already validated deterministically by
+    // can::validate_frame), not by any external "current bus state" a test
+    // would need to inject. A successful Plain CAN request has no response
+    // *data* to script in the first place (see dispatch_can's own
+    // comment): out_resp_payload stays empty, unlike every other
+    // dispatch_*() above. can() above already exposes CanEndpoint directly
+    // for any test that wants to inspect last_transmitted()/
+    // last_received() or drive receive()/acceptance filters itself.
+
     // advance_to_rcp_configured is a convenience for tests/simulators that
     // don't care about exercising ServerLifecycle's intermediate
     // plausibility-check gating themselves and just want a fully live
@@ -303,6 +334,7 @@ public:
         if (req.byte_bus_id == kAdcByteBusId) return dispatch_adc(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kPwmInByteBusId) return dispatch_pwm_in(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kLinByteBusId) return dispatch_lin(req, req_payload, out_resp, out_resp_payload);
+        if (req.byte_bus_id == kCanByteBusId) return dispatch_can(req, req_payload, out_resp, out_resp_payload);
 
         return set_error_response(req, make_error_code(regmap::RegMapErrc::invalid_parameter),
                                    out_resp, out_resp_payload);
@@ -323,9 +355,9 @@ private:
 
     static regmap::RegisterMap make_initial_register_map() {
         regmap::RegisterMap regs;
-        regs.endpoint_count = 6;
-        regs.generic_configs.resize(6);
-        regs.functional_configs.resize(6);
+        regs.endpoint_count = 7;
+        regs.generic_configs.resize(7);
+        regs.functional_configs.resize(7);
         regs.ep_id_mapping = {
             {kGpioEndpointId,  kGpioByteBusId},
             {kSpiEndpointId,   kSpiByteBusId},
@@ -333,6 +365,7 @@ private:
             {kAdcEndpointId,   kAdcByteBusId},
             {kPwmInEndpointId, kPwmInByteBusId},
             {kLinEndpointId,   kLinByteBusId},
+            {kCanEndpointId,   kCanByteBusId},
         };
         return regs;
     }
@@ -526,6 +559,45 @@ private:
         return {};
     }
 
+    // CAN, unlike I2C/LIN, is a fire-a-frame TX operation with no
+    // synchronous read-back — this dispatch path drives one
+    // CanEndpoint::handle_request per request, same Table 33 Row 2
+    // Plain/Reserved/ConfigWrite classification (rcp::endpoint::
+    // evt_row2_kind_of) every other dispatch_*() above already applies,
+    // which handle_request checks before ever touching `payload` as frame
+    // data — see its own doc comment for why a Reserved or ConfigWrite evt
+    // must never reach transmit(). Figure 40's own wire layout for a CAN
+    // request's byte_msg_payload (FrameFormat + CAN ID + CAN data,
+    // §13.7.11.3) is not decoded here — no byte-level CAN wire codec exists
+    // anywhere in this codebase yet (see rcp/can.hpp's own header comment
+    // on what it does and does not lay out); this dispatch path's own
+    // simplification, scoped identically to every other "full bit-for-bit
+    // conformance ... not claimed" disclaimer in this file, is to treat
+    // `payload` directly as the frame's data bytes, addressed with a fixed
+    // standard identifier (CanIdentifier{0, false}) and
+    // FrameFormat::Classical — enough to exercise the evt[2:0]
+    // classification end-to-end without inventing a real wire decode. A
+    // successful Plain request has no response data to send back (see
+    // set_can_response's own comment above for why there is no scripting
+    // hook), so out_resp_payload stays empty and the response is a plain
+    // Acknowledge/WriteResponse, mirroring dispatch_gpio's write-response
+    // shape rather than dispatch_i2c/dispatch_lin's read-response shape.
+    std::error_code dispatch_can(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                  acf::AcfMessageInfo& out_resp,
+                                  std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (!operational_requests_allowed()) {
+            return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
+                                       out_resp, out_resp_payload);
+        }
+        can::CanDataFrame frame;
+        frame.data = payload;
+        auto ec = can_.handle_request(req.evt_op, frame);
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
+        out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
+                                                          : acf::ResponseKind::WriteResponse);
+        return {};
+    }
+
     lifecycle::ServerLifecycle lifecycle_;
     regmap::RegisterMap        regs_;
     regmap::Ep0                ep0_;
@@ -535,6 +607,7 @@ private:
     adc::AdcEndpoint           adc_;
     pwm::PwmInEndpoint         pwm_in_;
     lin::LinEndpoint           lin_;
+    can::CanEndpoint           can_;
     std::array<std::vector<uint8_t>, spi::kMaxChannels> spi_poci_{};
     std::vector<uint8_t>       i2c_response_{};
     bool                       i2c_acked_ = true;

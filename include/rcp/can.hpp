@@ -5,6 +5,8 @@
 // fusa:req REQ-CANEP-005
 // fusa:req REQ-CANEP-006
 // fusa:req REQ-CANEP-007
+// fusa:req REQ-CANEP-008
+// fusa:req REQ-CANEP-009
 
 // CAN controller endpoint (ep_type 0x0B) — the OPEN Alliance TC18 Remote
 // Control Protocol Specification v0.5.1_RC's Classical/FD/XL frame-format
@@ -46,14 +48,30 @@
 //      should first confirm the extraction actually defines one for this
 //      endpoint type, not assume it was merely forgotten here.
 //
+// Table 30/33 Row 2 evt[2:0] validation (post-v2.7.0, fifth endpoint type
+// after I2C, ADC, PWM_IN, and LIN): CanEndpoint::handle_request is this
+// header's own wiring of rcp::endpoint::evt_row2_kind_of — the shared
+// 3-way evt[2:0] classifier for Table 33's {ADC, PWM_IN, I2C, LIN, CAN,
+// UART, ISELED, MDIO} row — into CAN's request decode, following the exact
+// shape rcp/i2c.hpp's I2cEndpoint::handle_request, rcp/adc.hpp's
+// AdcEndpoint::handle_request, rcp/pwm.hpp's PwmInEndpoint::handle_request,
+// and rcp/lin.hpp's LinEndpoint::handle_request established. See
+// handle_request's own doc comment for why this is a completely separate
+// concern from Figure 40's FrameFormat sub-field and from point 1 above's
+// "no remote-frame concept" — evt[2:0] classification must not be confused
+// with either.
+//
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
 // text from that document is reproduced here. The concrete bit-timing
 // register field layout, the accepted single-AVTPDU XL payload bound, and
 // the acceptance-filter matching rule chosen in this file are this
 // implementation's own, same as the equivalent disclaimers in rcp/avtp.hpp,
-// rcp/regmap.hpp, rcp/endpoint.hpp, and rcp/uart.hpp.
+// rcp/regmap.hpp, rcp/endpoint.hpp, rcp/uart.hpp, rcp/i2c.hpp, rcp/adc.hpp,
+// rcp/pwm.hpp, and rcp/lin.hpp.
 #pragma once
+
+#include <rcp/endpoint.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -118,6 +136,14 @@ enum class CanErrc : int {
     payload_exceeds_format_limit           = 2, // payload length exceeds the selected FrameFormat's own max
     xl_payload_exceeds_single_avtpdu_bound = 3, // within the spec's 2054-byte ceiling, but beyond this
                                                   // implementation's accepted single-AVTPDU bound (see header comment)
+    // evt_row2_kind_of classified the request as ConfigWrite (evt[2:0] ==
+    // 111b, §12.7.1). This milestone's follow-up deliberately does not
+    // implement the configuration-write shape (relative EP_functional-
+    // config start address + configuration data) — see handle_request's
+    // own comment. Reported explicitly rather than silently accepted as a
+    // plain transmit or silently ignored, same as I2C's, ADC's, PWM_IN's,
+    // and LIN's own config_write_not_supported variants.
+    config_write_not_supported = 4,
 };
 
 inline const std::error_category& can_category() noexcept {
@@ -131,6 +157,8 @@ inline const std::error_category& can_category() noexcept {
                 return "rcp/can: payload exceeds the selected FrameFormat's payload limit";
             case CanErrc::xl_payload_exceeds_single_avtpdu_bound:
                 return "rcp/can: CAN XL payload requires multi-AVTPDU fragmentation, not supported this cycle";
+            case CanErrc::config_write_not_supported:
+                return "rcp/can: evt[2:0]=111b configuration-write requests are not yet implemented";
             default:
                 return "rcp/can: unknown error";
             }
@@ -253,6 +281,69 @@ public:
         if (ec) return ec;
         last_tx_ = std::move(frame);
         return {};
+    }
+
+    // handle_request is CAN's request-decode entry point — the piece this
+    // header previously had none of, mirroring rcp::i2c::I2cEndpoint::
+    // handle_request's shape (this repo's fifth Table 33 Row 2 endpoint
+    // type after I2C, ADC, PWM_IN, and LIN). It classifies the incoming
+    // request's evt[2:0] field via rcp::endpoint::evt_row2_kind_of before
+    // doing anything else, so a Reserved value can never reach transmit()
+    // and be misread as an ordinary transmit request, and a ConfigWrite
+    // value can never be silently accepted or silently dropped:
+    //   - Plain (evt[2:0] == 000b): delegates straight to transmit() with
+    //     `frame` unchanged — CAN's existing data-frame transmit model
+    //     (extraction §13.7.11.3) already IS this row's correct "plain
+    //     request" behavior; evt[2:0] carries no combinable value or
+    //     channel selector for this row.
+    //   - Reserved (evt[2:0] in 001b-110b): returns
+    //     endpoint::EndpointErrc::reserved_evt_row2 without touching any
+    //     endpoint state (last_tx_ is left exactly as it was — `frame` is
+    //     simply discarded) — TC18 requires this be rejected with error
+    //     code UNSUPPORTED_CMD.
+    //   - ConfigWrite (evt[2:0] == 111b): §12.7.1's configuration-write
+    //     shape targets the CAN EP's own functional-config block (Table 56
+    //     — bit-timing registers, acceptance/receive filters, clock
+    //     divider, ...), not a frame transmission at all. Full handling is
+    //     deliberately out of scope for this milestone (nontrivial — it
+    //     needs EP_functional-config wiring this header does not yet have,
+    //     the same gap I2C's, ADC's, PWM_IN's, and LIN's own handle_request
+    //     comments defer for the identical reason); this returns
+    //     CanErrc::config_write_not_supported rather than crashing,
+    //     silently accepting the request as a transmit, or silently doing
+    //     nothing.
+    //
+    // NOT to be confused with Figure 40's own "FrameFormat" sub-field
+    // (CBFF/CEFF/FBFF/FEFF/XL-classic/XL-new, Table 57), carried inside the
+    // request's byte_msg_payload alongside the CAN ID and CAN data: that
+    // field selects the CAN frame's own on-wire format and lives entirely
+    // in the payload, verified directly against TC18.txt's own Figure 40
+    // layout (§13.7.11.3), where the Message Info octet's evt[2:0] bits and
+    // the Payload's FrameFormat/CAN-ID/CAN-data fields are drawn as
+    // distinct, non-overlapping regions of the request. Reading evt[2:0] as
+    // if it also selected (or combined with) FrameFormat, or as if it
+    // selected a remote-frame vs data-frame request — this endpoint type
+    // has no remote-frame concept at all (see header comment point 1;
+    // TC18's own text states outright "Sending remote frames is not
+    // supported") — would be exactly the kind of invented, non-spec-
+    // derived field encoding this codebase has had to remove elsewhere once
+    // discovered (e.g. rcp/iseled.hpp's and rcp/mdio.hpp's own header
+    // comments on previously invented, non-spec-derived field encodings
+    // later corrected, and the identical class of mistake rcp/lin.hpp's own
+    // handle_request comment calls out against confusing evt[2:0] with
+    // §13.7.10.1's separate compound-wait match-condition text).
+    // handle_request below calls the same shared evt_row2_kind_of every
+    // other Row 2 endpoint type uses and invents nothing of its own.
+    std::error_code handle_request(uint8_t evt_op, CanDataFrame frame) {
+        switch (endpoint::evt_row2_kind_of(evt_op)) {
+        case endpoint::EvtRow2Kind::Plain:
+            return transmit(std::move(frame));
+        case endpoint::EvtRow2Kind::Reserved:
+            return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2);
+        case endpoint::EvtRow2Kind::ConfigWrite:
+            return make_error_code(CanErrc::config_write_not_supported);
+        }
+        return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2); // unreachable
     }
 
     // receive models one inbound data frame arriving off the bus. Returns
