@@ -14,6 +14,8 @@
 // fusa:req REQ-MOCK-014
 // fusa:req REQ-MOCK-015
 // fusa:req REQ-MOCK-016
+// fusa:req REQ-MOCK-017
+// fusa:req REQ-MOCK-018
 
 // In-process RC Server simulator — a small, representative OPEN Alliance
 // TC18 Remote Control Protocol Specification v0.5.1_RC server built
@@ -39,12 +41,12 @@
 // mock::Server holds a real rcp::lifecycle::ServerLifecycle (v2.1.0), a
 // real rcp::regmap::RegisterMap plus rcp::regmap::Ep0 (v2.1.0, including
 // EP0 whole-map-read and root-client write semantics), and one instance
-// each of five fully-built endpoint types — rcp::gpio::GpioEndpoint and
+// each of six fully-built endpoint types — rcp::gpio::GpioEndpoint and
 // rcp::spi::SpiEndpoint (both v2.3.0), plus rcp::i2c::I2cEndpoint,
-// rcp::adc::AdcEndpoint, and rcp::pwm::PwmInEndpoint (v2.4.0, wired in by
-// the Table 30/33 Row 2 evt[2:0] validation pilot and its ADC and PWM_IN
-// follow-ups, in that order) — as its representative endpoint set.
-// dispatch() below is the single
+// rcp::adc::AdcEndpoint, rcp::pwm::PwmInEndpoint, and rcp::lin::LinEndpoint
+// (v2.4.0/post-v2.7.0, wired in by the Table 30/33 Row 2 evt[2:0]
+// validation pilot and its ADC, PWM_IN, and LIN follow-ups, in that order)
+// — as its representative endpoint set. dispatch() below is the single
 // request/response entry point a test drives, decoding the standard
 // request kind's evt[2:0]/op fields (rcp/acf.hpp, v2.0.0) the same way a
 // real request-dispatch loop would. Conditional request kinds (v2.5.0),
@@ -65,14 +67,14 @@
 // in an internal structured extraction of the specification named above;
 // no text from that document is reproduced here. The concrete endpoint
 // numbering (GPIO at endpoint id / byte_bus_id 1, SPI at 2, I2C at 3, ADC at
-// 4, PWM_IN at 5), access-policy choice for operational requests (gated on
-// lifecycle state only, not per-endpoint ownership — see dispatch()'s own
-// comment), and EP0 partial-read encoding chosen in this file are this
-// implementation's own, purely for the purposes of being a usable
-// in-process simulator — full bit-for-bit conformance against other TC18
-// implementations is not claimed, same as the equivalent disclaimers in
-// rcp/regmap.hpp, rcp/lifecycle.hpp, rcp/gpio.hpp, rcp/spi.hpp, rcp/i2c.hpp,
-// rcp/adc.hpp, and rcp/pwm.hpp.
+// 4, PWM_IN at 5, LIN at 6), access-policy choice for operational requests
+// (gated on lifecycle state only, not per-endpoint ownership — see
+// dispatch()'s own comment), and EP0 partial-read encoding chosen in this
+// file are this implementation's own, purely for the purposes of being a
+// usable in-process simulator — full bit-for-bit conformance against other
+// TC18 implementations is not claimed, same as the equivalent disclaimers
+// in rcp/regmap.hpp, rcp/lifecycle.hpp, rcp/gpio.hpp, rcp/spi.hpp,
+// rcp/i2c.hpp, rcp/adc.hpp, rcp/pwm.hpp, and rcp/lin.hpp.
 #pragma once
 
 #include <rcp/acf.hpp>
@@ -82,6 +84,7 @@
 #include <rcp/gpio.hpp>
 #include <rcp/i2c.hpp>
 #include <rcp/lifecycle.hpp>
+#include <rcp/lin.hpp>
 #include <rcp/pwm.hpp>
 #include <rcp/regmap.hpp>
 #include <rcp/spi.hpp>
@@ -112,11 +115,13 @@ constexpr EndpointId   kSpiEndpointId   = 2;
 constexpr EndpointId   kI2cEndpointId   = 3;
 constexpr EndpointId   kAdcEndpointId   = 4;
 constexpr EndpointId   kPwmInEndpointId = 5;
+constexpr EndpointId   kLinEndpointId   = 6;
 constexpr avtp::ByteBusId kGpioByteBusId  = static_cast<avtp::ByteBusId>(kGpioEndpointId);
 constexpr avtp::ByteBusId kSpiByteBusId   = static_cast<avtp::ByteBusId>(kSpiEndpointId);
 constexpr avtp::ByteBusId kI2cByteBusId   = static_cast<avtp::ByteBusId>(kI2cEndpointId);
 constexpr avtp::ByteBusId kAdcByteBusId   = static_cast<avtp::ByteBusId>(kAdcEndpointId);
 constexpr avtp::ByteBusId kPwmInByteBusId = static_cast<avtp::ByteBusId>(kPwmInEndpointId);
+constexpr avtp::ByteBusId kLinByteBusId   = static_cast<avtp::ByteBusId>(kLinEndpointId);
 
 // A discovery-shaped EP0 read only ever answers with the register map's
 // magic number below — see this header's own scope note above.
@@ -155,6 +160,10 @@ inline acf::WireErrorCode wire_error_code_for(const std::error_code& ec) noexcep
         return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
     if (ec == make_error_code(pwm::PwmErrc::no_signal))
         return acf::WireErrorCode::PwmInNoSignal; // Table 27's own dedicated PWM_IN_NO_SIGNAL(9) code — unlike adc::AdcErrc::no_signal above, TC18 defines a real numbered code for this condition, so this maps to it directly rather than falling back to EpError
+    if (ec == make_error_code(lin::LinErrc::config_write_not_supported))
+        return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
+    if (ec == make_error_code(lin::LinErrc::no_response))
+        return acf::WireErrorCode::EpError; // internal no-response condition, not a TC18-defined LIN error code — mirrors i2c::I2cErrc::nack's mapping above
     return acf::WireErrorCode::UnsupportedCmd;
 }
 
@@ -186,6 +195,7 @@ public:
     i2c::I2cEndpoint&   i2c() noexcept { return i2c_; }
     adc::AdcEndpoint&   adc() noexcept { return adc_; }
     pwm::PwmInEndpoint& pwm_in() noexcept { return pwm_in_; }
+    lin::LinEndpoint&   lin() noexcept { return lin_; }
 
     // set_spi_poci scripts the bytes a subsequent dispatch()/transfer()
     // call on `channel` reads back as POCI-in data. A real SPI peripheral's
@@ -241,6 +251,19 @@ public:
         pwm_in_.record_measurement(value);
     }
 
+    // set_lin_response scripts the bytes and responded/no-response outcome
+    // a subsequent dispatch()-driven LIN transfer reads back — the same
+    // "test scripts the bus, this mock does not model actual hardware"
+    // pattern set_spi_poci/set_i2c_response above already establish
+    // (LinEndpoint::transfer mirrors I2cEndpoint::transfer's shape, so this
+    // mirrors set_i2c_response's shape too). Applies to the next plain
+    // (evt[2:0]==000b) LIN request only in spirit — like set_i2c_response,
+    // it stays in effect until overwritten, there is no auto-clear.
+    void set_lin_response(std::vector<uint8_t> data, bool responded = true) {
+        lin_response_  = std::move(data);
+        lin_responded_ = responded;
+    }
+
     // advance_to_rcp_configured is a convenience for tests/simulators that
     // don't care about exercising ServerLifecycle's intermediate
     // plausibility-check gating themselves and just want a fully live
@@ -279,6 +302,7 @@ public:
         if (req.byte_bus_id == kI2cByteBusId) return dispatch_i2c(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kAdcByteBusId) return dispatch_adc(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kPwmInByteBusId) return dispatch_pwm_in(req, req_payload, out_resp, out_resp_payload);
+        if (req.byte_bus_id == kLinByteBusId) return dispatch_lin(req, req_payload, out_resp, out_resp_payload);
 
         return set_error_response(req, make_error_code(regmap::RegMapErrc::invalid_parameter),
                                    out_resp, out_resp_payload);
@@ -299,15 +323,16 @@ private:
 
     static regmap::RegisterMap make_initial_register_map() {
         regmap::RegisterMap regs;
-        regs.endpoint_count = 5;
-        regs.generic_configs.resize(5);
-        regs.functional_configs.resize(5);
+        regs.endpoint_count = 6;
+        regs.generic_configs.resize(6);
+        regs.functional_configs.resize(6);
         regs.ep_id_mapping = {
             {kGpioEndpointId,  kGpioByteBusId},
             {kSpiEndpointId,   kSpiByteBusId},
             {kI2cEndpointId,   kI2cByteBusId},
             {kAdcEndpointId,   kAdcByteBusId},
             {kPwmInEndpointId, kPwmInByteBusId},
+            {kLinEndpointId,   kLinByteBusId},
         };
         return regs;
     }
@@ -477,6 +502,30 @@ private:
         return {};
     }
 
+    // LIN, same as I2C (extraction §13.7.10.3), is a raw byte-stream
+    // transfer rather than a read/write-branched register — this dispatch
+    // path does not branch on req.op either, same rationale as
+    // dispatch_i2c's own comment. Unlike SPI, LIN's evt[2:0] does not
+    // select a channel; it is Table 33 Row 2's 3-way
+    // Plain/Reserved/ConfigWrite classification (rcp::endpoint::
+    // evt_row2_kind_of), which LinEndpoint::handle_request checks before
+    // ever touching `payload` as transfer data — see its own doc comment
+    // for why a Reserved or ConfigWrite evt must never reach transfer().
+    std::error_code dispatch_lin(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                  acf::AcfMessageInfo& out_resp,
+                                  std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (!operational_requests_allowed()) {
+            return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
+                                       out_resp, out_resp_payload);
+        }
+        auto ec = lin_.handle_request(req.evt_op, payload, lin_response_, lin_responded_);
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
+        out_resp_payload = lin_.last_received();
+        out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
+                                                          : acf::ResponseKind::ReadResponse);
+        return {};
+    }
+
     lifecycle::ServerLifecycle lifecycle_;
     regmap::RegisterMap        regs_;
     regmap::Ep0                ep0_;
@@ -485,10 +534,13 @@ private:
     i2c::I2cEndpoint           i2c_;
     adc::AdcEndpoint           adc_;
     pwm::PwmInEndpoint         pwm_in_;
+    lin::LinEndpoint           lin_;
     std::array<std::vector<uint8_t>, spi::kMaxChannels> spi_poci_{};
     std::vector<uint8_t>       i2c_response_{};
     bool                       i2c_acked_ = true;
     std::deque<uint16_t>       adc_samples_{};
+    std::vector<uint8_t>       lin_response_{};
+    bool                       lin_responded_ = true;
 };
 
 } // namespace mock
