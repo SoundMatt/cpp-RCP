@@ -5,6 +5,8 @@
 // fusa:test REQ-CANEP-005
 // fusa:test REQ-CANEP-006
 // fusa:test REQ-CANEP-007
+// fusa:test REQ-CANEP-008
+// fusa:test REQ-CANEP-009
 
 // Tests for rcp/can.hpp — the CAN controller endpoint type (ROADMAP.md
 // milestone 51, "Remaining Endpoint Types — LIN, CAN (incl. CAN XL),
@@ -176,10 +178,92 @@ TEST_CASE("CanEndpoint exposes no TriggerRegistry accessor", "[can][REQ-CANEP-00
     // No ep.triggers() call exists to make here — that is the point.
 }
 
+// ── Table 33 Row 2 evt[2:0] validation (handle_request) ─────────────────────
+
+TEST_CASE("CanEndpoint::handle_request delegates a Plain (evt[2:0]==000b) request to transmit()",
+          "[can][REQ-CANEP-008]") {
+    CanEndpoint ep;
+    CanDataFrame f;
+    f.id.value = 0x123;
+    f.format    = FrameFormat::Classical;
+    f.data      = {0xDE, 0xAD};
+
+    auto ec = ep.handle_request(/*evt_op=*/0, f);
+    REQUIRE_FALSE(ec);
+    REQUIRE(ep.last_transmitted().id.value == 0x123);
+    REQUIRE(ep.last_transmitted().data == std::vector<uint8_t>{0xDE, 0xAD});
+}
+
+TEST_CASE("CanEndpoint::handle_request rejects every reserved evt[2:0] value (001b-110b) without "
+          "touching transmit state",
+          "[can][REQ-CANEP-008]") {
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        CanEndpoint ep;
+        CanDataFrame f;
+        f.id.value = 0x123;
+        f.data     = {0xAA};
+        auto ec = ep.handle_request(evt_op, f);
+        REQUIRE(ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+        // A rejected reserved evt must not record anything as transmitted —
+        // last_transmitted() stays at its default-constructed value.
+        REQUIRE(ep.last_transmitted().id.value == 0);
+        REQUIRE(ep.last_transmitted().data.empty());
+    }
+}
+
+TEST_CASE("CanEndpoint::handle_request reports config_write_not_supported for evt[2:0]==111b "
+          "without crashing or touching transmit state",
+          "[can][REQ-CANEP-009]") {
+    CanEndpoint ep;
+    CanDataFrame f;
+    f.id.value = 0x123;
+    f.data     = {0x00, 0xAB};
+    auto ec = ep.handle_request(/*evt_op=*/7, f);
+    REQUIRE(ec == make_error_code(CanErrc::config_write_not_supported));
+    REQUIRE(ep.last_transmitted().id.value == 0);
+    REQUIRE(ep.last_transmitted().data.empty());
+}
+
+TEST_CASE("CanEndpoint::handle_request masks evt_op down to 3 bits before classifying",
+          "[can][REQ-CANEP-008]") {
+    CanEndpoint ep;
+    CanDataFrame f;
+    f.id.value = 0x123;
+    REQUIRE_FALSE(ep.handle_request(/*evt_op=*/0xF8, f)); // low 3 bits 000 -> Plain
+    auto ec = ep.handle_request(/*evt_op=*/0xF9, f);      // low 3 bits 001 -> Reserved
+    REQUIRE(ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+}
+
+TEST_CASE("CanEndpoint::handle_request Reserved/ConfigWrite classification is independent of "
+          "FrameFormat/CAN-ID — evt[2:0] carries no frame-format or remote-frame selector",
+          "[can][REQ-CANEP-008]") {
+    // Guards against confusing Table 33's evt[2:0] classification with
+    // Figure 40's separate FrameFormat payload sub-field (see
+    // handle_request's own header comment): a Reserved/ConfigWrite evt is
+    // rejected identically no matter which FrameFormat the frame itself
+    // carries.
+    for (auto fmt : {FrameFormat::Classical, FrameFormat::Fd, FrameFormat::Xl}) {
+        CanEndpoint ep;
+        CanDataFrame f;
+        f.id.value = 0x123;
+        f.format    = fmt;
+        REQUIRE(ep.handle_request(/*evt_op=*/3, f) ==
+                rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+        REQUIRE(ep.handle_request(/*evt_op=*/7, f) == make_error_code(CanErrc::config_write_not_supported));
+    }
+}
+
 // ── CanErrc category sanity ───────────────────────────────────────────────────
 
 TEST_CASE("CanErrc reports a non-empty message in its own category", "[can][REQ-CANEP-007]") {
     auto ec = make_error_code(CanErrc::identifier_out_of_range);
+    REQUIRE(ec.category() == can_category());
+    REQUIRE_FALSE(ec.message().empty());
+}
+
+TEST_CASE("CanErrc::config_write_not_supported reports a non-empty message in its own category",
+          "[can][REQ-CANEP-009]") {
+    auto ec = make_error_code(CanErrc::config_write_not_supported);
     REQUIRE(ec.category() == can_category());
     REQUIRE_FALSE(ec.message().empty());
 }

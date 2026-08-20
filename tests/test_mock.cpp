@@ -16,6 +16,8 @@
 // fusa:test REQ-MOCK-016
 // fusa:test REQ-MOCK-017
 // fusa:test REQ-MOCK-018
+// fusa:test REQ-MOCK-019
+// fusa:test REQ-MOCK-020
 
 // Tests for rcp/mock.hpp — the in-process RC Server simulator (ROADMAP.md
 // milestone 56, "Test & Simulation Harness Rebuild", v2.12.0). See
@@ -42,14 +44,14 @@ acf::AcfMessageInfo standard_request(avtp::ByteBusId bus_id, bool write, uint8_t
 
 // ── Construction / register map ──────────────────────────────────────────────
 
-TEST_CASE("Server starts HW_UNCONFIGURED with a six-endpoint register map",
+TEST_CASE("Server starts HW_UNCONFIGURED with a seven-endpoint register map",
           "[mock][REQ-MOCK-001]") {
     mock::Server server;
     REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
-    REQUIRE(server.registers().endpoint_count == 6);
-    REQUIRE(server.registers().generic_configs.size() == 6);
-    REQUIRE(server.registers().functional_configs.size() == 6);
-    REQUIRE(server.registers().ep_id_mapping.size() == 6);
+    REQUIRE(server.registers().endpoint_count == 7);
+    REQUIRE(server.registers().generic_configs.size() == 7);
+    REQUIRE(server.registers().functional_configs.size() == 7);
+    REQUIRE(server.registers().ep_id_mapping.size() == 7);
     REQUIRE(server.registers().ep_id_mapping[0].ep_id == mock::kGpioEndpointId);
     REQUIRE(server.registers().ep_id_mapping[0].byte_bus_id == mock::kGpioByteBusId);
     REQUIRE(server.registers().ep_id_mapping[1].ep_id == mock::kSpiEndpointId);
@@ -62,6 +64,8 @@ TEST_CASE("Server starts HW_UNCONFIGURED with a six-endpoint register map",
     REQUIRE(server.registers().ep_id_mapping[4].byte_bus_id == mock::kPwmInByteBusId);
     REQUIRE(server.registers().ep_id_mapping[5].ep_id == mock::kLinEndpointId);
     REQUIRE(server.registers().ep_id_mapping[5].byte_bus_id == mock::kLinByteBusId);
+    REQUIRE(server.registers().ep_id_mapping[6].ep_id == mock::kCanEndpointId);
+    REQUIRE(server.registers().ep_id_mapping[6].byte_bus_id == mock::kCanByteBusId);
 }
 
 TEST_CASE("advance_to_rcp_configured drives the lifecycle straight to RCP_CONFIGURED",
@@ -547,6 +551,79 @@ TEST_CASE("LIN request is rejected before RCP_CONFIGURED, same operational gatin
     acf::AcfMessageInfo resp;
     std::vector<uint8_t> resp_payload;
     auto ec = server.dispatch(0, req, {0x55}, resp, resp_payload);
+    REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+}
+
+// ── CAN ───────────────────────────────────────────────────────────────────────
+// Table 30/33 Row 2 evt[2:0] validation, fifth endpoint type after I2C,
+// ADC, PWM_IN, and LIN: CanEndpoint wired into dispatch() at byte_bus_id 7.
+// Unlike I2C/LIN, CAN's Plain request is a fire-a-frame TX with no
+// read-back data — see dispatch_can's and set_can_response's own comments
+// in rcp/mock.hpp for why there is no set_can_response() to script and why
+// a successful Plain request answers WriteResponse with an empty payload.
+
+TEST_CASE("CAN plain request (evt[2:0]==000b) transmits the request payload as frame data and "
+          "answers WriteResponse with an empty payload",
+          "[mock][REQ-MOCK-019]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kCanByteBusId, /*write=*/true, /*evt_op=*/0);
+    std::vector<uint8_t> data{0xDE, 0xAD, 0xBE, 0xEF};
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(server.dispatch(0, req, data, resp, resp_payload));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::WriteResponse);
+    REQUIRE(resp_payload.empty());
+    REQUIRE(server.can().last_transmitted().data == data);
+}
+
+TEST_CASE("CAN request with a reserved evt[2:0] (001b-110b) is rejected with wire error code "
+          "UNSUPPORTED_CMD and does not touch endpoint state",
+          "[mock][REQ-MOCK-019]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        auto req = standard_request(mock::kCanByteBusId, /*write=*/true, evt_op);
+        acf::AcfMessageInfo resp;
+        std::vector<uint8_t> resp_payload;
+        auto ec = server.dispatch(0, req, {0xAA}, resp, resp_payload);
+        REQUIRE(ec == endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2));
+        REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+        REQUIRE(resp_payload ==
+                std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+        REQUIRE(server.can().last_transmitted().data.empty());
+    }
+}
+
+TEST_CASE("CAN request with evt[2:0]==111b (config-write) is rejected with wire error code "
+          "UNSUPPORTED_CMD rather than crashing or being treated as a plain transmit",
+          "[mock][REQ-MOCK-019]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kCanByteBusId, /*write=*/true, /*evt_op=*/7);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {0x00, 0xAB}, resp, resp_payload);
+    REQUIRE(ec == can::make_error_code(can::CanErrc::config_write_not_supported));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload ==
+            std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+    REQUIRE(server.can().last_transmitted().data.empty());
+}
+
+TEST_CASE("CAN request is rejected before RCP_CONFIGURED, same operational gating as GPIO/SPI/I2C/ADC/PWM_IN/LIN",
+          "[mock][REQ-MOCK-020]") {
+    mock::Server server;
+    REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
+
+    auto req = standard_request(mock::kCanByteBusId, /*write=*/true, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {0xAA}, resp, resp_payload);
     REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
     REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
 }
