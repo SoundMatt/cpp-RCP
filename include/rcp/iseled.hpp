@@ -3,6 +3,8 @@
 // fusa:req REQ-ISELED-003
 // fusa:req REQ-ISELED-004
 // fusa:req REQ-ISELED-005
+// fusa:req REQ-ISELED-006
+// fusa:req REQ-ISELED-007
 
 // ISELED endpoint (ep_type 0x0C) — the OPEN Alliance TC18 Remote Control
 // Protocol Specification v0.5.1_RC's native ISELED daisy-chain framing: a
@@ -45,12 +47,30 @@
 // IseledSignal::NativeCrcError is removed along with it, leaving
 // IseledSignal::TransferComplete as the endpoint's only trigger signal.
 //
+// Table 30/33 Row 2 evt[2:0] validation (post-v2.7.0, seventh endpoint type
+// after I2C, ADC, PWM_IN, LIN, CAN, and UART): IseledEndpoint::handle_request
+// is this header's own wiring of rcp::endpoint::evt_row2_kind_of — the
+// shared 3-way evt[2:0] classifier for Table 33's {ADC, PWM_IN, I2C, LIN,
+// CAN, UART, ISELED, MDIO} row — into ISELED's request decode, following the
+// exact shape rcp/i2c.hpp's I2cEndpoint::handle_request, rcp/adc.hpp's
+// AdcEndpoint::handle_request, rcp/pwm.hpp's PwmInEndpoint::handle_request,
+// rcp/lin.hpp's LinEndpoint::handle_request, rcp/can.hpp's CanEndpoint::
+// handle_request, and rcp/uart.hpp's UartEndpoint::handle_request
+// established. This is a completely separate, TC18-Table-33-derived
+// concern from the Figure 40/41 wire-format fix directly above — it does
+// not touch, reinterpret, or extend IseledRequest's/IseledResponse's field
+// shapes, or the encode_iseled_request/decode_iseled_request/
+// encode_iseled_response/decode_iseled_response codec, in any way. See
+// handle_request's own doc comment below for why a Reserved or ConfigWrite
+// evt must never reach transact().
+//
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
 // text from that document is reproduced here. The concrete request `data`
 // vector representation and trigger-signal id encoding chosen in this file
 // are this implementation's own, same as the equivalent disclaimers in
-// rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp, and rcp/e2e.hpp.
+// rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp, rcp/e2e.hpp, rcp/i2c.hpp,
+// rcp/adc.hpp, rcp/pwm.hpp, rcp/lin.hpp, rcp/can.hpp, and rcp/uart.hpp.
 #pragma once
 
 #include <rcp/avtp.hpp>
@@ -91,6 +111,15 @@ struct IseledResponse {
 
 enum class IseledErrc : int {
     field_out_of_range = 1, // instruction/address/data exceeds its documented wire field width
+    // evt_row2_kind_of classified the request as ConfigWrite (evt[2:0] ==
+    // 111b, §12.7.1). This milestone's follow-up deliberately does not
+    // implement the configuration-write shape (relative EP_functional-
+    // config start address + configuration data) — see handle_request's
+    // own comment. Reported explicitly rather than silently accepted as a
+    // plain transaction or silently ignored, same as I2C's, ADC's,
+    // PWM_IN's, LIN's, CAN's, and UART's own config_write_not_supported
+    // variants.
+    config_write_not_supported = 2,
 };
 
 inline const std::error_category& iseled_category() noexcept {
@@ -100,6 +129,8 @@ inline const std::error_category& iseled_category() noexcept {
             switch (static_cast<IseledErrc>(ev)) {
             case IseledErrc::field_out_of_range:
                 return "rcp/iseled: instruction/address/data exceeds its wire field width";
+            case IseledErrc::config_write_not_supported:
+                return "rcp/iseled: evt[2:0]=111b configuration-write requests are not yet implemented";
             default:
                 return "rcp/iseled: unknown error";
             }
@@ -226,6 +257,63 @@ public:
         last_response_ = std::move(response);
         triggers_.notify(iseled_signal_id(IseledSignal::TransferComplete));
         return {};
+    }
+
+    // handle_request is ISELED's request-decode entry point — the piece
+    // this header previously had none of, mirroring rcp::i2c::
+    // I2cEndpoint::handle_request's shape (this repo's seventh Table 33
+    // Row 2 endpoint type after I2C, ADC, PWM_IN, LIN, CAN, and UART). It
+    // classifies the incoming request's evt[2:0] field via rcp::endpoint::
+    // evt_row2_kind_of before doing anything else, so a Reserved value can
+    // never reach transact() and be misread as an ordinary transaction,
+    // and a ConfigWrite value can never be silently accepted or silently
+    // dropped:
+    //   - Plain (evt[2:0] == 000b): delegates straight to transact(request,
+    //     response) with both arguments unchanged — ISELED's existing
+    //     request/response transaction model (extraction §13.7.12.3)
+    //     already IS this row's correct "plain request" behavior; evt[2:0]
+    //     carries no combinable value or channel selector for this row.
+    //   - Reserved (evt[2:0] in 001b-110b): returns
+    //     endpoint::EndpointErrc::reserved_evt_row2 without recording
+    //     anything (last_request_/last_response_ are left exactly as they
+    //     were, and TransferComplete does not fire) — TC18 requires this be
+    //     rejected with error code UNSUPPORTED_CMD.
+    //   - ConfigWrite (evt[2:0] == 111b): §12.7.1's configuration-write
+    //     shape targets the ISELED EP's own functional-config block, not a
+    //     daisy-chain transaction at all. Full handling is deliberately out
+    //     of scope for this milestone (nontrivial — it needs
+    //     EP_functional-config wiring this header does not yet have, the
+    //     same gap I2C's, ADC's, PWM_IN's, LIN's, CAN's, and UART's own
+    //     handle_request comments defer for the identical reason); this
+    //     returns IseledErrc::config_write_not_supported rather than
+    //     crashing, silently accepting the request as a transaction, or
+    //     silently doing nothing.
+    //
+    // NOT to be confused with this header's own Figure 40/41 wire-format
+    // fix directly above (the 12-bit address/data field widths, and the
+    // removed invented CRC-8): that fix concerns what IseledRequest's and
+    // IseledResponse's *fields* mean and how wide they are; Table 33's
+    // evt[2:0] classification is an entirely separate, orthogonal concern
+    // about which *kind* of request evt[2:0] itself selects. Reading
+    // evt[2:0] as if it also selected or combined with instruction/address/
+    // data, or inventing any encoding of those fields beyond what
+    // validate_request/validate_response and encode_iseled_request/
+    // decode_iseled_request/encode_iseled_response/decode_iseled_response
+    // already define, would be exactly the kind of invented, non-spec-
+    // derived encoding this header's own top-of-file comment documents
+    // having to remove once already. handle_request below calls the same
+    // shared evt_row2_kind_of every other Row 2 endpoint type uses and
+    // invents nothing of its own.
+    std::error_code handle_request(uint8_t evt_op, IseledRequest request, IseledResponse response) {
+        switch (endpoint::evt_row2_kind_of(evt_op)) {
+        case endpoint::EvtRow2Kind::Plain:
+            return transact(std::move(request), std::move(response));
+        case endpoint::EvtRow2Kind::Reserved:
+            return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2);
+        case endpoint::EvtRow2Kind::ConfigWrite:
+            return make_error_code(IseledErrc::config_write_not_supported);
+        }
+        return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2); // unreachable
     }
 
     const IseledRequest&  last_request() const noexcept { return last_request_; }
