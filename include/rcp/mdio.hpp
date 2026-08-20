@@ -3,6 +3,8 @@
 // fusa:req REQ-MDIO-003
 // fusa:req REQ-MDIO-004
 // fusa:req REQ-MDIO-005
+// fusa:req REQ-MDIO-006
+// fusa:req REQ-MDIO-007
 
 // MDIO endpoint (ep_type 0x0D) — the OPEN Alliance TC18 Remote Control
 // Protocol Specification v0.5.1_RC's mdio_mode-selected register access
@@ -58,12 +60,43 @@
 // MdioRequest::mms_is_0_or_1 below is the caller-supplied fact
 // payload_width_bits needs for the MmsMultiWord case.
 //
+// Table 30/33 Row 2 evt[2:0] validation (post-v2.7.0, EIGHTH and last
+// endpoint type in this row, after I2C, ADC, PWM_IN, LIN, CAN, UART, and
+// ISELED): MdioEndpoint::handle_request is this header's own wiring of
+// rcp::endpoint::evt_row2_kind_of — the shared 3-way evt[2:0] classifier for
+// Table 33's {ADC, PWM_IN, I2C, LIN, CAN, UART, ISELED, MDIO} row — into
+// MDIO's request handling, following the exact shape rcp/i2c.hpp's
+// I2cEndpoint::handle_request, rcp/adc.hpp's AdcEndpoint::handle_request,
+// rcp/pwm.hpp's PwmInEndpoint::handle_request, rcp/lin.hpp's
+// LinEndpoint::handle_request, rcp/can.hpp's CanEndpoint::handle_request,
+// rcp/uart.hpp's UartEndpoint::handle_request, and rcp/iseled.hpp's
+// IseledEndpoint::handle_request established.
+//
+// NAMING: this header's own single-transaction method — the read/write
+// register access above, predating this milestone entirely — was previously
+// itself named `handle_request(MdioRequest, MdioResponse&)`. That name is
+// now reused for the NEW evt[2:0]-classifying entry point below, so the old
+// method is renamed to `transact`, matching the name rcp/iseled.hpp's
+// IseledEndpoint::transact already established for the identical "existing
+// single-call transaction method, now wrapped by a classifying
+// handle_request" role. Every call site (tests/test_mdio.cpp) is updated to
+// call transact() directly where it exercises the register-access behavior
+// itself, unrelated to evt[2:0] classification.
+//
+// This is a completely separate, TC18-Table-33-derived concern from this
+// header's own addressing-model fix directly above — it does not touch,
+// reinterpret, or extend MdioRequest's/MdioResponse's field shapes, or the
+// mdio_mode/mdio_address/mdio_payload/register_key model, in any way. See
+// handle_request's own doc comment below for why a Reserved or ConfigWrite
+// evt must never reach transact().
+//
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification named above; no
 // text from that document is reproduced here. The concrete register-key
 // composition chosen in this file is this implementation's own, same as the
-// equivalent disclaimers in rcp/avtp.hpp, rcp/regmap.hpp, and
-// rcp/endpoint.hpp.
+// equivalent disclaimers in rcp/avtp.hpp, rcp/regmap.hpp, rcp/endpoint.hpp,
+// rcp/i2c.hpp, rcp/adc.hpp, rcp/pwm.hpp, rcp/lin.hpp, rcp/can.hpp,
+// rcp/uart.hpp, and rcp/iseled.hpp.
 #pragma once
 
 #include <rcp/endpoint.hpp>
@@ -72,6 +105,7 @@
 #include <string>
 #include <system_error>
 #include <unordered_map>
+#include <utility>
 
 namespace rcp {
 namespace mdio {
@@ -112,6 +146,15 @@ struct MdioResponse {
 
 enum class MdioErrc : int {
     payload_exceeds_mode_width = 1, // mdio_payload does not fit payload_width_bits(mode, mms_is_0_or_1)
+    // evt_row2_kind_of classified the request as ConfigWrite (evt[2:0] ==
+    // 111b, §12.7.1). This milestone's follow-up deliberately does not
+    // implement the configuration-write shape (relative EP_functional-
+    // config start address + configuration data) — see handle_request's
+    // own comment. Reported explicitly rather than silently accepted as a
+    // plain transaction or silently ignored, same as I2C's, ADC's,
+    // PWM_IN's, LIN's, CAN's, UART's, and ISELED's own
+    // config_write_not_supported variants.
+    config_write_not_supported = 2,
 };
 
 inline const std::error_category& mdio_category() noexcept {
@@ -121,6 +164,8 @@ inline const std::error_category& mdio_category() noexcept {
             switch (static_cast<MdioErrc>(ev)) {
             case MdioErrc::payload_exceeds_mode_width:
                 return "rcp/mdio: mdio_payload exceeds the width mdio_mode assigns it";
+            case MdioErrc::config_write_not_supported:
+                return "rcp/mdio: evt[2:0]=111b configuration-write requests are not yet implemented";
             default:
                 return "rcp/mdio: unknown error";
             }
@@ -160,7 +205,15 @@ constexpr endpoint::TriggerRegistry::SignalId mdio_signal_id(MdioSignal sig) noe
 // devices, per the spec's own MMD/MMS split in Table 57).
 class MdioEndpoint {
 public:
-    std::error_code handle_request(MdioRequest req, MdioResponse& out) {
+    // transact is MDIO's own pre-existing single-call register access — a
+    // write stores req.mdio_payload under (mode, mdio_address) and echoes it
+    // back via `out`; a read returns whatever was last stored there, or 0 if
+    // never written. Renamed from this method's pre-milestone name
+    // `handle_request` (see this header's own top comment) so that name is
+    // free for the evt[2:0]-classifying entry point below, matching
+    // rcp/iseled.hpp's IseledEndpoint::transact naming for the identical
+    // role.
+    std::error_code transact(MdioRequest req, MdioResponse& out) {
         auto ec = validate_request(req);
         if (ec) return ec;
 
@@ -175,6 +228,62 @@ public:
         }
         triggers_.notify(mdio_signal_id(MdioSignal::TransferComplete));
         return {};
+    }
+
+    // handle_request is MDIO's request-decode entry point — the piece this
+    // header previously had none of, mirroring rcp::i2c::
+    // I2cEndpoint::handle_request's shape (this repo's eighth and LAST
+    // Table 33 Row 2 endpoint type, after I2C, ADC, PWM_IN, LIN, CAN, UART,
+    // and ISELED). It classifies the incoming request's evt[2:0] field via
+    // rcp::endpoint::evt_row2_kind_of before doing anything else, so a
+    // Reserved value can never reach transact() and be misread as an
+    // ordinary transaction, and a ConfigWrite value can never be silently
+    // accepted or silently dropped:
+    //   - Plain (evt[2:0] == 000b): delegates straight to transact(request,
+    //     out) with both arguments unchanged — MDIO's existing
+    //     mdio_mode-keyed request/response transaction model (extraction
+    //     §13.7.13.3) already IS this row's correct "plain request"
+    //     behavior; evt[2:0] carries no combinable value or channel
+    //     selector for this row.
+    //   - Reserved (evt[2:0] in 001b-110b): returns
+    //     endpoint::EndpointErrc::reserved_evt_row2 without recording
+    //     anything (last_request_ is left exactly as it was, no register is
+    //     written or read, and TransferComplete does not fire) — TC18
+    //     requires this be rejected with error code UNSUPPORTED_CMD.
+    //   - ConfigWrite (evt[2:0] == 111b): §12.7.1's configuration-write
+    //     shape targets the MDIO EP's own functional-config block, not an
+    //     mdio_mode-selected register access at all. Full handling is
+    //     deliberately out of scope for this milestone (nontrivial — it
+    //     needs EP_functional-config wiring this header does not yet have,
+    //     the same gap I2C's, ADC's, PWM_IN's, LIN's, CAN's, UART's, and
+    //     ISELED's own handle_request comments defer for the identical
+    //     reason); this returns MdioErrc::config_write_not_supported rather
+    //     than crashing, silently accepting the request as a transaction,
+    //     or silently doing nothing.
+    //
+    // NOT to be confused with this header's own addressing-model fix above
+    // (issue #72's mdio_mode/mdio_address/mdio_payload rebuild replacing the
+    // invented Clause 22/Clause 45 scheme): that fix concerns what
+    // MdioRequest's and MdioResponse's *fields* mean and how wide they are;
+    // Table 33's evt[2:0] classification is an entirely separate, orthogonal
+    // concern about which *kind* of request evt[2:0] itself selects. Reading
+    // evt[2:0] as if it also selected or combined with mode/address/payload,
+    // or inventing any encoding of those fields beyond what
+    // validate_request/register_key already define, would be exactly the
+    // kind of invented, non-spec-derived encoding this header's own
+    // addressing-model-fix comment documents having to remove once already.
+    // handle_request below calls the same shared evt_row2_kind_of every
+    // other Row 2 endpoint type uses and invents nothing of its own.
+    std::error_code handle_request(uint8_t evt_op, MdioRequest req, MdioResponse& out) {
+        switch (endpoint::evt_row2_kind_of(evt_op)) {
+        case endpoint::EvtRow2Kind::Plain:
+            return transact(std::move(req), out);
+        case endpoint::EvtRow2Kind::Reserved:
+            return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2);
+        case endpoint::EvtRow2Kind::ConfigWrite:
+            return make_error_code(MdioErrc::config_write_not_supported);
+        }
+        return endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2); // unreachable
     }
 
     const MdioRequest& last_request() const noexcept { return last_request_; }

@@ -22,6 +22,8 @@
 // fusa:req REQ-MOCK-022
 // fusa:req REQ-MOCK-023
 // fusa:req REQ-MOCK-024
+// fusa:req REQ-MOCK-025
+// fusa:req REQ-MOCK-026
 
 // In-process RC Server simulator — a small, representative OPEN Alliance
 // TC18 Remote Control Protocol Specification v0.5.1_RC server built
@@ -47,21 +49,25 @@
 // mock::Server holds a real rcp::lifecycle::ServerLifecycle (v2.1.0), a
 // real rcp::regmap::RegisterMap plus rcp::regmap::Ep0 (v2.1.0, including
 // EP0 whole-map-read and root-client write semantics), and one instance
-// each of nine fully-built endpoint types — rcp::gpio::GpioEndpoint and
+// each of ten fully-built endpoint types — rcp::gpio::GpioEndpoint and
 // rcp::spi::SpiEndpoint (both v2.3.0), plus rcp::i2c::I2cEndpoint,
 // rcp::adc::AdcEndpoint, rcp::pwm::PwmInEndpoint, rcp::lin::LinEndpoint,
-// rcp::can::CanEndpoint, rcp::uart::UartEndpoint, and
-// rcp::iseled::IseledEndpoint (v2.4.0/post-v2.7.0, wired in by the Table
+// rcp::can::CanEndpoint, rcp::uart::UartEndpoint, rcp::iseled::IseledEndpoint,
+// and rcp::mdio::MdioEndpoint (v2.4.0/post-v2.7.0, wired in by the Table
 // 30/33 Row 2 evt[2:0] validation pilot and its ADC, PWM_IN, LIN, CAN,
-// UART, and ISELED follow-ups, in that order — UART's was this header's
-// FIRST wiring of rcp::uart::UartEndpoint at all, not merely an extension
-// of a pre-existing dispatch_uart(); see dispatch_uart's own comment for
-// why UART needed its own req.op-branching shape; ISELED's is this
-// header's FIRST wiring of rcp::iseled::IseledEndpoint at all — see
+// UART, ISELED, and MDIO follow-ups, in that order — UART's was this
+// header's FIRST wiring of rcp::uart::UartEndpoint at all, not merely an
+// extension of a pre-existing dispatch_uart(); see dispatch_uart's own
+// comment for why UART needed its own req.op-branching shape; ISELED's is
+// this header's FIRST wiring of rcp::iseled::IseledEndpoint at all — see
 // dispatch_iseled's own comment for why it decodes/encodes the wire
 // payload via ISELED's own existing Figure 40/41 codec rather than passing
-// raw bytes through untouched) — as its representative endpoint set.
-// dispatch() below is the single
+// raw bytes through untouched; MDIO's is this header's FIRST wiring of
+// rcp::mdio::MdioEndpoint at all — see dispatch_mdio's own comment for why,
+// unlike ISELED, no MDIO byte-level wire codec exists anywhere in this
+// codebase to decode/encode against, and what deliberately simplified
+// choice this dispatch path makes instead) — as its representative
+// endpoint set. dispatch() below is the single
 // request/response entry point a test drives, decoding the standard
 // request kind's evt[2:0]/op fields (rcp/acf.hpp, v2.0.0) the same way a
 // real request-dispatch loop would. Conditional request kinds (v2.5.0),
@@ -82,15 +88,15 @@
 // in an internal structured extraction of the specification named above;
 // no text from that document is reproduced here. The concrete endpoint
 // numbering (GPIO at endpoint id / byte_bus_id 1, SPI at 2, I2C at 3, ADC at
-// 4, PWM_IN at 5, LIN at 6, CAN at 7, UART at 8, ISELED at 9), access-policy
-// choice for operational requests (gated on lifecycle state only, not
-// per-endpoint ownership — see dispatch()'s own comment), and EP0 partial-read
-// encoding chosen in this file are this implementation's own, purely for the
-// purposes of being a usable in-process simulator — full bit-for-bit
-// conformance against other TC18 implementations is not claimed, same as
-// the equivalent disclaimers in rcp/regmap.hpp, rcp/lifecycle.hpp,
+// 4, PWM_IN at 5, LIN at 6, CAN at 7, UART at 8, ISELED at 9, MDIO at 10),
+// access-policy choice for operational requests (gated on lifecycle state
+// only, not per-endpoint ownership — see dispatch()'s own comment), and EP0
+// partial-read encoding chosen in this file are this implementation's own,
+// purely for the purposes of being a usable in-process simulator — full
+// bit-for-bit conformance against other TC18 implementations is not claimed,
+// same as the equivalent disclaimers in rcp/regmap.hpp, rcp/lifecycle.hpp,
 // rcp/gpio.hpp, rcp/spi.hpp, rcp/i2c.hpp, rcp/adc.hpp, rcp/pwm.hpp,
-// rcp/lin.hpp, rcp/can.hpp, rcp/uart.hpp, and rcp/iseled.hpp.
+// rcp/lin.hpp, rcp/can.hpp, rcp/uart.hpp, rcp/iseled.hpp, and rcp/mdio.hpp.
 #pragma once
 
 #include <rcp/acf.hpp>
@@ -103,6 +109,7 @@
 #include <rcp/iseled.hpp>
 #include <rcp/lifecycle.hpp>
 #include <rcp/lin.hpp>
+#include <rcp/mdio.hpp>
 #include <rcp/pwm.hpp>
 #include <rcp/regmap.hpp>
 #include <rcp/spi.hpp>
@@ -138,6 +145,7 @@ constexpr EndpointId   kLinEndpointId   = 6;
 constexpr EndpointId   kCanEndpointId   = 7;
 constexpr EndpointId   kUartEndpointId  = 8;
 constexpr EndpointId   kIseledEndpointId = 9;
+constexpr EndpointId   kMdioEndpointId   = 10;
 constexpr avtp::ByteBusId kGpioByteBusId  = static_cast<avtp::ByteBusId>(kGpioEndpointId);
 constexpr avtp::ByteBusId kSpiByteBusId   = static_cast<avtp::ByteBusId>(kSpiEndpointId);
 constexpr avtp::ByteBusId kI2cByteBusId   = static_cast<avtp::ByteBusId>(kI2cEndpointId);
@@ -147,6 +155,7 @@ constexpr avtp::ByteBusId kLinByteBusId   = static_cast<avtp::ByteBusId>(kLinEnd
 constexpr avtp::ByteBusId kCanByteBusId   = static_cast<avtp::ByteBusId>(kCanEndpointId);
 constexpr avtp::ByteBusId kUartByteBusId  = static_cast<avtp::ByteBusId>(kUartEndpointId);
 constexpr avtp::ByteBusId kIseledByteBusId = static_cast<avtp::ByteBusId>(kIseledEndpointId);
+constexpr avtp::ByteBusId kMdioByteBusId   = static_cast<avtp::ByteBusId>(kMdioEndpointId);
 
 // A discovery-shaped EP0 read only ever answers with the register map's
 // magic number below — see this header's own scope note above.
@@ -207,6 +216,10 @@ inline acf::WireErrorCode wire_error_code_for(const std::error_code& ec) noexcep
         return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
     if (ec == make_error_code(iseled::IseledErrc::field_out_of_range))
         return acf::WireErrorCode::InvalidParameter; // instruction/address/data exceeds its documented wire field width — client-caused, same rationale as avtp::short_buffer's mapping above
+    if (ec == make_error_code(mdio::MdioErrc::config_write_not_supported))
+        return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
+    if (ec == make_error_code(mdio::MdioErrc::payload_exceeds_mode_width))
+        return acf::WireErrorCode::InvalidParameter; // mdio_payload exceeds the width mdio_mode assigns it — client-caused, same rationale as avtp::short_buffer's mapping above
     return acf::WireErrorCode::UnsupportedCmd;
 }
 
@@ -242,6 +255,7 @@ public:
     can::CanEndpoint&   can() noexcept { return can_; }
     uart::UartEndpoint& uart() noexcept { return uart_; }
     iseled::IseledEndpoint& iseled() noexcept { return iseled_; }
+    mdio::MdioEndpoint&     mdio() noexcept { return mdio_; }
 
     // set_spi_poci scripts the bytes a subsequent dispatch()/transfer()
     // call on `channel` reads back as POCI-in data. A real SPI peripheral's
@@ -352,6 +366,16 @@ public:
         iseled_response_ = response;
     }
 
+    // No set_mdio_response()-shaped hook here either, but for yet a
+    // different reason than set_can_response's/the UART note's own: MDIO's
+    // model (rcp/mdio.hpp) is a self-contained (mode, mdio_address)-keyed
+    // register map, not an external bus — a value dispatch_mdio() writes
+    // round-trips straight back out of mdio::MdioEndpoint itself on a
+    // subsequent read (see MdioEndpoint::transact's own comment and
+    // REQ-MDIO-003), so there is nothing external left for a test to
+    // script. mdio() above already exposes MdioEndpoint directly for any
+    // test that wants to call transact()/handle_request() itself.
+
     // advance_to_rcp_configured is a convenience for tests/simulators that
     // don't care about exercising ServerLifecycle's intermediate
     // plausibility-check gating themselves and just want a fully live
@@ -394,6 +418,7 @@ public:
         if (req.byte_bus_id == kCanByteBusId) return dispatch_can(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kUartByteBusId) return dispatch_uart(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kIseledByteBusId) return dispatch_iseled(req, req_payload, out_resp, out_resp_payload);
+        if (req.byte_bus_id == kMdioByteBusId) return dispatch_mdio(req, req_payload, out_resp, out_resp_payload);
 
         return set_error_response(req, make_error_code(regmap::RegMapErrc::invalid_parameter),
                                    out_resp, out_resp_payload);
@@ -414,9 +439,9 @@ private:
 
     static regmap::RegisterMap make_initial_register_map() {
         regmap::RegisterMap regs;
-        regs.endpoint_count = 9;
-        regs.generic_configs.resize(9);
-        regs.functional_configs.resize(9);
+        regs.endpoint_count = 10;
+        regs.generic_configs.resize(10);
+        regs.functional_configs.resize(10);
         regs.ep_id_mapping = {
             {kGpioEndpointId,  kGpioByteBusId},
             {kSpiEndpointId,   kSpiByteBusId},
@@ -427,6 +452,7 @@ private:
             {kCanEndpointId,   kCanByteBusId},
             {kUartEndpointId,  kUartByteBusId},
             {kIseledEndpointId, kIseledByteBusId},
+            {kMdioEndpointId,   kMdioByteBusId},
         };
         return regs;
     }
@@ -769,6 +795,68 @@ private:
         return {};
     }
 
+    // MDIO, this header's own eighth and LAST Table 33 Row 2 endpoint type
+    // (extraction §13.7.13.3), branches on req.op the same way
+    // dispatch_uart does — MdioRequest::is_write is intrinsic to the
+    // request itself, so read vs write really is a different operation
+    // here, not a single full-duplex/raw-transfer call the way SPI/I2C/
+    // LIN's dispatch paths stay op-agnostic (see dispatch_uart's own
+    // comment for the identical rationale). Unlike ISELED, which already
+    // has a real Figure 40/41 byte-level codec to decode/encode `payload`
+    // against, NO MDIO byte-level wire codec (Figure 43/Table 60) exists
+    // anywhere in this codebase yet — mdio.hpp deliberately stops at the
+    // (mode, mdio_address, mdio_payload) struct level (see its own header
+    // comment on the addressing-model fix), the same gap dispatch_can's own
+    // comment flags for CAN's Figure 40. This dispatch path makes the same
+    // kind of deliberately simple, explicitly disclaimed choice
+    // dispatch_can makes for its own fixed CanIdentifier/FrameFormat: a
+    // fixed representative MdioMode::MmdSingleWord mode and mdio_address 0
+    // (the mode/address bit-level decode Table 60/Figure 43 would require
+    // is out of scope for this evt[2:0] classification pass), with
+    // mdio_payload packed/unpacked via avtp::detail::put_u16/get_u16 — the
+    // same generic byte-packing helper dispatch_ep0 above already uses for
+    // its own magic-number encoding — purely so this mock's own
+    // request/response payload has *some* round-trippable value to exercise
+    // end-to-end. This is this mock's own simulation choice for its own
+    // wire shape, not a TC18-derived MDIO byte-level encoding of Figure
+    // 43's actual field layout; full bit-for-bit conformance is not
+    // claimed, same as every other disclaimer in this file. Table 33 Row
+    // 2's 3-way Plain/Reserved/ConfigWrite classification (rcp::endpoint::
+    // evt_row2_kind_of) is checked by handle_request itself, before
+    // transact() ever touches the register map — see handle_request's own
+    // doc comment for why a Reserved or ConfigWrite evt must never reach
+    // it. No set_mdio_response() hook exists — see mdio()'s own comment
+    // above for why MDIO's self-contained register model needs none.
+    std::error_code dispatch_mdio(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                   acf::AcfMessageInfo& out_resp,
+                                   std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (!operational_requests_allowed()) {
+            return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
+                                       out_resp, out_resp_payload);
+        }
+        mdio::MdioRequest request;
+        request.mode          = mdio::MdioMode::MmdSingleWord;
+        request.mdio_address  = 0;
+        request.mms_is_0_or_1 = false;
+        request.is_write      = req.op;
+        request.mdio_payload  = (req.op && payload.size() >= 2) ? avtp::detail::get_u16(payload.data()) : 0;
+
+        mdio::MdioResponse response;
+        auto ec = mdio_.handle_request(req.evt_op, request, response);
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
+
+        if (req.op) {
+            out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
+                                                              : acf::ResponseKind::WriteResponse);
+        } else {
+            out_resp_payload.resize(2);
+            avtp::detail::put_u16(out_resp_payload.data(), static_cast<uint16_t>(response.mdio_payload));
+            out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
+                                                              : acf::ResponseKind::ReadResponse);
+        }
+        return {};
+    }
+
     lifecycle::ServerLifecycle lifecycle_;
     regmap::RegisterMap        regs_;
     regmap::Ep0                ep0_;
@@ -781,6 +869,7 @@ private:
     can::CanEndpoint           can_;
     uart::UartEndpoint         uart_;
     iseled::IseledEndpoint     iseled_;
+    mdio::MdioEndpoint         mdio_;
     std::array<std::vector<uint8_t>, spi::kMaxChannels> spi_poci_{};
     std::vector<uint8_t>       i2c_response_{};
     bool                       i2c_acked_ = true;
