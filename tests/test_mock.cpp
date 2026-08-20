@@ -18,6 +18,8 @@
 // fusa:test REQ-MOCK-018
 // fusa:test REQ-MOCK-019
 // fusa:test REQ-MOCK-020
+// fusa:test REQ-MOCK-021
+// fusa:test REQ-MOCK-022
 
 // Tests for rcp/mock.hpp — the in-process RC Server simulator (ROADMAP.md
 // milestone 56, "Test & Simulation Harness Rebuild", v2.12.0). See
@@ -44,14 +46,14 @@ acf::AcfMessageInfo standard_request(avtp::ByteBusId bus_id, bool write, uint8_t
 
 // ── Construction / register map ──────────────────────────────────────────────
 
-TEST_CASE("Server starts HW_UNCONFIGURED with a seven-endpoint register map",
+TEST_CASE("Server starts HW_UNCONFIGURED with an eight-endpoint register map",
           "[mock][REQ-MOCK-001]") {
     mock::Server server;
     REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
-    REQUIRE(server.registers().endpoint_count == 7);
-    REQUIRE(server.registers().generic_configs.size() == 7);
-    REQUIRE(server.registers().functional_configs.size() == 7);
-    REQUIRE(server.registers().ep_id_mapping.size() == 7);
+    REQUIRE(server.registers().endpoint_count == 8);
+    REQUIRE(server.registers().generic_configs.size() == 8);
+    REQUIRE(server.registers().functional_configs.size() == 8);
+    REQUIRE(server.registers().ep_id_mapping.size() == 8);
     REQUIRE(server.registers().ep_id_mapping[0].ep_id == mock::kGpioEndpointId);
     REQUIRE(server.registers().ep_id_mapping[0].byte_bus_id == mock::kGpioByteBusId);
     REQUIRE(server.registers().ep_id_mapping[1].ep_id == mock::kSpiEndpointId);
@@ -66,6 +68,8 @@ TEST_CASE("Server starts HW_UNCONFIGURED with a seven-endpoint register map",
     REQUIRE(server.registers().ep_id_mapping[5].byte_bus_id == mock::kLinByteBusId);
     REQUIRE(server.registers().ep_id_mapping[6].ep_id == mock::kCanEndpointId);
     REQUIRE(server.registers().ep_id_mapping[6].byte_bus_id == mock::kCanByteBusId);
+    REQUIRE(server.registers().ep_id_mapping[7].ep_id == mock::kUartEndpointId);
+    REQUIRE(server.registers().ep_id_mapping[7].byte_bus_id == mock::kUartByteBusId);
 }
 
 TEST_CASE("advance_to_rcp_configured drives the lifecycle straight to RCP_CONFIGURED",
@@ -621,6 +625,123 @@ TEST_CASE("CAN request is rejected before RCP_CONFIGURED, same operational gatin
     REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
 
     auto req = standard_request(mock::kCanByteBusId, /*write=*/true, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {0xAA}, resp, resp_payload);
+    REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+}
+
+// ── UART ──────────────────────────────────────────────────────────────────────
+// Table 30/33 Row 2 evt[2:0] validation, sixth endpoint type after I2C, ADC,
+// PWM_IN, LIN, and CAN: UartEndpoint wired into dispatch() at byte_bus_id 8
+// for the FIRST time (this file had zero UART wiring before this pass — see
+// mock.hpp's own header comment and dispatch_uart's own comment). Unlike
+// every other Row 2 endpoint type's single unified transfer()/transmit()
+// call, UART routes a Plain request on req.op — write enqueues onto the TX
+// queue, read drains the RX FIFO (see dispatch_uart's own comment for why
+// there is no set_uart_response() hook and why elapsed_ms/uart_timeout_ms
+// are both hardcoded to 0 instead).
+
+TEST_CASE("UART plain write request (evt[2:0]==000b) enqueues the payload onto the TX queue and "
+          "answers WriteResponse with an empty payload",
+          "[mock][REQ-MOCK-021]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kUartByteBusId, /*write=*/true, /*evt_op=*/0);
+    std::vector<uint8_t> data{0xDE, 0xAD, 0xBE, 0xEF};
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(server.dispatch(0, req, data, resp, resp_payload));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::WriteResponse);
+    REQUIRE(resp_payload.empty());
+    REQUIRE(server.uart().drain_tx() == data);
+}
+
+TEST_CASE("UART plain read request (evt[2:0]==000b) drains the RX FIFO and answers ReadResponse "
+          "with the drained bytes",
+          "[mock][REQ-MOCK-021]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    REQUIRE_FALSE(server.uart().rx_fill({0x01, 0x02, 0x03}));
+
+    auto req = standard_request(mock::kUartByteBusId, /*write=*/false, /*evt_op=*/0);
+    req.read_size_or_segment_num = 3;
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(server.dispatch(0, req, {}, resp, resp_payload));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
+    REQUIRE(resp_payload == std::vector<uint8_t>{0x01, 0x02, 0x03});
+    REQUIRE(server.uart().rx_available() == 0);
+}
+
+TEST_CASE("UART write request with a reserved evt[2:0] (001b-110b) is rejected with wire error "
+          "code UNSUPPORTED_CMD and does not touch the TX queue",
+          "[mock][REQ-MOCK-021]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        auto req = standard_request(mock::kUartByteBusId, /*write=*/true, evt_op);
+        acf::AcfMessageInfo resp;
+        std::vector<uint8_t> resp_payload;
+        auto ec = server.dispatch(0, req, {0xAA}, resp, resp_payload);
+        REQUIRE(ec == endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2));
+        REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+        REQUIRE(resp_payload ==
+                std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+        REQUIRE(server.uart().drain_tx().empty());
+    }
+}
+
+TEST_CASE("UART read request with a reserved evt[2:0] (001b-110b) is rejected with wire error "
+          "code UNSUPPORTED_CMD and does not touch the RX FIFO",
+          "[mock][REQ-MOCK-021]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    REQUIRE_FALSE(server.uart().rx_fill({0x01, 0x02}));
+
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        auto req = standard_request(mock::kUartByteBusId, /*write=*/false, evt_op);
+        req.read_size_or_segment_num = 2;
+        acf::AcfMessageInfo resp;
+        std::vector<uint8_t> resp_payload;
+        auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+        REQUIRE(ec == endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2));
+        REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+        REQUIRE(resp_payload ==
+                std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+        // A rejected reserved evt must not touch the RX FIFO — the bytes
+        // scripted above are still fully buffered.
+        REQUIRE(server.uart().rx_available() == 2);
+    }
+}
+
+TEST_CASE("UART request with evt[2:0]==111b (config-write) is rejected with wire error code "
+          "UNSUPPORTED_CMD rather than crashing or being treated as a plain TX/RX operation",
+          "[mock][REQ-MOCK-021]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kUartByteBusId, /*write=*/true, /*evt_op=*/7);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {0x00, 0xAB}, resp, resp_payload);
+    REQUIRE(ec == uart::make_error_code(uart::UartErrc::config_write_not_supported));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload ==
+            std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+    REQUIRE(server.uart().drain_tx().empty());
+}
+
+TEST_CASE("UART request is rejected before RCP_CONFIGURED, same operational gating as "
+          "GPIO/SPI/I2C/ADC/PWM_IN/LIN/CAN",
+          "[mock][REQ-MOCK-022]") {
+    mock::Server server;
+    REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
+
+    auto req = standard_request(mock::kUartByteBusId, /*write=*/true, /*evt_op=*/0);
     acf::AcfMessageInfo resp;
     std::vector<uint8_t> resp_payload;
     auto ec = server.dispatch(0, req, {0xAA}, resp, resp_payload);

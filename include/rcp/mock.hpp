@@ -18,6 +18,8 @@
 // fusa:req REQ-MOCK-018
 // fusa:req REQ-MOCK-019
 // fusa:req REQ-MOCK-020
+// fusa:req REQ-MOCK-021
+// fusa:req REQ-MOCK-022
 
 // In-process RC Server simulator — a small, representative OPEN Alliance
 // TC18 Remote Control Protocol Specification v0.5.1_RC server built
@@ -43,13 +45,16 @@
 // mock::Server holds a real rcp::lifecycle::ServerLifecycle (v2.1.0), a
 // real rcp::regmap::RegisterMap plus rcp::regmap::Ep0 (v2.1.0, including
 // EP0 whole-map-read and root-client write semantics), and one instance
-// each of seven fully-built endpoint types — rcp::gpio::GpioEndpoint and
+// each of eight fully-built endpoint types — rcp::gpio::GpioEndpoint and
 // rcp::spi::SpiEndpoint (both v2.3.0), plus rcp::i2c::I2cEndpoint,
-// rcp::adc::AdcEndpoint, rcp::pwm::PwmInEndpoint, rcp::lin::LinEndpoint, and
-// rcp::can::CanEndpoint (v2.4.0/post-v2.7.0, wired in by the Table 30/33
-// Row 2 evt[2:0] validation pilot and its ADC, PWM_IN, LIN, and CAN
-// follow-ups, in that order) — as its representative endpoint set.
-// dispatch() below is the single
+// rcp::adc::AdcEndpoint, rcp::pwm::PwmInEndpoint, rcp::lin::LinEndpoint,
+// rcp::can::CanEndpoint, and rcp::uart::UartEndpoint (v2.4.0/post-v2.7.0,
+// wired in by the Table 30/33 Row 2 evt[2:0] validation pilot and its ADC,
+// PWM_IN, LIN, CAN, and UART follow-ups, in that order — UART's is this
+// header's FIRST wiring of rcp::uart::UartEndpoint at all, not merely an
+// extension of a pre-existing dispatch_uart(); see dispatch_uart's own
+// comment for why UART needed its own req.op-branching shape) — as its
+// representative endpoint set. dispatch() below is the single
 // request/response entry point a test drives, decoding the standard
 // request kind's evt[2:0]/op fields (rcp/acf.hpp, v2.0.0) the same way a
 // real request-dispatch loop would. Conditional request kinds (v2.5.0),
@@ -70,14 +75,15 @@
 // in an internal structured extraction of the specification named above;
 // no text from that document is reproduced here. The concrete endpoint
 // numbering (GPIO at endpoint id / byte_bus_id 1, SPI at 2, I2C at 3, ADC at
-// 4, PWM_IN at 5, LIN at 6, CAN at 7), access-policy choice for operational
-// requests (gated on lifecycle state only, not per-endpoint ownership — see
-// dispatch()'s own comment), and EP0 partial-read encoding chosen in this
-// file are this implementation's own, purely for the purposes of being a
-// usable in-process simulator — full bit-for-bit conformance against other
-// TC18 implementations is not claimed, same as the equivalent disclaimers
-// in rcp/regmap.hpp, rcp/lifecycle.hpp, rcp/gpio.hpp, rcp/spi.hpp,
-// rcp/i2c.hpp, rcp/adc.hpp, rcp/pwm.hpp, rcp/lin.hpp, and rcp/can.hpp.
+// 4, PWM_IN at 5, LIN at 6, CAN at 7, UART at 8), access-policy choice for
+// operational requests (gated on lifecycle state only, not per-endpoint
+// ownership — see dispatch()'s own comment), and EP0 partial-read encoding
+// chosen in this file are this implementation's own, purely for the
+// purposes of being a usable in-process simulator — full bit-for-bit
+// conformance against other TC18 implementations is not claimed, same as
+// the equivalent disclaimers in rcp/regmap.hpp, rcp/lifecycle.hpp,
+// rcp/gpio.hpp, rcp/spi.hpp, rcp/i2c.hpp, rcp/adc.hpp, rcp/pwm.hpp,
+// rcp/lin.hpp, rcp/can.hpp, and rcp/uart.hpp.
 #pragma once
 
 #include <rcp/acf.hpp>
@@ -92,6 +98,7 @@
 #include <rcp/pwm.hpp>
 #include <rcp/regmap.hpp>
 #include <rcp/spi.hpp>
+#include <rcp/uart.hpp>
 
 #include <array>
 #include <cstddef>
@@ -121,6 +128,7 @@ constexpr EndpointId   kAdcEndpointId   = 4;
 constexpr EndpointId   kPwmInEndpointId = 5;
 constexpr EndpointId   kLinEndpointId   = 6;
 constexpr EndpointId   kCanEndpointId   = 7;
+constexpr EndpointId   kUartEndpointId  = 8;
 constexpr avtp::ByteBusId kGpioByteBusId  = static_cast<avtp::ByteBusId>(kGpioEndpointId);
 constexpr avtp::ByteBusId kSpiByteBusId   = static_cast<avtp::ByteBusId>(kSpiEndpointId);
 constexpr avtp::ByteBusId kI2cByteBusId   = static_cast<avtp::ByteBusId>(kI2cEndpointId);
@@ -128,6 +136,7 @@ constexpr avtp::ByteBusId kAdcByteBusId   = static_cast<avtp::ByteBusId>(kAdcEnd
 constexpr avtp::ByteBusId kPwmInByteBusId = static_cast<avtp::ByteBusId>(kPwmInEndpointId);
 constexpr avtp::ByteBusId kLinByteBusId   = static_cast<avtp::ByteBusId>(kLinEndpointId);
 constexpr avtp::ByteBusId kCanByteBusId   = static_cast<avtp::ByteBusId>(kCanEndpointId);
+constexpr avtp::ByteBusId kUartByteBusId  = static_cast<avtp::ByteBusId>(kUartEndpointId);
 
 // A discovery-shaped EP0 read only ever answers with the register map's
 // magic number below — see this header's own scope note above.
@@ -178,6 +187,12 @@ inline acf::WireErrorCode wire_error_code_for(const std::error_code& ec) noexcep
         return acf::WireErrorCode::InvalidParameter; // frame payload exceeds the selected FrameFormat's own ceiling
     if (ec == make_error_code(can::CanErrc::xl_payload_exceeds_single_avtpdu_bound))
         return acf::WireErrorCode::EpError; // internal single-AVTPDU capability bound, not a TC18-defined CAN error code — mirrors i2c::I2cErrc::nack's mapping above
+    if (ec == make_error_code(uart::UartErrc::config_write_not_supported))
+        return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
+    if (ec == make_error_code(uart::UartErrc::read_size_exceeds_bound))
+        return acf::WireErrorCode::InvalidParameter; // requested read_size exceeds kMaxReadSize — client-caused, mirrors avtp::short_buffer's mapping above
+    if (ec == make_error_code(uart::UartErrc::tx_queue_overflow))
+        return acf::WireErrorCode::InvalidParameter; // write payload would overflow the TX queue — client-caused, same rationale as read_size_exceeds_bound above
     return acf::WireErrorCode::UnsupportedCmd;
 }
 
@@ -211,6 +226,7 @@ public:
     pwm::PwmInEndpoint& pwm_in() noexcept { return pwm_in_; }
     lin::LinEndpoint&   lin() noexcept { return lin_; }
     can::CanEndpoint&   can() noexcept { return can_; }
+    uart::UartEndpoint& uart() noexcept { return uart_; }
 
     // set_spi_poci scripts the bytes a subsequent dispatch()/transfer()
     // call on `channel` reads back as POCI-in data. A real SPI peripheral's
@@ -295,6 +311,17 @@ public:
     // for any test that wants to inspect last_transmitted()/
     // last_received() or drive receive()/acceptance filters itself.
 
+    // No set_uart_response()-shaped hook here either, same rationale as
+    // set_can_response's own note directly above: UART's RX side (extraction
+    // §13.7.8.1) is fed by rx_fill() pushing bytes as if they had arrived
+    // off the wire, not by scripting a one-shot response value the way
+    // set_i2c_response/set_lin_response do for their own bus-transfer
+    // models. uart() above already exposes UartEndpoint directly for any
+    // test that wants to call rx_fill()/drain_tx() or inspect
+    // rx_available() itself — see dispatch_uart's own comment for how a
+    // dispatched read request drains whatever rx_fill() has already put
+    // there.
+
     // advance_to_rcp_configured is a convenience for tests/simulators that
     // don't care about exercising ServerLifecycle's intermediate
     // plausibility-check gating themselves and just want a fully live
@@ -335,6 +362,7 @@ public:
         if (req.byte_bus_id == kPwmInByteBusId) return dispatch_pwm_in(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kLinByteBusId) return dispatch_lin(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kCanByteBusId) return dispatch_can(req, req_payload, out_resp, out_resp_payload);
+        if (req.byte_bus_id == kUartByteBusId) return dispatch_uart(req, req_payload, out_resp, out_resp_payload);
 
         return set_error_response(req, make_error_code(regmap::RegMapErrc::invalid_parameter),
                                    out_resp, out_resp_payload);
@@ -355,9 +383,9 @@ private:
 
     static regmap::RegisterMap make_initial_register_map() {
         regmap::RegisterMap regs;
-        regs.endpoint_count = 7;
-        regs.generic_configs.resize(7);
-        regs.functional_configs.resize(7);
+        regs.endpoint_count = 8;
+        regs.generic_configs.resize(8);
+        regs.functional_configs.resize(8);
         regs.ep_id_mapping = {
             {kGpioEndpointId,  kGpioByteBusId},
             {kSpiEndpointId,   kSpiByteBusId},
@@ -366,6 +394,7 @@ private:
             {kPwmInEndpointId, kPwmInByteBusId},
             {kLinEndpointId,   kLinByteBusId},
             {kCanEndpointId,   kCanByteBusId},
+            {kUartEndpointId,  kUartByteBusId},
         };
         return regs;
     }
@@ -598,6 +627,65 @@ private:
         return {};
     }
 
+    // UART, unlike every other dispatch_*() above, drives a
+    // request-shape-dependent operation on UartEndpoint: this is the first
+    // time this file wires UartEndpoint in at all (see this header's own
+    // top comment). dispatch_gpio above is the precedent this path
+    // follows for branching on req.op — read (op==false) vs write
+    // (op==true) select genuinely different UART operations (extraction
+    // §13.7.8.1's independent TX/RX request storages), not a single
+    // full-duplex/raw-transfer call the way SPI/I2C/LIN's dispatch paths
+    // stay op-agnostic. Both branches funnel through the same
+    // UartEndpoint::handle_request choke point, so Table 33 Row 2's 3-way
+    // Plain/Reserved/ConfigWrite classification (rcp::endpoint::
+    // evt_row2_kind_of) is checked once, before `payload` is ever read as
+    // TX bytes or `req.read_size_or_segment_num` is ever read as a read
+    // request's read_size — see handle_request's own doc comment for why
+    // a Reserved or ConfigWrite evt must never reach either queue.
+    //
+    // This mock has no clock of its own (same disclaimer every other
+    // endpoint type in this file carries), so a dispatched read request is
+    // always answered synchronously against whatever is currently buffered
+    // in the RX FIFO: elapsed_ms and uart_timeout_ms are both passed as 0,
+    // which handle_read's own "elapsed_ms >= uart_timeout_ms" completion
+    // rule treats as an immediately-elapsed timeout — the read never
+    // blocks, it simply drains up to read_size bytes right now, the same
+    // "test scripts the buffer via rx_fill(), this mock does not model
+    // actual timing" approach set_i2c_response/set_lin_response take for
+    // their own bus-transfer models (see uart()'s own comment above for
+    // why there is no set_uart_response() hook instead). A write request's
+    // successful response carries no payload (out_resp_payload stays
+    // empty), mirroring dispatch_gpio's write-response shape; a read
+    // request's successful response carries whatever handle_read drained,
+    // mirroring dispatch_i2c/dispatch_lin's read-response shape. The
+    // §13.7.8.3 payload-less-read-only rule ("A read request having a
+    // byte_msg_payload will be rejected with error code = UNKNOWN_CMD") is
+    // not enforced here — deliberately out of scope for this evt[2:0]
+    // classification pass, same as handle_request's own comment already
+    // flags.
+    std::error_code dispatch_uart(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                   acf::AcfMessageInfo& out_resp,
+                                   std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (!operational_requests_allowed()) {
+            return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
+                                       out_resp, out_resp_payload);
+        }
+        std::vector<uint8_t> data;
+        bool timed_out = false;
+        auto ec = uart_.handle_request(req.evt_op, req.op, payload, req.read_size_or_segment_num,
+                                        /*elapsed_ms=*/0, /*uart_timeout_ms=*/0, data, timed_out);
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
+        if (req.op) {
+            out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
+                                                              : acf::ResponseKind::WriteResponse);
+        } else {
+            out_resp_payload = std::move(data);
+            out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
+                                                              : acf::ResponseKind::ReadResponse);
+        }
+        return {};
+    }
+
     lifecycle::ServerLifecycle lifecycle_;
     regmap::RegisterMap        regs_;
     regmap::Ep0                ep0_;
@@ -608,6 +696,7 @@ private:
     pwm::PwmInEndpoint         pwm_in_;
     lin::LinEndpoint           lin_;
     can::CanEndpoint           can_;
+    uart::UartEndpoint         uart_;
     std::array<std::vector<uint8_t>, spi::kMaxChannels> spi_poci_{};
     std::vector<uint8_t>       i2c_response_{};
     bool                       i2c_acked_ = true;

@@ -5,11 +5,14 @@
 // fusa:test REQ-UART-005
 // fusa:test REQ-UART-006
 // fusa:test REQ-UART-007
+// fusa:test REQ-UART-008
+// fusa:test REQ-UART-009
 
 // Tests for rcp/uart.hpp — the UART endpoint type (ROADMAP.md milestone 48,
 // "Basic Endpoint Types II — I2C, UART, ADC, PWM_OUT, PWM_IN", v2.4.0).
 
 #include <catch2/catch_test_macros.hpp>
+#include <rcp/endpoint.hpp>
 #include <rcp/uart.hpp>
 
 using namespace rcp::uart;
@@ -161,6 +164,106 @@ TEST_CASE("kMaxReadSize bounds both the RX FIFO and TX queue capacities", "[uart
 
 TEST_CASE("UartErrc reports a non-empty message in its own category", "[uart][REQ-UART-007]") {
     auto ec = make_error_code(UartErrc::rx_fifo_overflow);
+    REQUIRE(ec.category() == uart_category());
+    REQUIRE_FALSE(ec.message().empty());
+}
+
+// ── Table 33 Row 2 evt[2:0] validation (handle_request) ─────────────────────
+
+TEST_CASE("UartEndpoint::handle_request delegates a Plain (evt[2:0]==000b) write request to "
+          "enqueue_tx()",
+          "[uart][REQ-UART-008]") {
+    UartEndpoint ep;
+    std::vector<uint8_t> data;
+    bool timed_out = true;
+
+    auto ec = ep.handle_request(/*evt_op=*/0, /*is_write=*/true, {0x01, 0x02}, /*read_size=*/0,
+                                 /*elapsed_ms=*/0, /*uart_timeout_ms=*/0, data, timed_out);
+    REQUIRE_FALSE(ec);
+    REQUIRE(ep.drain_tx() == std::vector<uint8_t>{0x01, 0x02});
+    // A write request produces no read data — out_data/out_timed_out are
+    // left exactly as the caller passed them.
+    REQUIRE(data.empty());
+    REQUIRE(timed_out);
+}
+
+TEST_CASE("UartEndpoint::handle_request delegates a Plain (evt[2:0]==000b) read request to "
+          "handle_read()",
+          "[uart][REQ-UART-008]") {
+    UartEndpoint ep;
+    REQUIRE_FALSE(ep.rx_fill({0xAA, 0xBB, 0xCC}));
+
+    std::vector<uint8_t> data;
+    bool timed_out = true;
+    auto ec = ep.handle_request(/*evt_op=*/0, /*is_write=*/false, /*tx_bytes=*/{}, /*read_size=*/2,
+                                 /*elapsed_ms=*/1, /*uart_timeout_ms=*/100, data, timed_out);
+    REQUIRE_FALSE(ec);
+    REQUIRE(data == std::vector<uint8_t>{0xAA, 0xBB});
+    REQUIRE_FALSE(timed_out);
+    REQUIRE(ep.rx_available() == 1); // remaining byte stays buffered (drain semantics)
+}
+
+TEST_CASE("UartEndpoint::handle_request rejects every reserved evt[2:0] value (001b-110b) for "
+          "both write and read requests, touching neither queue",
+          "[uart][REQ-UART-008]") {
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        UartEndpoint write_ep;
+        std::vector<uint8_t> write_data;
+        bool write_timed_out = false;
+        auto write_ec = write_ep.handle_request(evt_op, /*is_write=*/true, {0xAA}, 0, 0, 0,
+                                                  write_data, write_timed_out);
+        REQUIRE(write_ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+        REQUIRE(write_ep.drain_tx().empty());
+
+        UartEndpoint read_ep;
+        REQUIRE_FALSE(read_ep.rx_fill({0x11, 0x22}));
+        std::vector<uint8_t> read_data;
+        bool read_timed_out = false;
+        auto read_ec = read_ep.handle_request(evt_op, /*is_write=*/false, {}, /*read_size=*/2, 0, 0,
+                                                read_data, read_timed_out);
+        REQUIRE(read_ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+        // A rejected reserved evt must not touch the RX FIFO — the bytes
+        // scripted above are still fully buffered.
+        REQUIRE(read_ep.rx_available() == 2);
+    }
+}
+
+TEST_CASE("UartEndpoint::handle_request reports config_write_not_supported for evt[2:0]==111b "
+          "without crashing or touching either queue",
+          "[uart][REQ-UART-009]") {
+    UartEndpoint write_ep;
+    std::vector<uint8_t> write_data;
+    bool write_timed_out = false;
+    auto write_ec =
+        write_ep.handle_request(/*evt_op=*/7, /*is_write=*/true, {0x00, 0xAB}, 0, 0, 0, write_data, write_timed_out);
+    REQUIRE(write_ec == make_error_code(UartErrc::config_write_not_supported));
+    REQUIRE(write_ep.drain_tx().empty());
+
+    UartEndpoint read_ep;
+    REQUIRE_FALSE(read_ep.rx_fill({0x11}));
+    std::vector<uint8_t> read_data;
+    bool read_timed_out = false;
+    auto read_ec =
+        read_ep.handle_request(/*evt_op=*/7, /*is_write=*/false, {}, /*read_size=*/1, 0, 0, read_data, read_timed_out);
+    REQUIRE(read_ec == make_error_code(UartErrc::config_write_not_supported));
+    REQUIRE(read_ep.rx_available() == 1);
+}
+
+TEST_CASE("UartEndpoint::handle_request masks evt_op down to 3 bits before classifying",
+          "[uart][REQ-UART-008]") {
+    UartEndpoint ep;
+    std::vector<uint8_t> data;
+    bool timed_out = false;
+    REQUIRE_FALSE(ep.handle_request(/*evt_op=*/0xF8, /*is_write=*/true, {0x01}, 0, 0, 0, data,
+                                     timed_out)); // low 3 bits 000 -> Plain
+    auto ec = ep.handle_request(/*evt_op=*/0xF9, /*is_write=*/true, {0x01}, 0, 0, 0, data,
+                                 timed_out); // low 3 bits 001 -> Reserved
+    REQUIRE(ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+}
+
+TEST_CASE("UartErrc::config_write_not_supported reports a non-empty message in its own category",
+          "[uart][REQ-UART-009]") {
+    auto ec = make_error_code(UartErrc::config_write_not_supported);
     REQUIRE(ec.category() == uart_category());
     REQUIRE_FALSE(ec.message().empty());
 }
