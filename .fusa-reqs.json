@@ -2526,7 +2526,8 @@
       "level": "ASIL-B",
       "asil": "ASIL-B",
       "tc18": "§13.5 Table 33 (\"ADC, PWM_IN, I²C, LIN, CAN, UART, ISELED, MDIO: 000b to 110b reserved – request to be rejected with error code = UNSUPPORTED_CMD\" / \"111b: The byte_msg_payload is not presented to the interface but used to change the configuration of the endpoint (see 12.7.1)\"), TC18.txt L4085-4092; corroborating worked example: §13.7.9.3 Figure 34 (\"RC Client sends a standard read request\", ADC endpoint, evt field all-zero), TC18.txt L5590-5607",
-      "tc18_master_id": "TC18-13.5-001"
+      "tc18_master_id": "TC18-13.5-001",
+      "severity": "cybersecurity"
     },
     {
       "id": "REQ-GPIO-001",
