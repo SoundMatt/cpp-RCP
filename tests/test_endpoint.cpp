@@ -4,6 +4,7 @@
 // fusa:test REQ-ENDPOINT-004
 // fusa:test REQ-ENDPOINT-005
 // fusa:test REQ-ENDPOINT-006
+// fusa:test REQ-ENDPOINT-007
 
 // Tests for rcp/endpoint.hpp — the shared endpoint-registration and
 // request-dispatch scaffolding (ROADMAP.md milestone 47, "Basic Endpoint
@@ -39,6 +40,33 @@ TEST_CASE("write_semantics_of decodes all 8 evt[2:0] values", "[endpoint][REQ-EN
 TEST_CASE("write_semantics_of masks its input down to 3 bits", "[endpoint][REQ-ENDPOINT-002]") {
     REQUIRE(write_semantics_of(0xF8) == WriteSemantics::Replace); // low 3 bits are 000
     REQUIRE(write_semantics_of(0xF9) == WriteSemantics::Or);      // low 3 bits are 001
+}
+
+// ── evt[2:0] Row 2 classification (Table 33's ADC/PWM_IN/I2C/LIN/CAN/UART/ ──
+// ISELED/MDIO row) ──────────────────────────────────────────────────────────
+
+TEST_CASE("evt_row2_kind_of classifies all 8 evt[2:0] values", "[endpoint][REQ-ENDPOINT-007]") {
+    REQUIRE(evt_row2_kind_of(0) == EvtRow2Kind::Plain);
+    REQUIRE(evt_row2_kind_of(1) == EvtRow2Kind::Reserved);
+    REQUIRE(evt_row2_kind_of(2) == EvtRow2Kind::Reserved);
+    REQUIRE(evt_row2_kind_of(3) == EvtRow2Kind::Reserved);
+    REQUIRE(evt_row2_kind_of(4) == EvtRow2Kind::Reserved);
+    REQUIRE(evt_row2_kind_of(5) == EvtRow2Kind::Reserved);
+    REQUIRE(evt_row2_kind_of(6) == EvtRow2Kind::Reserved);
+    REQUIRE(evt_row2_kind_of(7) == EvtRow2Kind::ConfigWrite);
+}
+
+TEST_CASE("evt_row2_kind_of masks its input down to 3 bits", "[endpoint][REQ-ENDPOINT-007]") {
+    REQUIRE(evt_row2_kind_of(0xF8) == EvtRow2Kind::Plain);       // low 3 bits are 000
+    REQUIRE(evt_row2_kind_of(0xF9) == EvtRow2Kind::Reserved);    // low 3 bits are 001
+    REQUIRE(evt_row2_kind_of(0xFF) == EvtRow2Kind::ConfigWrite); // low 3 bits are 111
+}
+
+TEST_CASE("EndpointErrc::reserved_evt_row2 reports a non-empty message in its own category",
+          "[endpoint][REQ-ENDPOINT-007]") {
+    auto ec = make_error_code(EndpointErrc::reserved_evt_row2);
+    REQUIRE(ec.category() == endpoint_category());
+    REQUIRE_FALSE(ec.message().empty());
 }
 
 // ── Generic bitmask/value write combinator ───────────────────────────────────
