@@ -10,6 +10,8 @@
 // fusa:test REQ-MOCK-010
 // fusa:test REQ-MOCK-011
 // fusa:test REQ-MOCK-012
+// fusa:test REQ-MOCK-013
+// fusa:test REQ-MOCK-014
 
 // Tests for rcp/mock.hpp — the in-process RC Server simulator (ROADMAP.md
 // milestone 56, "Test & Simulation Harness Rebuild", v2.12.0). See
@@ -36,20 +38,22 @@ acf::AcfMessageInfo standard_request(avtp::ByteBusId bus_id, bool write, uint8_t
 
 // ── Construction / register map ──────────────────────────────────────────────
 
-TEST_CASE("Server starts HW_UNCONFIGURED with a three-endpoint register map",
+TEST_CASE("Server starts HW_UNCONFIGURED with a four-endpoint register map",
           "[mock][REQ-MOCK-001]") {
     mock::Server server;
     REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
-    REQUIRE(server.registers().endpoint_count == 3);
-    REQUIRE(server.registers().generic_configs.size() == 3);
-    REQUIRE(server.registers().functional_configs.size() == 3);
-    REQUIRE(server.registers().ep_id_mapping.size() == 3);
+    REQUIRE(server.registers().endpoint_count == 4);
+    REQUIRE(server.registers().generic_configs.size() == 4);
+    REQUIRE(server.registers().functional_configs.size() == 4);
+    REQUIRE(server.registers().ep_id_mapping.size() == 4);
     REQUIRE(server.registers().ep_id_mapping[0].ep_id == mock::kGpioEndpointId);
     REQUIRE(server.registers().ep_id_mapping[0].byte_bus_id == mock::kGpioByteBusId);
     REQUIRE(server.registers().ep_id_mapping[1].ep_id == mock::kSpiEndpointId);
     REQUIRE(server.registers().ep_id_mapping[1].byte_bus_id == mock::kSpiByteBusId);
     REQUIRE(server.registers().ep_id_mapping[2].ep_id == mock::kI2cEndpointId);
     REQUIRE(server.registers().ep_id_mapping[2].byte_bus_id == mock::kI2cByteBusId);
+    REQUIRE(server.registers().ep_id_mapping[3].ep_id == mock::kAdcEndpointId);
+    REQUIRE(server.registers().ep_id_mapping[3].byte_bus_id == mock::kAdcByteBusId);
 }
 
 TEST_CASE("advance_to_rcp_configured drives the lifecycle straight to RCP_CONFIGURED",
@@ -259,6 +263,103 @@ TEST_CASE("I2C request is rejected before RCP_CONFIGURED, same operational gatin
     acf::AcfMessageInfo resp;
     std::vector<uint8_t> resp_payload;
     auto ec = server.dispatch(0, req, {0xA0}, resp, resp_payload);
+    REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+}
+
+// ── ADC ───────────────────────────────────────────────────────────────────────
+// Table 30/33 Row 2 evt[2:0] validation, second endpoint type after I2C:
+// AdcEndpoint wired into dispatch() at byte_bus_id 4.
+
+TEST_CASE("ADC plain request (evt[2:0]==000b) answers with the scripted sample value",
+          "[mock][REQ-MOCK-013]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    server.set_adc_response({0xBEEF});
+
+    auto req = standard_request(mock::kAdcByteBusId, /*write=*/false, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(server.dispatch(0, req, {}, resp, resp_payload));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
+    REQUIRE(resp_payload == std::vector<uint8_t>{0xBE, 0xEF});
+}
+
+TEST_CASE("ADC plain requests consume scripted samples in FIFO order without auto-refill",
+          "[mock][REQ-MOCK-013]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    server.set_adc_response({0x0001, 0x0002});
+
+    auto req = standard_request(mock::kAdcByteBusId, /*write=*/false, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+
+    REQUIRE_FALSE(server.dispatch(0, req, {}, resp, resp_payload));
+    REQUIRE(resp_payload == std::vector<uint8_t>{0x00, 0x01});
+
+    REQUIRE_FALSE(server.dispatch(0, req, {}, resp, resp_payload));
+    REQUIRE(resp_payload == std::vector<uint8_t>{0x00, 0x02});
+
+    // Third dispatch: no scripted sample left -> AdcErrc::no_signal.
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+    REQUIRE(ec == adc::make_error_code(adc::AdcErrc::no_signal));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+}
+
+TEST_CASE("ADC request with a reserved evt[2:0] (001b-110b) is rejected with wire error code "
+          "UNSUPPORTED_CMD and does not consume a scripted sample",
+          "[mock][REQ-MOCK-013]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.set_adc_response({0x1234});
+
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        auto req = standard_request(mock::kAdcByteBusId, /*write=*/false, evt_op);
+        acf::AcfMessageInfo resp;
+        std::vector<uint8_t> resp_payload;
+        auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+        REQUIRE(ec == endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2));
+        REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+        REQUIRE(resp_payload ==
+                std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+    }
+
+    // The scripted sample must still be there — no reserved evt consumed it.
+    auto req = standard_request(mock::kAdcByteBusId, /*write=*/false, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE_FALSE(server.dispatch(0, req, {}, resp, resp_payload));
+    REQUIRE(resp_payload == std::vector<uint8_t>{0x12, 0x34});
+}
+
+TEST_CASE("ADC request with evt[2:0]==111b (config-write) is rejected with wire error code "
+          "UNSUPPORTED_CMD rather than crashing or being treated as a plain read",
+          "[mock][REQ-MOCK-013]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kAdcByteBusId, /*write=*/false, /*evt_op=*/7);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+    REQUIRE(ec == adc::make_error_code(adc::AdcErrc::config_write_not_supported));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload ==
+            std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+}
+
+TEST_CASE("ADC request is rejected before RCP_CONFIGURED, same operational gating as GPIO/SPI/I2C",
+          "[mock][REQ-MOCK-014]") {
+    mock::Server server;
+    REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
+
+    auto req = standard_request(mock::kAdcByteBusId, /*write=*/false, /*evt_op=*/0);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
     REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
     REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
 }

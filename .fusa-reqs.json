@@ -82,8 +82,8 @@
     },
     {
       "id": "REQ-MOCK-001",
-      "title": "Server starts HW_UNCONFIGURED with a representative three-endpoint register map",
-      "text": "rcp::mock::Server shall construct with rcp::lifecycle::ServerLifecycle in state HwUnconfigured and an rcp::regmap::RegisterMap whose endpoint_count, generic_configs, functional_configs, and ep_id_mapping describe exactly three endpoints: GPIO at endpoint id/byte_bus_id 1, SPI at endpoint id/byte_bus_id 2, and I2C at endpoint id/byte_bus_id 3.",
+      "title": "Server starts HW_UNCONFIGURED with a representative four-endpoint register map",
+      "text": "rcp::mock::Server shall construct with rcp::lifecycle::ServerLifecycle in state HwUnconfigured and an rcp::regmap::RegisterMap whose endpoint_count, generic_configs, functional_configs, and ep_id_mapping describe exactly four endpoints: GPIO at endpoint id/byte_bus_id 1, SPI at endpoint id/byte_bus_id 2, I2C at endpoint id/byte_bus_id 3, and ADC at endpoint id/byte_bus_id 4.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -174,6 +174,24 @@
       "id": "REQ-MOCK-012",
       "title": "Operational I2C requests are rejected before RCP_CONFIGURED, same gating as GPIO/SPI",
       "text": "rcp::mock::Server::dispatch, for a request addressed to the I2C endpoint while the server's lifecycle state is not RcpConfigured, shall return regmap::RegMapErrc::request_rejected and an ErrorResponse without touching the endpoint's live state, the same operational-request gating REQ-MOCK-006 already applies to GPIO/SPI.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-MOCK-013",
+      "title": "ADC dispatch applies Table 33 Row 2 evt[2:0] classification before consuming a scripted sample",
+      "text": "rcp::mock::Server::dispatch, for a request addressed to the ADC endpoint while RcpConfigured, shall decode the request's evt[2:0] field via endpoint::evt_row2_kind_of and drive adc::AdcEndpoint::handle_request with it against a default-constructed adc::AdcAveragingConfig: a Plain (000b) request shall be answered as a ReadResponse carrying the 16-bit big-endian encoding (adc::encode_adc_value) of the next value set_adc_response last scripted, consumed in FIFO order without auto-refill (an exhausted scripted queue reports adc::AdcErrc::no_signal), a Reserved (001b-110b) evt shall be rejected with endpoint::EndpointErrc::reserved_evt_row2 (wire error code UNSUPPORTED_CMD) without consuming a scripted sample, and a ConfigWrite (111b) evt shall be rejected with adc::AdcErrc::config_write_not_supported (wire error code UNSUPPORTED_CMD) rather than crashing or being treated as a plain read.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 33 (\"ADC, PWM_IN, I²C, LIN, CAN, UART, ISELED, MDIO: 000b to 110b reserved – request to be rejected with error code = UNSUPPORTED_CMD\" / \"111b: The byte_msg_payload is not presented to the interface but used to change the configuration of the endpoint (see 12.7.1)\"), TC18.txt L4085-4092; corroborating worked example resolving the evt=000b ambiguity in Table 33's own favor: §13.7.9.3 Figure 34 (\"RC Client sends a standard read request\", ADC endpoint, evt field all-zero), TC18.txt L5590-5607",
+      "tc18_master_id": "TC18-13.5-001"
+    },
+    {
+      "id": "REQ-MOCK-014",
+      "title": "Operational ADC requests are rejected before RCP_CONFIGURED, same gating as GPIO/SPI/I2C",
+      "text": "rcp::mock::Server::dispatch, for a request addressed to the ADC endpoint while the server's lifecycle state is not RcpConfigured, shall return regmap::RegMapErrc::request_rejected and an ErrorResponse without consuming a scripted sample or otherwise touching the endpoint's live state, the same operational-request gating REQ-MOCK-006/REQ-MOCK-012 already apply to GPIO/SPI/I2C.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
@@ -2846,6 +2864,37 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-ADC-007",
+      "title": "encode_adc_value encodes a single measurement as a 16-bit big-endian wire value",
+      "text": "rcp::adc::encode_adc_value shall encode its uint16_t argument as exactly rcp::adc::kAdcValueLen (2) bytes, big-endian, matching the \"16 bit ADC value\" field TC18's ADC response figures show.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§13.7.9.3 (\"16 bit ADC value 0\"/\"16 bit ADC value 1\" fields, Figure 34/Figure 35 - ADC response with 8 measurements), TC18.txt L5590-5628",
+      "tc18_master_id": "TC18-13.7.9.3-006"
+    },
+    {
+      "id": "REQ-ADC-008",
+      "title": "AdcEndpoint::handle_request applies Table 33 Row 2 evt[2:0] classification before sampling",
+      "text": "rcp::adc::AdcEndpoint::handle_request shall classify its evt_op argument via rcp::endpoint::evt_row2_kind_of (masking to the low 3 bits first) and, for EvtRow2Kind::Plain, shall delegate to request_reading() with cfg/take_sample/out_value unchanged; for EvtRow2Kind::Reserved, shall return endpoint::EndpointErrc::reserved_evt_row2 without invoking take_sample or otherwise touching out_value.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§13.5 Table 33 (\"ADC, PWM_IN, I²C, LIN, CAN, UART, ISELED, MDIO: 000b to 110b reserved – request to be rejected with error code = UNSUPPORTED_CMD\"), TC18.txt L4085-4092; corroborating worked example resolving the evt=000b ambiguity in Table 33's own favor: §13.7.9.3 Figure 34 (\"RC Client sends a standard read request\", ADC endpoint, evt field all-zero), TC18.txt L5590-5607",
+      "tc18_master_id": "TC18-13.5-001",
+      "severity": "cybersecurity"
+    },
+    {
+      "id": "REQ-ADC-009",
+      "title": "AdcEndpoint::handle_request reports config-write (evt[2:0]==111b) as not yet supported",
+      "text": "rcp::adc::AdcEndpoint::handle_request, for EvtRow2Kind::ConfigWrite (evt[2:0]==111b), shall return AdcErrc::config_write_not_supported without invoking take_sample or otherwise touching out_value and without crashing, rather than silently accepting the request as an ordinary read or silently doing nothing; full §12.7.1 configuration-write handling is deliberately deferred to a follow-up milestone, the same scope decision I2C's I2cErrc::config_write_not_supported already made. AdcErrc::config_write_not_supported shall report a non-empty diagnostic message in its own error_category.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.7.1 (\"This can be done by setting evt[2:0] = 111b in request as described above.\"; Figure 19 – \"Configuration request\"; \"The data of the byte_msg_payload from a write request is written into the section of the EP that is addressed by the byte_bus_id.\"), TC18.txt L2844-2865",
+      "tc18_master_id": "TC18-12.7.1-001"
     },
     {
       "id": "REQ-PWM-001",

@@ -10,6 +10,8 @@
 // fusa:req REQ-MOCK-010
 // fusa:req REQ-MOCK-011
 // fusa:req REQ-MOCK-012
+// fusa:req REQ-MOCK-013
+// fusa:req REQ-MOCK-014
 
 // In-process RC Server simulator — a small, representative OPEN Alliance
 // TC18 Remote Control Protocol Specification v0.5.1_RC server built
@@ -35,9 +37,10 @@
 // mock::Server holds a real rcp::lifecycle::ServerLifecycle (v2.1.0), a
 // real rcp::regmap::RegisterMap plus rcp::regmap::Ep0 (v2.1.0, including
 // EP0 whole-map-read and root-client write semantics), and one instance
-// each of three fully-built endpoint types — rcp::gpio::GpioEndpoint and
-// rcp::spi::SpiEndpoint (both v2.3.0), plus rcp::i2c::I2cEndpoint (v2.4.0,
-// wired in by the Table 30/33 Row 2 evt[2:0] validation pilot) — as its
+// each of four fully-built endpoint types — rcp::gpio::GpioEndpoint and
+// rcp::spi::SpiEndpoint (both v2.3.0), plus rcp::i2c::I2cEndpoint and
+// rcp::adc::AdcEndpoint (v2.4.0, wired in by the Table 30/33 Row 2 evt[2:0]
+// validation pilot and its ADC follow-up, in that order) — as its
 // representative endpoint set. dispatch() below is the single
 // request/response entry point a test drives, decoding the standard
 // request kind's evt[2:0]/op fields (rcp/acf.hpp, v2.0.0) the same way a
@@ -58,17 +61,19 @@
 // Field names and behavior below implement TC18's *behavior* as described
 // in an internal structured extraction of the specification named above;
 // no text from that document is reproduced here. The concrete endpoint
-// numbering (GPIO at endpoint id / byte_bus_id 1, SPI at 2, I2C at 3),
-// access-policy choice for operational requests (gated on lifecycle state
-// only, not per-endpoint ownership — see dispatch()'s own comment), and EP0
-// partial-read encoding chosen in this file are this implementation's own,
-// purely for the purposes of being a usable in-process simulator — full
-// bit-for-bit conformance against other TC18 implementations is not
-// claimed, same as the equivalent disclaimers in rcp/regmap.hpp,
-// rcp/lifecycle.hpp, rcp/gpio.hpp, rcp/spi.hpp, and rcp/i2c.hpp.
+// numbering (GPIO at endpoint id / byte_bus_id 1, SPI at 2, I2C at 3, ADC at
+// 4), access-policy choice for operational requests (gated on lifecycle
+// state only, not per-endpoint ownership — see dispatch()'s own comment),
+// and EP0 partial-read encoding chosen in this file are this
+// implementation's own, purely for the purposes of being a usable
+// in-process simulator — full bit-for-bit conformance against other TC18
+// implementations is not claimed, same as the equivalent disclaimers in
+// rcp/regmap.hpp, rcp/lifecycle.hpp, rcp/gpio.hpp, rcp/spi.hpp, rcp/i2c.hpp,
+// and rcp/adc.hpp.
 #pragma once
 
 #include <rcp/acf.hpp>
+#include <rcp/adc.hpp>
 #include <rcp/avtp.hpp>
 #include <rcp/endpoint.hpp>
 #include <rcp/gpio.hpp>
@@ -80,6 +85,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <optional>
 #include <system_error>
 #include <vector>
 
@@ -99,9 +106,11 @@ using regmap::EndpointId;
 constexpr EndpointId   kGpioEndpointId = 1;
 constexpr EndpointId   kSpiEndpointId  = 2;
 constexpr EndpointId   kI2cEndpointId  = 3;
+constexpr EndpointId   kAdcEndpointId  = 4;
 constexpr avtp::ByteBusId kGpioByteBusId = static_cast<avtp::ByteBusId>(kGpioEndpointId);
 constexpr avtp::ByteBusId kSpiByteBusId  = static_cast<avtp::ByteBusId>(kSpiEndpointId);
 constexpr avtp::ByteBusId kI2cByteBusId  = static_cast<avtp::ByteBusId>(kI2cEndpointId);
+constexpr avtp::ByteBusId kAdcByteBusId  = static_cast<avtp::ByteBusId>(kAdcEndpointId);
 
 // A discovery-shaped EP0 read only ever answers with the register map's
 // magic number below — see this header's own scope note above.
@@ -132,6 +141,10 @@ inline acf::WireErrorCode wire_error_code_for(const std::error_code& ec) noexcep
     if (ec == make_error_code(i2c::I2cErrc::config_write_not_supported))
         return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
     if (ec == make_error_code(i2c::I2cErrc::nack))                      return acf::WireErrorCode::EpError;
+    if (ec == make_error_code(adc::AdcErrc::config_write_not_supported))
+        return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
+    if (ec == make_error_code(adc::AdcErrc::no_signal))
+        return acf::WireErrorCode::EpError; // internal no-valid-sample condition, not a TC18-defined ADC error code (see adc.hpp's own comment) — mirrors i2c::I2cErrc::nack's mapping above
     return acf::WireErrorCode::UnsupportedCmd;
 }
 
@@ -161,6 +174,7 @@ public:
     gpio::GpioEndpoint& gpio() noexcept { return gpio_; }
     spi::SpiEndpoint&   spi() noexcept { return spi_; }
     i2c::I2cEndpoint&   i2c() noexcept { return i2c_; }
+    adc::AdcEndpoint&   adc() noexcept { return adc_; }
 
     // set_spi_poci scripts the bytes a subsequent dispatch()/transfer()
     // call on `channel` reads back as POCI-in data. A real SPI peripheral's
@@ -180,6 +194,22 @@ public:
     void set_i2c_response(std::vector<uint8_t> data, bool acked = true) {
         i2c_response_ = std::move(data);
         i2c_acked_    = acked;
+    }
+
+    // set_adc_response scripts the queue of 16-bit sample values a
+    // subsequent dispatch()-driven ADC plain (evt[2:0]==000b) request pulls
+    // from — the same "test scripts the sensor, this mock does not model
+    // actual hardware" pattern set_spi_poci/set_i2c_response above already
+    // establish. dispatch_adc() below always requests against a default-
+    // constructed AdcAveragingConfig (adc_avg_intervals_per_request==1,
+    // adc_combine_avg_values==1 — no averaging), so each dispatched plain
+    // ADC request consumes exactly one scripted sample, oldest first;
+    // scripted samples are consumed and NOT auto-refilled, so dispatching
+    // more plain requests than scripted samples reports AdcErrc::no_signal,
+    // the same underrun behavior AdcEndpoint::request_reading itself
+    // already implements when `take_sample` returns std::nullopt.
+    void set_adc_response(std::vector<uint16_t> samples) {
+        adc_samples_.assign(samples.begin(), samples.end());
     }
 
     // advance_to_rcp_configured is a convenience for tests/simulators that
@@ -218,6 +248,7 @@ public:
         if (req.byte_bus_id == kGpioByteBusId) return dispatch_gpio(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kSpiByteBusId) return dispatch_spi(req, req_payload, out_resp, out_resp_payload);
         if (req.byte_bus_id == kI2cByteBusId) return dispatch_i2c(req, req_payload, out_resp, out_resp_payload);
+        if (req.byte_bus_id == kAdcByteBusId) return dispatch_adc(req, req_payload, out_resp, out_resp_payload);
 
         return set_error_response(req, make_error_code(regmap::RegMapErrc::invalid_parameter),
                                    out_resp, out_resp_payload);
@@ -238,13 +269,14 @@ private:
 
     static regmap::RegisterMap make_initial_register_map() {
         regmap::RegisterMap regs;
-        regs.endpoint_count = 3;
-        regs.generic_configs.resize(3);
-        regs.functional_configs.resize(3);
+        regs.endpoint_count = 4;
+        regs.generic_configs.resize(4);
+        regs.functional_configs.resize(4);
         regs.ep_id_mapping = {
             {kGpioEndpointId, kGpioByteBusId},
             {kSpiEndpointId,  kSpiByteBusId},
             {kI2cEndpointId,  kI2cByteBusId},
+            {kAdcEndpointId,  kAdcByteBusId},
         };
         return regs;
     }
@@ -343,15 +375,54 @@ private:
         return {};
     }
 
+    // ADC is request-driven sampling only (extraction §5.9) with no
+    // combinable write-request payload at all (adc.hpp's own header
+    // comment) — this dispatch path does not branch on req.op either, same
+    // rationale as dispatch_i2c/dispatch_spi above, just for a different
+    // reason (ADC has no write semantics implemented anywhere in this
+    // codebase, not that it is inherently full-duplex). Every request
+    // addressed here drives one AdcEndpoint::handle_request against a
+    // default-constructed AdcAveragingConfig (no averaging: one raw sample
+    // per request) and a take_sample callback that pulls the next scripted
+    // value set_adc_response() queued — Table 33 Row 2's 3-way
+    // Plain/Reserved/ConfigWrite classification (rcp::endpoint::
+    // evt_row2_kind_of) is checked by handle_request itself before
+    // take_sample is ever invoked, so a Reserved or ConfigWrite evt can
+    // never consume a scripted sample. `payload` is unused: §13.7.9.3
+    // states the ADC request itself carries no byte_msg_payload.
+    std::error_code dispatch_adc(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& /*payload*/,
+                                  acf::AcfMessageInfo& out_resp,
+                                  std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (!operational_requests_allowed()) {
+            return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
+                                       out_resp, out_resp_payload);
+        }
+        auto take_sample = [this]() -> std::optional<uint16_t> {
+            if (adc_samples_.empty()) return std::nullopt;
+            uint16_t v = adc_samples_.front();
+            adc_samples_.pop_front();
+            return v;
+        };
+        uint16_t value = 0;
+        auto ec = adc_.handle_request(req.evt_op, adc::AdcAveragingConfig{}, take_sample, value);
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
+        out_resp_payload = adc::encode_adc_value(value);
+        out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
+                                                          : acf::ResponseKind::ReadResponse);
+        return {};
+    }
+
     lifecycle::ServerLifecycle lifecycle_;
     regmap::RegisterMap        regs_;
     regmap::Ep0                ep0_;
     gpio::GpioEndpoint         gpio_;
     spi::SpiEndpoint           spi_;
     i2c::I2cEndpoint           i2c_;
+    adc::AdcEndpoint           adc_;
     std::array<std::vector<uint8_t>, spi::kMaxChannels> spi_poci_{};
     std::vector<uint8_t>       i2c_response_{};
     bool                       i2c_acked_ = true;
+    std::deque<uint16_t>       adc_samples_{};
 };
 
 } // namespace mock

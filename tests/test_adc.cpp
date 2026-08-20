@@ -4,6 +4,9 @@
 // fusa:test REQ-ADC-004
 // fusa:test REQ-ADC-005
 // fusa:test REQ-ADC-006
+// fusa:test REQ-ADC-007
+// fusa:test REQ-ADC-008
+// fusa:test REQ-ADC-009
 
 // Tests for rcp/adc.hpp — the ADC endpoint type (ROADMAP.md milestone 48,
 // "Basic Endpoint Types II — I2C, UART, ADC, PWM_OUT, PWM_IN", v2.4.0).
@@ -167,4 +170,98 @@ TEST_CASE("AdcErrc::no_signal's message does not claim an invented ADC_NO_SIGNAL
           "[adc][REQ-ADC-006]") {
     auto ec = make_error_code(AdcErrc::no_signal);
     REQUIRE(ec.message().find("ADC_NO_SIGNAL") == std::string::npos);
+}
+
+// ── Wire codec ────────────────────────────────────────────────────────────────
+
+TEST_CASE("encode_adc_value encodes a single measurement as 2-byte big-endian",
+          "[adc][REQ-ADC-007]") {
+    REQUIRE(encode_adc_value(0x0000) == std::vector<uint8_t>{0x00, 0x00});
+    REQUIRE(encode_adc_value(0xABCD) == std::vector<uint8_t>{0xAB, 0xCD});
+    REQUIRE(encode_adc_value(0xFFFF) == std::vector<uint8_t>{0xFF, 0xFF});
+}
+
+// ── Table 33 Row 2 evt[2:0] validation (handle_request) ──────────────────────
+// Table 33 Row 2's shared evt[2:0] classification (Plain/Reserved/
+// ConfigWrite, exercised for all 8 evt_op values by
+// tests/test_endpoint.cpp's own "evt_row2_kind_of classifies all 8 evt[2:0]
+// values" case) applied to ADC's own request-decode entry point, mirroring
+// tests/test_i2c.cpp's "Table 33 Row 2 evt[2:0] validation (handle_request)"
+// section exactly — see rcp/adc.hpp's own handle_request comment.
+
+TEST_CASE("AdcEndpoint::handle_request delegates a Plain (evt[2:0]==000b) request to "
+          "request_reading()",
+          "[adc][REQ-ADC-008]") {
+    AdcEndpoint ep;
+    AdcAveragingConfig cfg;
+    cfg.adc_avg_intervals_per_request = 2;
+    cfg.adc_combine_avg_values        = 2;
+
+    std::deque<uint16_t> raw{10, 20, 30, 40};
+    auto take_sample = [&raw]() -> std::optional<uint16_t> {
+        if (raw.empty()) return std::nullopt;
+        uint16_t v = raw.front();
+        raw.pop_front();
+        return v;
+    };
+
+    uint16_t out_value = 0;
+    auto ec = ep.handle_request(/*evt_op=*/0, cfg, take_sample, out_value);
+    REQUIRE_FALSE(ec);
+    REQUIRE(out_value == 25); // same combination as request_reading's own direct-call test
+}
+
+TEST_CASE("AdcEndpoint::handle_request rejects every reserved evt[2:0] value (001b-110b) "
+          "without invoking take_sample",
+          "[adc][REQ-ADC-008]") {
+    AdcAveragingConfig cfg; // default: 1x1, no averaging
+    for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
+        AdcEndpoint ep;
+        bool take_sample_called = false;
+        auto take_sample = [&take_sample_called]() -> std::optional<uint16_t> {
+            take_sample_called = true;
+            return uint16_t{1};
+        };
+        uint16_t out_value = 0;
+        auto ec = ep.handle_request(evt_op, cfg, take_sample, out_value);
+        REQUIRE(ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+        REQUIRE_FALSE(take_sample_called);
+    }
+}
+
+TEST_CASE("AdcEndpoint::handle_request reports config_write_not_supported for evt[2:0]==111b "
+          "without invoking take_sample",
+          "[adc][REQ-ADC-009]") {
+    AdcEndpoint ep;
+    AdcAveragingConfig cfg;
+    bool take_sample_called = false;
+    auto take_sample = [&take_sample_called]() -> std::optional<uint16_t> {
+        take_sample_called = true;
+        return uint16_t{1};
+    };
+    uint16_t out_value = 0;
+    auto ec = ep.handle_request(/*evt_op=*/7, cfg, take_sample, out_value);
+    REQUIRE(ec == make_error_code(AdcErrc::config_write_not_supported));
+    REQUIRE_FALSE(take_sample_called);
+}
+
+TEST_CASE("AdcEndpoint::handle_request masks evt_op down to 3 bits before classifying",
+          "[adc][REQ-ADC-008]") {
+    AdcEndpoint ep;
+    AdcAveragingConfig cfg;
+    auto take_sample = []() -> std::optional<uint16_t> { return uint16_t{7}; };
+
+    uint16_t out_value = 0;
+    REQUIRE_FALSE(ep.handle_request(/*evt_op=*/0xF8, cfg, take_sample, out_value)); // low 3 bits 000 -> Plain
+    REQUIRE(out_value == 7);
+
+    auto ec = ep.handle_request(/*evt_op=*/0xF9, cfg, take_sample, out_value); // low 3 bits 001 -> Reserved
+    REQUIRE(ec == rcp::endpoint::make_error_code(rcp::endpoint::EndpointErrc::reserved_evt_row2));
+}
+
+TEST_CASE("AdcErrc::config_write_not_supported reports a non-empty message in its own category",
+          "[adc][REQ-ADC-009]") {
+    auto ec = make_error_code(AdcErrc::config_write_not_supported);
+    REQUIRE(ec.category() == adc_category());
+    REQUIRE_FALSE(ec.message().empty());
 }
