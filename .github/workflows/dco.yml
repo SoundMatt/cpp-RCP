@@ -2,7 +2,7 @@ name: DCO
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, rewrite/v3-from-c-rcp]
 
 jobs:
   dco:
