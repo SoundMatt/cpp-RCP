@@ -359,20 +359,42 @@ TEST_CASE("ADC request with a reserved evt[2:0] (001b-110b) is rejected with wir
     REQUIRE(resp_payload == std::vector<uint8_t>{0x12, 0x34});
 }
 
-TEST_CASE("ADC request with evt[2:0]==111b (config-write) is rejected with wire error code "
-          "UNSUPPORTED_CMD rather than crashing or being treated as a plain read",
+TEST_CASE("ADC request with evt[2:0]==111b (config-write) and a malformed payload is rejected with "
+          "wire error code INVALID_PARAMETER rather than crashing or being treated as a plain read",
+          "[mock][REQ-MOCK-013]") {
+    // Phase 3: adc.hpp's evt[2:0]==111b configuration-write path
+    // (adc::apply_reconfig) is now genuinely implemented, so this mock's
+    // own dispatch_adc() routes ConfigWrite requests there instead of
+    // rejecting them outright — see dispatch_adc's own comment. A payload
+    // with no address+data octet is still rejected, now with
+    // AdcErrc::reconfig_short / INVALID_PARAMETER rather than the old
+    // (pre-Phase-3) "not implemented at all" UNSUPPORTED_CMD.
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kAdcByteBusId, /*write=*/true, /*evt_op=*/7);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+    REQUIRE(ec == adc::make_error_code(adc::AdcErrc::reconfig_short));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload ==
+            std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::InvalidParameter)});
+}
+
+TEST_CASE("ADC request with evt[2:0]==111b (config-write) and a well-formed payload actually "
+          "patches this server's own ADC functional config",
           "[mock][REQ-MOCK-013]") {
     mock::Server server;
     REQUIRE_FALSE(server.advance_to_rcp_configured());
 
-    auto req = standard_request(mock::kAdcByteBusId, /*write=*/false, /*evt_op=*/7);
+    // Address 0x0008 (adc_base_clk_divider) + one data octet.
+    std::vector<uint8_t> payload{0x00, 0x08, 0x09};
+    auto req = standard_request(mock::kAdcByteBusId, /*write=*/true, /*evt_op=*/7);
     acf::AcfMessageInfo resp;
     std::vector<uint8_t> resp_payload;
-    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
-    REQUIRE(ec == adc::make_error_code(adc::AdcErrc::config_write_not_supported));
-    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
-    REQUIRE(resp_payload ==
-            std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
+    REQUIRE_FALSE(server.dispatch(0, req, payload, resp, resp_payload));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::WriteResponse);
 }
 
 TEST_CASE("ADC request is rejected before RCP_CONFIGURED, same operational gating as GPIO/SPI/I2C",

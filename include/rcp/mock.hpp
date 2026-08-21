@@ -189,8 +189,9 @@ inline acf::WireErrorCode wire_error_code_for(const std::error_code& ec) noexcep
     if (ec == make_error_code(i2c::I2cErrc::config_write_not_supported))
         return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
     if (ec == make_error_code(i2c::I2cErrc::nack))                      return acf::WireErrorCode::EpError;
-    if (ec == make_error_code(adc::AdcErrc::config_write_not_supported))
-        return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
+    if (ec == make_error_code(adc::AdcErrc::reconfig_short) ||
+        ec == make_error_code(adc::AdcErrc::reconfig_out_of_range))
+        return acf::WireErrorCode::InvalidParameter; // evt[2:0]==111b config-write payload malformed/out of range (Phase 3, adc.hpp's own apply_reconfig)
     if (ec == make_error_code(adc::AdcErrc::no_signal))
         return acf::WireErrorCode::EpError; // internal no-valid-sample condition, not a TC18-defined ADC error code (see adc.hpp's own comment) — mirrors i2c::I2cErrc::nack's mapping above
     if (ec == make_error_code(pwm::PwmErrc::config_write_not_supported))
@@ -556,33 +557,77 @@ private:
     // comment) — this dispatch path does not branch on req.op either, same
     // rationale as dispatch_i2c/dispatch_spi above, just for a different
     // reason (ADC has no write semantics implemented anywhere in this
-    // codebase, not that it is inherently full-duplex). Every request
-    // addressed here drives one AdcEndpoint::handle_request against a
-    // default-constructed AdcAveragingConfig (no averaging: one raw sample
-    // per request) and a take_sample callback that pulls the next scripted
-    // value set_adc_response() queued — Table 33 Row 2's 3-way
-    // Plain/Reserved/ConfigWrite classification (rcp::endpoint::
-    // evt_row2_kind_of) is checked by handle_request itself before
-    // take_sample is ever invoked, so a Reserved or ConfigWrite evt can
-    // never consume a scripted sample. `payload` is unused: §13.7.9.3
-    // states the ADC request itself carries no byte_msg_payload.
-    std::error_code dispatch_adc(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& /*payload*/,
+    // codebase, not that it is inherently full-duplex).
+    //
+    // Table 33 Row 2's 3-way Plain/Reserved/ConfigWrite classification
+    // (rcp::endpoint::evt_row2_kind_of) is checked directly here (Phase 3:
+    // adc::AdcEndpoint no longer has its own combined handle_request, since
+    // c-RCP's own ep_adc.h/.c have no such function either — see adc.hpp's
+    // own file header): Reserved is rejected without consuming a scripted
+    // sample or touching adc_cfg_; ConfigWrite applies `payload` as a real
+    // §12.7.1 addressed register write against this server's own
+    // adc_cfg_ (adc::apply_reconfig, genuinely implemented as of Phase 3,
+    // unlike this mock's still-open Table 30/33 dispatch wiring for other
+    // endpoint types' own reconfig paths — full response-shape/register-
+    // read-back wiring for every endpoint type remains Phase 4's scope, see
+    // ROADMAP.md); Plain drives one AdcEndpoint::execute_measurement_cycle
+    // (samples_per_avg_interval=1, combine_avg_values=1: no averaging, one
+    // raw sample per request) against a take_sample callback that pulls the
+    // next scripted value set_adc_response() queued. An empty scripted
+    // queue reports a kAdcNoSignal-valued sample, which average_interval()
+    // carries through as the response's own value on the wire (adc.hpp's
+    // own corrected behavior) — this mock chooses to additionally surface
+    // that as an AdcErrc::no_signal *error* response instead, preserving
+    // this dispatch path's own pre-existing "queue underrun is an error"
+    // contract for set_adc_response()'s own callers/tests.
+    std::error_code dispatch_adc(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                   acf::AcfMessageInfo& out_resp,
                                   std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
             return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
                                        out_resp, out_resp_payload);
         }
-        auto take_sample = [this]() -> std::optional<uint16_t> {
-            if (adc_samples_.empty()) return std::nullopt;
+
+        switch (endpoint::evt_row2_kind_of(req.evt_op)) {
+        case endpoint::EvtRow2Kind::Reserved:
+            return set_error_response(req, endpoint::make_error_code(endpoint::EndpointErrc::reserved_evt_row2),
+                                       out_resp, out_resp_payload);
+        case endpoint::EvtRow2Kind::ConfigWrite: {
+            auto ec = adc::apply_reconfig(adc_cfg_, payload.data(), payload.size());
+            if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
+            out_resp = acf::make_response(req, acf::ResponseKind::WriteResponse);
+            return {};
+        }
+        case endpoint::EvtRow2Kind::Plain:
+            break;
+        }
+
+        adc::AdcFunctionalConfig cfg;
+        cfg.adc_samples_per_avg_interval = 1;
+        cfg.adc_combine_avg_values        = 1;
+
+        auto take_sample = [this]() -> adc::AdcSample {
+            if (adc_samples_.empty()) return adc::AdcSample{adc::kAdcNoSignal, 0};
             uint16_t v = adc_samples_.front();
             adc_samples_.pop_front();
-            return v;
+            return adc::AdcSample{v, 0};
         };
-        uint16_t value = 0;
-        auto ec = adc_.handle_request(req.evt_op, adc::AdcAveragingConfig{}, take_sample, value);
+
+        auto ec = adc_.execute_measurement_cycle(cfg, take_sample);
         if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
-        out_resp_payload = adc::encode_adc_value(value);
+
+        std::vector<uint16_t> values;
+        uint64_t              timestamp = 0;
+        ec = adc_.collect_response(cfg, values, timestamp);
+        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
+
+        if (values.front() == adc::kAdcNoSignal) {
+            return set_error_response(req, adc::make_error_code(adc::AdcErrc::no_signal), out_resp,
+                                       out_resp_payload);
+        }
+
+        out_resp_payload.resize(adc::kAdcValueLen);
+        avtp::detail::put_u16(out_resp_payload.data(), values.front());
         out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
                                                           : acf::ResponseKind::ReadResponse);
         return {};
@@ -852,6 +897,7 @@ private:
     spi::SpiEndpoint           spi_;
     i2c::I2cEndpoint           i2c_;
     adc::AdcEndpoint           adc_;
+    adc::AdcFunctionalConfig   adc_cfg_; // backs dispatch_adc's evt[2:0]==111b configuration-write path
     pwm::PwmInEndpoint         pwm_in_;
     lin::LinEndpoint           lin_;
     can::CanEndpoint           can_;
