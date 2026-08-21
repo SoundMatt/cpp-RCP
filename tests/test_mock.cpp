@@ -54,7 +54,7 @@ TEST_CASE("Server starts HW_UNCONFIGURED with a ten-endpoint register map",
           "[mock][REQ-MOCK-001]") {
     mock::Server server;
     REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
-    REQUIRE(server.registers().endpoint_count == 10);
+    REQUIRE(server.registers().general.svr_ep_count == 10);
     REQUIRE(server.registers().generic_configs.size() == 10);
     REQUIRE(server.registers().functional_configs.size() == 10);
     REQUIRE(server.registers().ep_id_mapping.size() == 10);
@@ -100,7 +100,7 @@ TEST_CASE("EP0 read answers the register map's magic number for any client",
         REQUIRE_FALSE(ec);
         REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
         REQUIRE(resp_payload.size() == mock::kEp0PartialReadLen);
-        REQUIRE(avtp::detail::get_u32(resp_payload.data()) == server.registers().magic);
+        REQUIRE(avtp::detail::get_u32(resp_payload.data()) == server.registers().general.magic);
     }
 }
 
@@ -126,12 +126,12 @@ TEST_CASE("write_whole_map requires the root client", "[mock][REQ-MOCK-005]") {
     REQUIRE(claim_ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
 
     regmap::RegisterMap replacement = server.registers();
-    replacement.vendor_id = 0x1234;
+    replacement.general.vendor_id = 0x1234;
 
     auto write_ec = server.ep0().write_whole_map(/*client=*/2, replacement);
     REQUIRE(write_ec == regmap::make_error_code(regmap::RegMapErrc::unauthorized_access));
     REQUIRE_FALSE(server.ep0().write_whole_map(/*client=*/1, replacement));
-    REQUIRE(server.registers().vendor_id == 0x1234);
+    REQUIRE(server.registers().general.vendor_id == 0x1234);
 }
 
 // ── Operational-request gating ───────────────────────────────────────────────
