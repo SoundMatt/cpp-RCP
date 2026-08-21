@@ -106,6 +106,14 @@ add_executable(test_loan test_loan.cpp)
 target_link_libraries(test_loan PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_loan COMMAND test_loan)
 
+add_executable(test_fragment test_fragment.cpp)
+target_link_libraries(test_fragment PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_fragment COMMAND test_fragment)
+
+add_executable(test_respqueue test_respqueue.cpp)
+target_link_libraries(test_respqueue PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_respqueue COMMAND test_respqueue)
+
 add_executable(test_shmem test_shmem.cpp)
 target_link_libraries(test_shmem PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_shmem COMMAND test_shmem)
