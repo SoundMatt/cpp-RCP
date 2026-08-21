@@ -118,6 +118,10 @@ add_executable(test_shmem test_shmem.cpp)
 target_link_libraries(test_shmem PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_shmem COMMAND test_shmem)
 
+add_executable(test_alloc test_alloc.cpp)
+target_link_libraries(test_alloc PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_alloc COMMAND test_alloc)
+
 # ── Milestones 19–40 ──────────────────────────────────────────────────────────
 
 add_executable(test_authz test_authz.cpp)

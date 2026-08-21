@@ -264,3 +264,71 @@ TEST_CASE("Manager::poll invokes every subscribed callback in registration order
 
     REQUIRE(order == std::vector<int>{1, 2});
 }
+
+// ── [Phase 17 c-RCP-reference pass, cpp-RCP issue #129] Fixed-capacity ──────
+// Manager::streams_/callbacks_ (ported from c-RCP's watchdog.h
+// RCP_WATCHDOG_MAX_STREAMS/RCP_WATCHDOG_MAX_CALLBACKS, both 16 — see
+// Manager's own doc comment). Untagged, matching rcp/loan.hpp's/
+// rcp/respqueue.hpp's own fixed-capacity conversion tests: this bound is an
+// engineering hardening tracked under issue #129, not itself a numbered
+// REQ-WDG-* requirement in either c-RCP's or this project's own catalog.
+
+TEST_CASE("Manager::register_stream succeeds up to kMaxStreams, then rejects further streams", "[watchdog]") {
+    Manager mgr;
+    for (uint64_t i = 0; i < Manager::kMaxStreams; ++i) {
+        REQUIRE_FALSE(mgr.register_stream(i + 1));
+    }
+    REQUIRE(mgr.stream_count() == Manager::kMaxStreams);
+
+    // One more, at capacity: rejected, not silently grown.
+    REQUIRE(mgr.register_stream(Manager::kMaxStreams + 1) ==
+            make_error_code(WatchdogErrc::stream_capacity_exceeded));
+    REQUIRE(mgr.stream_count() == Manager::kMaxStreams);
+    REQUIRE_FALSE(mgr.is_registered(Manager::kMaxStreams + 1));
+
+    // Every stream registered before capacity was reached remains reachable
+    // — confirms the fixed array was fully populated, not silently
+    // truncated below capacity.
+    REQUIRE(mgr.is_registered(Manager::kMaxStreams));
+}
+
+TEST_CASE("Manager::register_stream is a harmless no-op for an already-registered stream, even at capacity",
+          "[watchdog]") {
+    Manager mgr;
+    for (uint64_t i = 0; i < Manager::kMaxStreams; ++i) {
+        REQUIRE_FALSE(mgr.register_stream(i + 1));
+    }
+    // Re-registering an existing key never consults the capacity check.
+    REQUIRE_FALSE(mgr.register_stream(1));
+    REQUIRE(mgr.stream_count() == Manager::kMaxStreams);
+}
+
+TEST_CASE("Manager::unregister_stream frees a slot for a subsequent register_stream at capacity",
+          "[watchdog]") {
+    Manager mgr;
+    for (uint64_t i = 0; i < Manager::kMaxStreams; ++i) {
+        REQUIRE_FALSE(mgr.register_stream(i + 1));
+    }
+    REQUIRE(mgr.register_stream(999) == make_error_code(WatchdogErrc::stream_capacity_exceeded));
+
+    mgr.unregister_stream(1);
+    REQUIRE(mgr.stream_count() == Manager::kMaxStreams - 1);
+    REQUIRE_FALSE(mgr.is_registered(1));
+
+    REQUIRE_FALSE(mgr.register_stream(999)); // room again
+    REQUIRE(mgr.is_registered(999));
+    REQUIRE(mgr.stream_count() == Manager::kMaxStreams);
+}
+
+TEST_CASE("Manager::subscribe succeeds up to kMaxCallbacks, then rejects further subscribers", "[watchdog]") {
+    Manager mgr;
+    for (size_t i = 0; i < Manager::kMaxCallbacks; ++i) {
+        REQUIRE_FALSE(mgr.subscribe([](const HealthEvent&) {}));
+    }
+    REQUIRE(mgr.callback_count() == Manager::kMaxCallbacks);
+
+    // One more, at capacity: rejected, not silently grown.
+    REQUIRE(mgr.subscribe([](const HealthEvent&) {}) ==
+            make_error_code(WatchdogErrc::callback_capacity_exceeded));
+    REQUIRE(mgr.callback_count() == Manager::kMaxCallbacks);
+}
