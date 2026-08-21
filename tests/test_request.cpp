@@ -464,7 +464,7 @@ TEST_CASE("finalize with errored=true aborts a chained successor whose cs forbid
     RequestRecord successor;
     successor.transaction_num     = 2;
     successor.chained_predecessor = uint8_t{1};
-    successor.cs                   = false; // abort-on-predecessor-error
+    successor.cs                   = true; // abort-on-predecessor-error
 
     REQUIRE_FALSE(ledger.submit(predecessor));
     REQUIRE_FALSE(ledger.submit(successor));
@@ -484,7 +484,7 @@ TEST_CASE("finalize with errored=true does not abort a chained successor with cs
     RequestRecord successor;
     successor.transaction_num     = 2;
     successor.chained_predecessor = uint8_t{1};
-    successor.cs                   = true; // execute regardless
+    successor.cs                   = false; // execute regardless
 
     REQUIRE_FALSE(ledger.submit(predecessor));
     REQUIRE_FALSE(ledger.submit(successor));
@@ -518,20 +518,20 @@ TEST_CASE("finalize with errored=false never aborts a chained successor regardle
 // ── The `cs` field's dual meaning ─────────────────────────────────────────────
 
 TEST_CASE("compound_wait_check_of maps cs to Immediate vs AfterChangeOnly", "[request][REQ-SEQ-008]") {
-    REQUIRE(compound_wait_check_of(true) == CompoundWaitCheck::Immediate);
-    REQUIRE(compound_wait_check_of(false) == CompoundWaitCheck::AfterChangeOnly);
+    REQUIRE(compound_wait_check_of(false) == CompoundWaitCheck::Immediate);
+    REQUIRE(compound_wait_check_of(true) == CompoundWaitCheck::AfterChangeOnly);
 }
 
-TEST_CASE("should_execute_chained: cs=true always executes regardless of predecessor outcome",
+TEST_CASE("should_execute_chained: cs=false always executes regardless of predecessor outcome",
           "[request][REQ-SEQ-008]") {
-    REQUIRE(should_execute_chained(/*cs=*/true, /*predecessor_errored=*/true));
-    REQUIRE(should_execute_chained(/*cs=*/true, /*predecessor_errored=*/false));
-}
-
-TEST_CASE("should_execute_chained: cs=false aborts only when the predecessor errored",
-          "[request][REQ-SEQ-008]") {
-    REQUIRE_FALSE(should_execute_chained(/*cs=*/false, /*predecessor_errored=*/true));
+    REQUIRE(should_execute_chained(/*cs=*/false, /*predecessor_errored=*/true));
     REQUIRE(should_execute_chained(/*cs=*/false, /*predecessor_errored=*/false));
+}
+
+TEST_CASE("should_execute_chained: cs=true aborts only when the predecessor errored",
+          "[request][REQ-SEQ-008]") {
+    REQUIRE_FALSE(should_execute_chained(/*cs=*/true, /*predecessor_errored=*/true));
+    REQUIRE(should_execute_chained(/*cs=*/true, /*predecessor_errored=*/false));
 }
 
 // ── RequestErrc category sanity ─────────────────────────────────────────────
