@@ -440,7 +440,7 @@ private:
 
     static regmap::RegisterMap make_initial_register_map() {
         regmap::RegisterMap regs;
-        regs.endpoint_count = 10;
+        regs.general.svr_ep_count = 10;
         regs.generic_configs.resize(10);
         regs.functional_configs.resize(10);
         regs.ep_id_mapping = {
@@ -471,7 +471,7 @@ private:
         auto ec = ep0_.check_read_access(regmap::kEp0);
         if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
         out_resp_payload.resize(kEp0PartialReadLen);
-        avtp::detail::put_u32(out_resp_payload.data(), regs_.magic);
+        avtp::detail::put_u32(out_resp_payload.data(), regs_.general.magic);
         out_resp = acf::make_response(req, acf::ResponseKind::ReadResponse);
         return {};
     }
