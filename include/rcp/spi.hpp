@@ -80,7 +80,7 @@
 // c-RCP's ep_spi.h/.c carry a "FIXED 2026-08-11" note (spec rebaseline to
 // TC18 0.5.1_RC5): the EP_func block's spi_nr_cs register (relative offset
 // 0x0001) was originally read against the 0.5.1_RC baseline as a plain 8-bit
-// channel count; RC4 narrowed it to a 4-bit "(count - 1)" field in bits
+// channel count; the RC 4 revision narrowed it to a 4-bit "(count - 1)" field in bits
 // [3:0], upper nibble reserved (reads 0000b). render_registers() below
 // renders (kMaxChannels - 1) & 0x0F (0x05), not a plain 6, in the low
 // nibble, and leaves the high nibble 0 — kRegNrCs is read-only, exactly as
