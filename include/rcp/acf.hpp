@@ -29,58 +29,68 @@
 // `read_size_or_segment_num`) already exist below so later milestones can be
 // layered on without reshaping this header.
 //
-// Field names and behavior below implement TC18's *behavior* as described in
-// an internal structured extraction of the specification named above; no
-// text from that document is reproduced here. Wire conformance note
-// (v2.19.0, issue cpp-RCP-04): the ACF Message Info bit-packing below was
-// re-derived field by field from the specification's own header diagram
-// (its bit-position figure, not prose) and cross-checked two ways: (1)
-// against a second, independent diagram of the same header shape used for a
-// different message subtype elsewhere in the specification, and (2) against
-// two fully worked numeric examples elsewhere in the specification (one
-// ACF_ABB, one ACF_GBB) that state concrete byte counts and an
-// acf_msg_length value for a chosen payload/padding.
+// Field names and behavior below implement TC18's *behavior*, ported from
+// c-RCP's acf.h/acf.c (Phase 17, cpp-RCP issue #129), which is this
+// project's RC5-spec-conformant reference implementation for this wire
+// layer; no text from the specification is reproduced here.
 //
-// acf_msg_length conformance note (v2.20.0, issue cpp-RCP-01): the bit
-// layout above was already correct, but until this pass nothing in this
-// codec ever *computed* acf_msg_length from a real message's actual size —
-// AcfMessageInfo::acf_msg_length defaulted to 0 and stayed 0 unless a
-// caller (only rcp/e2e.hpp's own unit tests did) set it by hand, so every
-// frame this library actually emitted over rcp/udp.hpp carried
-// acf_msg_length=0. compute_acf_msg_length() below now does that
-// computation (quadlets over the shared header, the ACF_GBB timestamp when
-// present, and the payload as given — see its own comment for the exact
-// worked-example derivation), and encode_acf_abb()/encode_acf_gbb() call it
-// automatically whenever the caller leaves AcfMessageInfo::acf_msg_length at
-// its 0 default, which is what every real request/response builder in this
-// tree does today (rcp::acf::make_standard_request, rcp::acf::make_response,
-// rcp/mock.hpp's dispatch_*, rcp/discovery.hpp, rcp/record.hpp). A caller
-// that has already computed a specific value itself — e.g. rcp/e2e.hpp's
-// apply_acf_length_adjustment(), which must bake a trailing CRC's +1
-// quadlet into the header *before* that header is serialized for CRC
-// coverage — sets AcfMessageInfo::acf_msg_length to a nonzero value first,
-// which this codec always takes as an explicit override and never
-// recomputes out from under it. See compute_acf_msg_length()'s own comment
-// for this fix's known scope limit (it counts quadlets from the payload
-// length exactly as given, since this codec has always left padding a
-// caller-owned concern — see the "ACF shared header" section above — rather
-// than silently appending real pad octets a caller did not ask for).
+// byte_message_info bit-packing (encode_acf_message_info/
+// decode_acf_message_info below) was already correct as of this codec's
+// v2.19.0 pass and is unchanged by the Phase 17 port — verified bit-for-bit
+// against c-RCP's own pack/unpack golden-vector tests (test_acf.c's
+// test_pack_header_bit_positions/test_unpack_header_bit_positions_from_
+// raw_bytes), which this file's own equivalent tests below now also pin.
 //
-// ACF_GBB timestamp-position conformance note (v2.22.0, issue
-// cpp-RCP-GBB-TS): both notes above concern the shared header's *bit*
-// packing and its length field; neither noticed that the ACF_GBB message's
-// *byte* geometry was also wrong. encode_acf_gbb/decode_acf_gbb placed the
-// 64-bit message_timestamp after the complete 8-byte shared header (wire
-// octet 8), when the specification splices it between that header's two
-// quadlets (wire octet 4), pushing evt/rsv/hs/cs/transaction_num/op/rsp/
-// err/ms/read_size_or_segment_num from octet 8 to octet 12. Every ACF_GBB
-// message this library emitted before v2.22.0 was therefore unreadable by
-// a conformant peer (and vice versa), and every ACF_GBB E2E CRC was
-// computed over the wrong byte sequence. Fixed below; see the
-// kAcfGbbTimestampOffset constant block for the point-by-point
-// verification against the specification's own figures. This is a
-// wire-format-breaking change against every prior cpp-RCP release —
-// ACF_ABB is entirely unaffected, since it has no timestamp field.
+// acf_msg_length auto-fill (v2.20.0, issue cpp-RCP-01, retained by the
+// Phase 17 port): AcfMessageInfo::acf_msg_length defaults to 0;
+// encode_acf_abb()/encode_acf_gbb() compute it from the caller's actual
+// payload size (compute_acf_msg_length()) whenever the caller leaves it at
+// that 0 default, and take a nonzero value as an explicit override,
+// re-serializing it unchanged instead. This is a deliberate divergence from
+// c-RCP's own rcp_acf_encode_abb()/_gbb(), which always recompute
+// acf_msg_length (and always auto-pad the payload to a quadlet boundary via
+// rcp_acf_pad_len(), overwriting whatever the caller's own hdr->pad held) —
+// this codec's "0 = auto, nonzero = override" contract, and its
+// caller-owns-padding convention, are load-bearing for rcp/e2e.hpp's
+// apply_acf_length_adjustment(), which must bake a trailing CRC32 trailer's
+// +1 quadlet into the header *before* it is serialized for CRC coverage,
+// and are exercised by rcp/e2e.hpp's own tests (tests/test_e2e.cpp). Phase
+// 17 (this pass) is scoped to acf.hpp/avtp.hpp only and does not touch
+// rcp/e2e.hpp, so this codec deliberately keeps both conventions rather
+// than adopting c-RCP's always-recompute/always-pad behavior, which would
+// silently break that contract. See pad_len() below (new, additive —
+// ported from rcp_acf_pad_len() as a pure utility any caller MAY use) and
+// this file's own "// TODO(phase1-followup)" markers for the specific
+// c-RCP behaviors this pass intentionally left unported for that reason.
+//
+// ACF_GBB Message Info geometry (Phase 17 wire-format fix, issue
+// cpp-RCP-GBB-TS): a prior pass (v2.22.0) placed the 64-bit
+// message_timestamp *spliced between* the shared header's two quadlets
+// (wire octet 4, pushing evt/hs/cs/transaction_num/op/rsp/err/ms/
+// read_size_or_segment_num to octet 12). c-RCP's acf.h/acf.c — this
+// project's RC5-conformant reference for this module — is unambiguous that
+// the real layout is CONTIGUOUS instead: the complete 8-byte
+// byte_message_info header at octets 0..7, the 8-byte message_timestamp
+// immediately after it at octets 8..15, then byte_msg_payload at octet 16
+// onward (RCP_ACF_GBB_HEADER_LEN == RCP_ACF_ABB_HEADER_LEN + 8, per c-RCP's
+// acf.h file comment, its rcp_acf_encode_gbb()/_decode_gbb() implementation
+// in acf.c, its own test_peek_gbb_request_type() pinning byte 8 as the
+// first byte after a *contiguous* 8-byte header, and its
+// .fusa-reqs.json REQ-ACF-044 citation "ACF_GBB's additional 8-byte
+// message_timestamp, e.g. TC18.txt L1447-1451"). The v2.22.0 splice was
+// therefore a regression, not a fix; it is reverted below. Every real
+// caller in this tree (rcp/e2e.hpp, rcp/l2.hpp, rcp/udp.hpp,
+// rcp/record.hpp, rcp/request.hpp) reaches the Message Info block only
+// through encode_acf_gbb_message_info()/decode_acf_gbb_message_info()/
+// encode_acf_gbb()/decode_acf_gbb() below, never through a raw byte offset
+// of its own, so this fix changes wire *content* for those callers but not
+// their source. The one exception is tests/test_e2e.cpp, which pins the
+// old (spliced) layout via hardcoded byte literals — those assertions are
+// now wrong and need a follow-up fix in a later phase that touches
+// rcp/e2e.hpp; see this pass's own PR description for the specific test
+// cases affected. This is a wire-format-breaking change against every
+// cpp-RCP release since v2.22.0 — ACF_ABB is entirely unaffected, since it
+// has no timestamp field.
 #pragma once
 
 #include <rcp/avtp.hpp>
@@ -209,51 +219,32 @@ struct AcfMessageInfo {
 constexpr size_t kAcfCommonHeaderLen = 8;
 constexpr size_t kAcfGbbTimestampLen = 8;
 
-// ── ACF_GBB Message Info wire geometry (v2.22.0 fix) ──────────────────────────
-// The 8 shared-header bytes above are *contiguous* on the wire only for
-// ACF_ABB. For ACF_GBB the specification splices the 64-bit
-// message_timestamp **between** the shared header's two quadlets, not after
-// both of them — so an ACF_GBB Message Info block is 16 bytes laid out as:
+// ── ACF_GBB Message Info wire geometry ────────────────────────────────────────
+// For ACF_GBB, the 64-bit message_timestamp sits immediately AFTER the
+// complete, contiguous 8-byte byte_message_info header — not spliced
+// between its two quadlets. An ACF_GBB Message Info block is therefore 16
+// bytes laid out as:
 //
-//   offset  0..3   shared-header quadlet 0
-//                  (acf_msg_type / acf_msg_length / pad / mtv / rsv / byte_bus_id)
-//   offset  4..11  message_timestamp, 64-bit big-endian
-//   offset 12..15  shared-header quadlet 1
-//                  (evt / rsv / hs / cs / transaction_num / op / rsp / err / ms /
-//                   read_size_or_segment_num)
+//   offset  0..7   the complete byte_message_info header, same contiguous
+//                  8-octet layout ACF_ABB uses (acf_msg_type /
+//                  acf_msg_length / pad / mtv / rsv / byte_bus_id / evt /
+//                  rsv / hs / cs / transaction_num / op / rsp / err / ms /
+//                  read_size_or_segment_num)
+//   offset  8..15  message_timestamp, 64-bit big-endian
 //   offset 16..    byte_msg_payload
 //
-// Independently verified against the specification's own figures, not
-// inferred from this codec's prior behavior (which had the timestamp after
-// *both* header quadlets, at offset 8, pushing quadlet 1 to offset 8
-// instead of 12 — the bug this constant block exists to prevent
-// recurring):
-//   (a) The single-ACF_GBB CRC-coverage figure draws one "Byte Message
-//       Info" group of three rows in this exact order: the
-//       acf_msg_type/acf_msg_length/pad/mtv/rsv/byte_bus_id quadlet, then
-//       message_time_stamp rendered as a double-height 64-bit block (the
-//       same way that figure's own 64-bit stream_id is drawn), then the
-//       evt/rsv/hs/cs/transaction_num/op/rsp/err/ms/read_size quadlet.
-//   (b) That figure's own stated acf_msg_length (7 quadlets = 28 octets)
-//       is only reproducible with a 64-bit timestamp inside the Message
-//       Info block: quadlet0(4) + timestamp(8) + quadlet1(4) + payload
-//       (7 real + 1 pad = 8) + CRC32(4) = 28. Its ACF_ABB counterpart, with
-//       no timestamp at all, states 5 quadlets = 20 octets: 4 + 4 + (6 real
-//       + 2 pad = 8) + 4 = 20. Both check out exactly.
-//   (c) The compound-request figure (an ACF_GBB with mtv=0) shows the
-//       mtv=0 repurposing fields — request_type/cmp_start_state/
-//       cmp_next_state/cmp_sequencer, then cmp_exec_delay/cmp_repetitions —
-//       occupying exactly the two quadlets *between* the same two header
-//       quadlets, i.e. octets 4..11, which is only consistent with the
-//       timestamp slot they repurpose living there too.
-//   (d) The response-field table lists the Message Info fields in wire
-//       order and places message_timestamp ("Present in ACF_GBB, omitted in
-//       ACF_ABB") between byte_bus_id (quadlet 0's last field) and evt
-//       (quadlet 1's first field).
-constexpr size_t kAcfHeaderQuadletLen        = 4;
-constexpr size_t kAcfGbbTimestampOffset      = 4;  // == kAcfHeaderQuadletLen
-constexpr size_t kAcfGbbSecondQuadletOffset  = 12; // == kAcfHeaderQuadletLen + kAcfGbbTimestampLen
-constexpr size_t kAcfGbbMessageInfoLen       = 16; // == kAcfCommonHeaderLen + kAcfGbbTimestampLen
+// This is ported directly from c-RCP's acf.h/acf.c (this project's
+// RC5-conformant reference for this module — see this file's own header
+// comment for the full derivation and the specific byte-geometry bug this
+// reverts): RCP_ACF_GBB_HEADER_LEN there is defined as exactly
+// RCP_ACF_ABB_HEADER_LEN + 8, rcp_acf_encode_gbb() packs the full 8-byte
+// header contiguously via rcp_acf_pack_header() and then writes
+// message_timestamp at that fixed offset 8, and its own
+// test_peek_gbb_request_type() pins byte 8 as the first byte immediately
+// following a *contiguous* 8-byte header (the message_timestamp region's
+// own leading octet, repurposed by the conditional-request modules).
+constexpr size_t kAcfGbbTimestampOffset = kAcfCommonHeaderLen; // 8: right after the contiguous header
+constexpr size_t kAcfGbbMessageInfoLen  = kAcfCommonHeaderLen + kAcfGbbTimestampLen; // 16
 
 // compute_acf_msg_length computes the wire acf_msg_length value (quadlets,
 // counted over the *entire* ACF message: the 8-byte shared header, the
@@ -358,42 +349,33 @@ inline void decode_acf_message_info(const uint8_t* in8, AcfMessageInfo& out) noe
     out.read_size_or_segment_num = static_cast<uint16_t>(((in8[6] & 0x0F) << 8) | in8[7]);
 }
 
-// ── ACF_GBB Message Info: the spliced 16-byte form ────────────────────────────
+// ── ACF_GBB Message Info: header + timestamp, contiguous ─────────────────────
 // encode_acf_gbb_message_info/decode_acf_gbb_message_info are the ACF_GBB
 // analogues of encode_acf_message_info/decode_acf_message_info above. They
 // deliberately reuse those two functions for the bit-level packing (so the
-// bit layout has exactly one definition in this file) and only own the
-// ACF_GBB-specific *byte geometry*: quadlet 0, then the 64-bit
-// message_timestamp, then quadlet 1 — see the kAcfGbbTimestampOffset /
-// kAcfGbbSecondQuadletOffset comment block above for the verification of
-// that ordering against the specification's own figures. `out16`/`in16`
-// must point at kAcfGbbMessageInfoLen (16) accessible bytes.
+// bit layout has exactly one definition in this file) and only add the
+// ACF_GBB-specific byte geometry: the complete 8-byte header, then the
+// 64-bit message_timestamp immediately after it — see the
+// kAcfGbbTimestampOffset comment block above for the c-RCP-derived
+// verification of that ordering. `out16`/`in16` must point at
+// kAcfGbbMessageInfoLen (16) accessible bytes.
 inline void encode_acf_gbb_message_info(const AcfMessageInfo& info, uint64_t message_timestamp,
                                          uint8_t* out16) noexcept {
-    uint8_t hdr[kAcfCommonHeaderLen];
-    encode_acf_message_info(info, hdr);
-    std::copy(hdr, hdr + kAcfHeaderQuadletLen, out16);
+    encode_acf_message_info(info, out16);
     avtp::detail::put_u64(out16 + kAcfGbbTimestampOffset, message_timestamp);
-    std::copy(hdr + kAcfHeaderQuadletLen, hdr + kAcfCommonHeaderLen,
-              out16 + kAcfGbbSecondQuadletOffset);
 }
 
 inline void decode_acf_gbb_message_info(const uint8_t* in16, AcfMessageInfo& out_info,
                                          uint64_t& out_message_timestamp) noexcept {
-    uint8_t hdr[kAcfCommonHeaderLen];
-    std::copy(in16, in16 + kAcfHeaderQuadletLen, hdr);
-    std::copy(in16 + kAcfGbbSecondQuadletOffset,
-              in16 + kAcfGbbSecondQuadletOffset + kAcfHeaderQuadletLen,
-              hdr + kAcfHeaderQuadletLen);
-    decode_acf_message_info(hdr, out_info);
+    decode_acf_message_info(in16, out_info);
     out_message_timestamp = avtp::detail::get_u64(in16 + kAcfGbbTimestampOffset);
 }
 
 // ── ACF_ABB / ACF_GBB message encode / decode ─────────────────────────────────
 // ACF_ABB carries no timestamp field at all; ACF_GBB always reserves a
-// 64-bit message_timestamp slot inside the Message Info block (spliced
-// between the block's two header quadlets, see above), regardless of
-// whether `mtv` marks it valid (extraction §2.3, §2.7).
+// 64-bit message_timestamp slot immediately after the Message Info header
+// (contiguous, see above), regardless of whether `mtv` marks it valid
+// (extraction §2.3, §2.7).
 
 // peek_acf_msg_type reads the 7-bit acf_msg_type field out of a raw buffer's
 // first octet without decoding the rest of the header. Needed because
@@ -406,6 +388,42 @@ inline void decode_acf_gbb_message_info(const uint8_t* in16, AcfMessageInfo& out
 inline uint8_t peek_acf_msg_type(const uint8_t* b) noexcept {
     return static_cast<uint8_t>(b[0] >> 1);
 }
+
+// peek_msg_type is peek_acf_msg_type's checked, whole-buffer-validating
+// counterpart (ported from c-RCP's rcp_acf_peek_msg_type()): it also
+// validates `len >= 1` itself, rather than requiring the caller to do so
+// before calling peek_acf_msg_type() directly.
+inline std::error_code peek_msg_type(const uint8_t* b, size_t len, uint8_t& out_msg_type) noexcept {
+    if (len < 1) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+    out_msg_type = peek_acf_msg_type(b);
+    return {};
+}
+
+// pad_len (ported from c-RCP's rcp_acf_pad_len()) returns the number of
+// zero pad octets (0-3) needed to bring `unpadded_len` octets of
+// header(+timestamp)+payload up to a whole number of quadlets — the unit
+// acf_msg_length is expressed in. A pure, additive utility: encode_acf_abb()
+// /encode_acf_gbb() below do NOT call this automatically (see this file's
+// own header comment for why — rcp/e2e.hpp's caller-owns-padding contract),
+// but a caller that wants c-RCP's own auto-pad accounting for a payload it
+// is about to hand to encode_acf_abb()/_gbb() can compute it here first.
+inline uint8_t pad_len(size_t unpadded_len) noexcept {
+    return static_cast<uint8_t>((4u - (unpadded_len % 4u)) % 4u);
+}
+
+// acf_msg_length is a 9-bit quadlet count (Table 4) — the largest ACF
+// message (header/timestamp + payload + pad) this codec can represent.
+// Ported from c-RCP's RCP_ACF_MAX_QUADLETS/RCP_ACF_ABB_MAX_PAYLOAD/
+// RCP_ACF_GBB_MAX_PAYLOAD. Informational only: encode_acf_abb()/
+// encode_acf_gbb() below mask acf_msg_length to 9 bits on encode (see
+// detail::kMsgLengthMask) rather than rejecting an oversized payload
+// outright, matching this codec's existing "always returns bytes, never an
+// error code" contract for those two functions (see this file's header
+// comment) — a caller that must not silently wrap can check a payload's
+// size against these bounds itself before encoding.
+constexpr uint16_t kAcfMaxQuadlets   = 0x1FFu;
+constexpr size_t   kAcfAbbMaxPayload = static_cast<size_t>(kAcfMaxQuadlets) * 4u - kAcfCommonHeaderLen;
+constexpr size_t   kAcfGbbMaxPayload = static_cast<size_t>(kAcfMaxQuadlets) * 4u - kAcfGbbMessageInfoLen;
 
 inline std::vector<uint8_t> encode_acf_abb(AcfMessageInfo info,
                                             const std::vector<uint8_t>& payload) {
@@ -428,6 +446,29 @@ inline std::vector<uint8_t> encode_acf_abb(AcfMessageInfo info,
     return buf;
 }
 
+// TODO(phase1-followup): c-RCP's rcp_acf_decode_abb()/_decode_gbb() are
+// stricter than this pair: they treat the decoded acf_msg_length*4 as the
+// message's authoritative byte length (rejecting a buffer shorter than
+// that declared length, RCP_ACF_ERR_SHORT_FRAME) and trim `pad` trailing
+// octets off of *out_payload_len so a caller never sees pad bytes as
+// payload. This codec deliberately keeps its existing, more lenient
+// contract instead — payload is simply "everything from the header to the
+// end of the buffer given" — because it is load-bearing for callers
+// outside this pass's Phase 17 scope (acf.hpp/avtp.hpp only): every real
+// payload builder in this tree (rcp/gpio.hpp, rcp/pwm.hpp, rcp/spi.hpp,
+// etc., dispatched through rcp/mock.hpp/rcp/l2.hpp/rcp/udp.hpp) hands
+// encode_acf_abb()/_gbb() an arbitrary-length payload without pre-padding
+// it to a quadlet boundary or setting AcfMessageInfo::pad, so
+// compute_acf_msg_length()'s ceiling-rounded acf_msg_length is not
+// generally byte-exact for those callers' frames — enforcing it strictly
+// on decode would reject frames this library's own encoders legitimately
+// produce today. tests/test_e2e.cpp also asserts today that decode does
+// NOT trim pad (its "ACF_GBB full-message layout..." test checks
+// `decoded_payload == payload` where `payload` still includes the literal
+// trailing pad byte). Revisit this once a later phase makes every payload
+// builder in this tree pre-pad via pad_len() (added above) and sets `pad`
+// accordingly, at which point c-RCP's stricter decode can be adopted
+// without rejecting frames this library itself still emits.
 inline std::error_code decode_acf_abb(const uint8_t* b, size_t len,
                                        AcfMessageInfo& out_info,
                                        std::vector<uint8_t>& out_payload) {
@@ -524,9 +565,10 @@ inline std::error_code decode_acf_messages(const uint8_t* b, size_t len, std::ve
             break;
         }
 
-        // For ACF_GBB the fixed part is the whole 16-byte spliced Message
-        // Info block (quadlet0 + timestamp + quadlet1); for ACF_ABB it is
-        // the contiguous 8-byte header.
+        // For ACF_GBB the fixed part is the whole 16-byte Message Info
+        // block (8-byte header + 8-byte message_timestamp, contiguous —
+        // see the "ACF_GBB Message Info wire geometry" section above); for
+        // ACF_ABB it is just the 8-byte header.
         const size_t fixed_len = is_gbb ? kAcfGbbMessageInfoLen : kAcfCommonHeaderLen;
         if (remaining < fixed_len) {
             if (out.empty()) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
@@ -672,6 +714,282 @@ enum class WireErrorCode : uint8_t {
 // ErrorResponse carries the numeric Table 27 code in.
 inline std::vector<uint8_t> encode_error_payload(WireErrorCode code) {
     return {static_cast<uint8_t>(code)};
+}
+
+// ── Response builders (ported from c-RCP's rcp_acf_build_error_response()/
+// _build_acknowledge_response()/_build_acknowledge_rejected_response()) ──────
+// These build a complete, ready-to-send ACF_ABB frame from just
+// (byte_bus_id, transaction_num[, error code]) — the minimum a caller
+// answering a request already knows — rather than requiring the caller to
+// first assemble an AcfMessageInfo (make_response() above still exists for
+// that lower-level use). All three encode as ACF_ABB (no timestamp),
+// matching c-RCP's own ABB/GBB-split convention; a caller needing a
+// timestamped variant builds its own ACF_GBB header with these same field
+// values and calls encode_acf_gbb() directly.
+
+// build_error_response builds a TC18 §12.9.6 Error Response: "The error
+// response shall contain the byte_bus_id and transaction number of the
+// request. The error response shall contain a byte_msg_payload with an
+// error code." evt = 0 (any value other than kEvtAcknowledge classifies the
+// same way once err is set — see response_kind_of()'s own logic above), err
+// = true, rsp = true. op is set true (c-RCP's RCP_ACF_OP_NONE, which always
+// wire-encodes as the write/no-data-response bit — see AcfMessageInfo::op's
+// own doc comment) to match c-RCP's rcp_acf_build_error_response() bit for
+// bit, even though op does not affect response_kind_of()'s classification
+// once err is set.
+inline std::vector<uint8_t> build_error_response(avtp::ByteBusId byte_bus_id,
+                                                  uint8_t transaction_num,
+                                                  WireErrorCode error_code) {
+    AcfMessageInfo info;
+    info.byte_bus_id     = byte_bus_id;
+    info.transaction_num = transaction_num;
+    info.op               = true;
+    info.rsp               = true;
+    info.err                = true;
+    return encode_acf_abb(info, encode_error_payload(error_code));
+}
+
+// evt_requests_acknowledge: TC18 §13.5's own opening statement, before its
+// per-endpoint-type evt[2:0] table: "evt[3] is used to request an
+// acknowledge. I.e. evt[3]=1 requests acknowledge." Universal across every
+// endpoint type (unlike evt[2:0], which is per-endpoint-type — see
+// evt_row2_is_plain() below).
+inline bool evt_requests_acknowledge(uint8_t evt) noexcept {
+    return (evt & 0x08u) != 0u;
+}
+
+// build_acknowledge_response builds a genuine Acknowledge
+// (ResponseKind::Acknowledge, evt[3:0] == kEvtAcknowledge) for a request
+// whose own evt[3] asked for one (evt_requests_acknowledge()) and that was
+// accepted into request storage — err = false, per TC18 §12.3.1.3 ("if
+// requested an acknowledge is sent after storing the request").
+inline std::vector<uint8_t> build_acknowledge_response(avtp::ByteBusId byte_bus_id,
+                                                         uint8_t transaction_num) {
+    AcfMessageInfo info;
+    info.byte_bus_id     = byte_bus_id;
+    info.transaction_num = transaction_num;
+    info.evt_ack           = true;
+    info.evt_op             = detail::kEvtOpMask; // together, evt[3:0] == 0xF == kEvtAcknowledge
+    info.op                  = true; // c-RCP's RCP_ACF_OP_NONE — see build_error_response()'s doc comment
+    info.rsp                  = true;
+    return encode_acf_abb(info, {});
+}
+
+// build_acknowledge_rejected_response builds TC18 §11.3.1's OTHER
+// Acknowledge shape, distinct from build_acknowledge_response() above: same
+// evt[3:0] == kEvtAcknowledge, but for a request that was never filed into
+// request storage at all — "err = 1 indicates that the request has been
+// rejected. The byte_msg_payload contains an error code." This is NOT the
+// same wire shape as build_error_response()'s §11.3.4 Error Response
+// (evt[3:0] < 0x9, err = 1): that shape is for a request already accepted
+// whose later execution fails; this one is for admission itself refusing to
+// file the request (e.g. request-store full, a malformed opcode). Both
+// shapes decode with err=1, but only this function's evt=0xF makes
+// response_kind_of() classify the response as Acknowledge rather than
+// ErrorResponse.
+inline std::vector<uint8_t> build_acknowledge_rejected_response(avtp::ByteBusId byte_bus_id,
+                                                                  uint8_t transaction_num,
+                                                                  WireErrorCode error_code) {
+    AcfMessageInfo info;
+    info.byte_bus_id     = byte_bus_id;
+    info.transaction_num = transaction_num;
+    info.evt_ack           = true;
+    info.evt_op             = detail::kEvtOpMask; // together, evt[3:0] == 0xF == kEvtAcknowledge
+    info.op                  = true; // c-RCP's RCP_ACF_OP_NONE — see build_error_response()'s doc comment
+    info.rsp                  = true;
+    info.err                  = true;
+    return encode_acf_abb(info, encode_error_payload(error_code));
+}
+
+// ── Request-side header validation (ported from c-RCP's
+// rcp_acf_request_header_constraints_valid()/_header_is_request()) ───────────
+
+// header_is_request: TC18's own rsp field description (Table 4) states
+// rsp=1b identifies a response; a decoded message with rsp=1 must not be
+// admitted as a request. A caller decoding an inbound frame it intends to
+// treat as a request should call this before admission and refuse the
+// frame if it returns false.
+inline bool header_is_request(const AcfMessageInfo& hdr) noexcept {
+    return !hdr.rsp;
+}
+
+// request_header_constraints_valid: true iff hdr's hs/rsp/err fields are
+// the fixed value TC18 requires on an encoded REQUEST: hs=false, rsp=false,
+// err=false unconditionally, and cs=false UNLESS cs_has_meaning is true —
+// compound-wait (TC18 §11.2.2.3 Table 8) and chained (§11.2.2.6 Table 11)
+// are the only two request kinds that assign cs a meaning of its own, so a
+// caller building one of those two kinds passes true; every other request
+// kind passes false. A pure, directly-testable validator, not an
+// encode_acf_abb()/_gbb()-time enforcement — those two functions are shared
+// by request AND response encoding (e.g. build_error_response() above
+// deliberately sets rsp=err=true), so they cannot force these fields to
+// their request-only values unconditionally.
+inline bool request_header_constraints_valid(const AcfMessageInfo& hdr, bool cs_has_meaning) noexcept {
+    if (hdr.hs) return false;
+    if (hdr.rsp) return false;
+    if (hdr.err) return false;
+    if (!cs_has_meaning && hdr.cs) return false;
+    return true;
+}
+
+// ── TC18 §13.5 Table 33's shared evt[2:0] rule for the {ADC, PWM_IN, I2C,
+// LIN, CAN, UART, ISELED, MDIO} endpoint-type row ─────────────────────────────
+// evt[2:0] = 000b is the only value a plain (non-configuration) request in
+// this row may carry — every other value is either reserved (001b-110b,
+// request shall be rejected with error code UNSUPPORTED_CMD) or selects an
+// entirely different, configuration-write-shaped request (111b, TC18
+// §12.7.1 Figure 18) that a plain read/write decoder should never accept.
+// Not meaningful for SPI or GPIO/PWM_OUT, which have their own dedicated
+// Table 33 rows with their own distinct rules.
+inline bool evt_row2_is_plain(uint8_t evt) noexcept {
+    return (evt & 0x7u) == 0u;
+}
+
+// ── TC18 §13.5.1: compound-wait's own, endpoint-type-independent evt[2:0]
+// rule ─────────────────────────────────────────────────────────────────────
+// compound-wait gives evt[2:0] an entirely different meaning than Table 33
+// gives it for a Standard request: it selects one of eight ways to compare
+// that request's own byte_msg_payload against the addressed endpoint's
+// current status, and this rule is the SAME across every endpoint type —
+// unlike Table 33, there is no per-endpoint-type row.
+
+namespace detail {
+constexpr uint8_t kCompoundWaitModeExact    = 0x0u;
+constexpr uint8_t kCompoundWaitModeAndOnes  = 0x1u;
+constexpr uint8_t kCompoundWaitModeAndZeros = 0x2u;
+constexpr uint8_t kCompoundWaitModeReserved = 0x3u;
+constexpr uint8_t kCompoundWaitModeHiGe     = 0x4u;
+constexpr uint8_t kCompoundWaitModeHiLe     = 0x5u;
+constexpr uint8_t kCompoundWaitModeLoGe     = 0x6u;
+constexpr uint8_t kCompoundWaitModeLoLe     = 0x7u;
+
+inline uint16_t be16(const uint8_t* p) noexcept {
+    return static_cast<uint16_t>((static_cast<uint16_t>(p[0]) << 8) | p[1]);
+}
+} // namespace detail
+
+// compound_wait_evt_valid: true iff (evt & 0x7) != 0x3 — every value except
+// the reserved 011b, which callers must reject with error code
+// UNSUPPORTED_CMD rather than passing to compound_wait_match() below (that
+// function's return value for a reserved evt is not a meaningful
+// "never matches" result — see its own doc comment).
+inline bool compound_wait_evt_valid(uint8_t evt) noexcept {
+    return (evt & 0x7u) != detail::kCompoundWaitModeReserved;
+}
+
+// compound_wait_match evaluates whether payload[0..payload_len) matches
+// status[0..status_len) under the comparison mode evt[2:0] selects. Callers
+// must call compound_wait_evt_valid(evt) first and reject a false result
+// (UNSUPPORTED_CMD) rather than calling this function — its own return
+// value for evt[2:0] == 011b is unconditionally false, not a meaningful
+// "reserved" signal distinct from a real non-match.
+//
+// Length rule (applies before any mode-specific comparison, per the
+// specification's own wording and its own SPI example — "only the first
+// four out of 20 received bytes will be checked when the byte_msg_payload
+// in the compound wait has only four bytes"): if status_len < payload_len
+// the condition never matches (false, regardless of mode and buffer
+// contents); otherwise status is compared only against its own first
+// payload_len bytes.
+//
+// Modes (evt[2:0]):
+//   000b exact match:        payload[0..n) == status[0..n), byte for byte.
+//   001b AND-with-1s-mask:   for every byte i, (payload[i] & status[i]) |
+//                            ~payload[i] == 0xFF — every payload bit that
+//                            is 1 must also be 1 in status.
+//   010b AND-with-0s-mask:   for every byte i, payload[i] & status[i] ==
+//                            0x00 — every payload bit that is 1 must be 0
+//                            in status.
+//   100b/101b: the first two bytes of payload's own leading quadlet, read
+//              big-endian, are >= (100b) or <= (101b) the same two bytes of
+//              status. Returns false (never reads OOB) if payload_len < 4.
+//   110b/111b: same as 100b/101b, but the LAST two bytes of the leading
+//              quadlet (payload[2..4)), same payload_len < 4 fail-safe.
+//
+// status/payload may be nullptr iff their respective length is 0.
+inline bool compound_wait_match(uint8_t evt, const uint8_t* payload, size_t payload_len,
+                                 const uint8_t* status, size_t status_len) noexcept {
+    const uint8_t mode = static_cast<uint8_t>(evt & 0x7u);
+
+    if (status_len < payload_len) return false;
+
+    switch (mode) {
+    case detail::kCompoundWaitModeExact:
+        if (payload_len == 0u) return true;
+        return std::equal(payload, payload + payload_len, status);
+
+    case detail::kCompoundWaitModeAndOnes:
+        for (size_t i = 0; i < payload_len; ++i) {
+            const uint8_t v = static_cast<uint8_t>((payload[i] & status[i]) | static_cast<uint8_t>(~payload[i]));
+            if (v != 0xFFu) return false;
+        }
+        return true;
+
+    case detail::kCompoundWaitModeAndZeros:
+        for (size_t i = 0; i < payload_len; ++i) {
+            if (static_cast<uint8_t>(payload[i] & status[i]) != 0x00u) return false;
+        }
+        return true;
+
+    case detail::kCompoundWaitModeHiGe:
+    case detail::kCompoundWaitModeHiLe:
+        if (payload_len < 4u) return false;
+        return (mode == detail::kCompoundWaitModeHiGe) ? (detail::be16(payload) >= detail::be16(status))
+                                                         : (detail::be16(payload) <= detail::be16(status));
+
+    case detail::kCompoundWaitModeLoGe:
+    case detail::kCompoundWaitModeLoLe:
+        if (payload_len < 4u) return false;
+        return (mode == detail::kCompoundWaitModeLoGe) ? (detail::be16(&payload[2]) >= detail::be16(&status[2]))
+                                                         : (detail::be16(&payload[2]) <= detail::be16(&status[2]));
+
+    case detail::kCompoundWaitModeReserved:
+    default:
+        return false;
+    }
+}
+
+// ── REQ-RMAP-069 (TC18 §13.7.1.2): EP0 register-write effective length ──────
+// "Effective number of bytes to be written to register map = (acf_msg_length
+// - 3) x 4 - pad - 2." acf_msg_length/pad are the decoded header fields of
+// the same name; this function does no decoding of its own. FIXED per c-RCP
+// (spec rebaseline to TC18 0.5.1_RC5, 2026-08-11): the 0.5.1_RC baseline's
+// formula omitted the trailing "- 2" term (the 2-octet register start
+// address that leads the byte payload); RC5 corrects it. Returns 0, never
+// underflowing to a huge size_t, if acf_msg_length is too small to contain
+// the fixed 3-quadlet region at all (< 3), or if pad plus the 2-octet
+// address exceeds what remains after subtracting it — both describe a
+// malformed or adversarial frame, and 0 effective data octets is this
+// function's own fail-safe reading of that, not an out-of-band error code.
+inline size_t reg_write_len(uint16_t acf_msg_length, uint8_t pad) noexcept {
+    if (acf_msg_length < 3u) return 0;
+    const size_t total_octets = static_cast<size_t>(acf_msg_length - 3u) * 4u;
+    const size_t overhead     = static_cast<size_t>(pad) + 2u;
+    if (overhead > total_octets) return 0;
+    return total_octets - overhead;
+}
+
+// ── Peeking a GBB frame's own request_type without a full kind-specific
+// decode ─────────────────────────────────────────────────────────────────────
+// Every conditional-request module (compound/triggered/chained/timed)
+// places its own request_type opcode at the SAME fixed offset: octet 0 of
+// the 8-byte message_timestamp region (frame offset kAcfCommonHeaderLen,
+// i.e. 8 — see the "ACF_GBB Message Info wire geometry" section above),
+// repurposed identically by every one of those modules. Returns true and
+// sets `out_request_type` to frame[8] iff frame_len >= 9 and the header's
+// own acf_msg_type is kAcfMsgTypeGbb; returns false (`out_request_type`
+// left unchanged) for an ACF_ABB frame (no request_type concept exists on
+// that wire shape) or a frame too short to hold byte_message_info(8) +
+// request_type(1). Does NOT itself validate that the returned byte is one
+// of the currently-defined request_type values.
+inline bool peek_gbb_request_type(const uint8_t* frame, size_t frame_len,
+                                   uint8_t& out_request_type) noexcept {
+    if (frame_len < 9u) return false;
+    AcfMessageInfo hdr;
+    decode_acf_message_info(frame, hdr);
+    if (hdr.acf_msg_type != kAcfMsgTypeGbb) return false;
+    out_request_type = frame[kAcfCommonHeaderLen];
+    return true;
 }
 
 // ── Timestamp fallback rules ──────────────────────────────────────────────────

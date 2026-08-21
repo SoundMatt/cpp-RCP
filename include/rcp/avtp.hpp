@@ -242,18 +242,47 @@ using ByteBusId = uint16_t;
 //   bytes20-21       stream_data_length(octets) — 16 bits; this is
 //                    TscfHeader::control_data_length's wire position
 //   bytes22-23       reserved, always 0
+// sv/version below are additive fields (Phase 17, ported from c-RCP's
+// rcp_avtp_ntscf_header_t/rcp_avtp_tscf_header_t, which round-trip both
+// through encode/decode rather than hardcoding them). Their defaults (true
+// / 0) reproduce this codec's own pre-existing hardcoded encode behavior
+// exactly, so no existing caller that leaves them at their defaults sees
+// any wire change.
 struct NtscfHeader {
+    bool     sv                  = true;  // stream_id valid; TC18 always sets this for NTSCF
+    uint8_t  version              = 0;     // AVTP version; always 0 in this spec revision
     StreamId stream_id{};
     uint8_t  sequence_num        = 0; // per-stream_id AVTPDU counter, 8-bit rolling
     uint16_t control_data_length = 0; // byte length of the ACF message that follows; wire field is 11 bits (0–2047)
 };
 
+// mr/tu/reserved0/reserved1 below are additive fields (Phase 17, ported
+// from c-RCP's rcp_avtp_tscf_header_t). mr and tv/tu are round-tripped
+// through encode/decode; reserved0/reserved1 are decode-only (encode always
+// zero-fills bytes 16-19/22-23 on the wire regardless of what a caller sets
+// here, matching c-RCP's rcp_avtp_encode_tscf() and this struct's own
+// pre-existing control_data_length/ntscf_data_length "derived, never
+// trusted, on encode" convention) — a genuinely nonzero reserved0/reserved1
+// after decode can only come from a real (possibly non-conformant, or
+// future-revision) wire frame; see tscf_reserved_all_zero() below for TC18
+// §13.3's own rule built on top of them.
 struct TscfHeader {
+    bool     sv                  = true; // stream_id valid; always 1 for TC18 use
+    uint8_t  version              = 0;    // AVTP version; always 0 in this spec revision
+    bool     mr                   = false; // media clock restart; round-tripped, no RCP-specific behavior
     StreamId stream_id{};
     uint8_t  sequence_num        = 0; // per-stream_id AVTPDU counter, 8-bit rolling
     uint16_t control_data_length = 0; // byte length of the ACF message that follows; wire field is a full 16 bits
     bool     timestamp_valid     = false; // "tv" — whether avtp_timestamp below is meaningful
     uint32_t avtp_timestamp      = 0;     // 32-bit; TSCF-only (extraction §2.6)
+    // "tu" — avtp_timestamp uncertain. TC18 §13.3's third rule: "In case
+    // the time stamp is uncertain (i.e. tu = 1), then this shall be
+    // executed as if tu = 0" — this codec does not itself branch on tu
+    // anywhere; it is decoded purely so a caller can still inspect the
+    // wire value (diagnostics, a future revision that does need it).
+    bool     tu                   = false;
+    uint32_t reserved0            = 0; // bytes 16-19; decode-only, see struct comment above
+    uint16_t reserved1            = 0; // bytes 22-23; decode-only, see struct comment above
 };
 
 constexpr size_t kNtscfHeaderLen = 12; // 1 subtype + 1 flags/length-hi + 1 length-lo + 1 seq + 8 stream_id
@@ -262,6 +291,8 @@ constexpr size_t kTscfHeaderLen  = 24; // kNtscfHeaderLen + 4 avtp_timestamp + 4
 namespace detail {
 constexpr uint8_t  kFlagStreamValid      = 0x80; // "sv" — always set for these control formats, byte1 bit7 in both headers
 constexpr uint8_t  kFlagTimestampValid   = 0x01; // "tv" — TSCF only, byte1 bit0 (NOT bit6 — see header comment above)
+constexpr uint8_t  kFlagMediaRestart     = 0x08; // "mr" — TSCF only, byte1 bit3
+constexpr uint8_t  kFlagTimestampUncertain = 0x01; // "tu" — TSCF only, byte3 bit0
 constexpr uint16_t kNtscfDataLengthMask  = 0x07FF; // ntscf_data_length is 11 bits wide
 } // namespace detail
 
@@ -269,7 +300,9 @@ inline std::vector<uint8_t> encode_ntscf_header(const NtscfHeader& h) {
     std::vector<uint8_t> buf(kNtscfHeaderLen, 0);
     const uint16_t data_len = static_cast<uint16_t>(h.control_data_length & detail::kNtscfDataLengthMask);
     buf[0] = kSubtypeNtscf;
-    buf[1] = static_cast<uint8_t>(detail::kFlagStreamValid | ((data_len >> 8) & 0x07));
+    buf[1] = static_cast<uint8_t>((h.sv ? detail::kFlagStreamValid : 0) |
+                                  ((h.version & 0x07) << 4) |
+                                  ((data_len >> 8) & 0x07));
     buf[2] = static_cast<uint8_t>(data_len & 0xFF);
     buf[3] = h.sequence_num;
     detail::put_u64(&buf[4], h.stream_id.to_u64());
@@ -280,6 +313,8 @@ inline std::error_code decode_ntscf_header(const uint8_t* b, size_t len, NtscfHe
     if (len < 1) return make_error_code(AvtpErrc::short_buffer);
     if (b[0] != kSubtypeNtscf) return make_error_code(AvtpErrc::bad_subtype);
     if (len < kNtscfHeaderLen) return make_error_code(AvtpErrc::short_buffer);
+    out.sv                  = (b[1] & detail::kFlagStreamValid) != 0;
+    out.version              = static_cast<uint8_t>((b[1] >> 4) & 0x07);
     out.control_data_length = static_cast<uint16_t>(((b[1] & 0x07) << 8) | b[2]);
     out.sequence_num        = b[3];
     out.stream_id           = StreamId::from_u64(detail::get_u64(&b[4]));
@@ -289,15 +324,18 @@ inline std::error_code decode_ntscf_header(const uint8_t* b, size_t len, NtscfHe
 inline std::vector<uint8_t> encode_tscf_header(const TscfHeader& h) {
     std::vector<uint8_t> buf(kTscfHeaderLen, 0);
     buf[0] = kSubtypeTscf;
-    buf[1] = static_cast<uint8_t>(detail::kFlagStreamValid |
+    buf[1] = static_cast<uint8_t>((h.sv ? detail::kFlagStreamValid : 0) |
+                                  ((h.version & 0x07) << 4) |
+                                  (h.mr ? detail::kFlagMediaRestart : 0) |
                                   (h.timestamp_valid ? detail::kFlagTimestampValid : 0));
     buf[2] = h.sequence_num;
-    // buf[3] (reserved + tu) stays 0.
+    buf[3] = static_cast<uint8_t>(h.tu ? detail::kFlagTimestampUncertain : 0);
     detail::put_u64(&buf[4], h.stream_id.to_u64());
     detail::put_u32(&buf[12], h.avtp_timestamp);
-    // buf[16..19] (reserved) stays 0.
+    // buf[16..19] (reserved0) stays 0 — always zero-filled on encode,
+    // regardless of h.reserved0 (decode-only field, see struct comment).
     detail::put_u16(&buf[20], h.control_data_length);
-    // buf[22..23] (reserved) stays 0.
+    // buf[22..23] (reserved1) stays 0 — same rule as reserved0 above.
     return buf;
 }
 
@@ -305,12 +343,116 @@ inline std::error_code decode_tscf_header(const uint8_t* b, size_t len, TscfHead
     if (len < 1) return make_error_code(AvtpErrc::short_buffer);
     if (b[0] != kSubtypeTscf) return make_error_code(AvtpErrc::bad_subtype);
     if (len < kTscfHeaderLen) return make_error_code(AvtpErrc::short_buffer);
+    out.sv                  = (b[1] & detail::kFlagStreamValid) != 0;
+    out.version              = static_cast<uint8_t>((b[1] >> 4) & 0x07);
+    out.mr                   = (b[1] & detail::kFlagMediaRestart) != 0;
     out.timestamp_valid     = (b[1] & detail::kFlagTimestampValid) != 0;
     out.sequence_num        = b[2];
+    out.tu                   = (b[3] & detail::kFlagTimestampUncertain) != 0;
     out.stream_id           = StreamId::from_u64(detail::get_u64(&b[4]));
     out.avtp_timestamp      = detail::get_u32(&b[12]);
+    out.reserved0            = detail::get_u32(&b[16]);
     out.control_data_length = detail::get_u16(&b[20]);
+    out.reserved1            = detail::get_u16(&b[22]);
     return {};
+}
+
+// ── REQ-TIMED-012, TC18 §11.2/§11.2.1: 48-bit gPTP-domain reconstruction of
+// a TSCF avtp_timestamp ────────────────────────────────────────────────────
+// "If received under TSCF header, [a request's] execution is postponed
+// until the presentation time has occurred" — a rule that applies to every
+// request kind, not just a timed-request-specific one. Evaluating it means
+// comparing avtp_timestamp (this header's own 32-bit, nanoseconds-modulo-
+// 2^32 IEEE 1722 field) against a 48-bit gPTP-domain clock — but a 32-bit
+// field cannot itself carry which of the (2^48 / 2^32) possible 48-bit
+// instants congruent to it mod 2^32 was actually intended, and IEEE 1722
+// leaves that reconstruction to the receiver.
+//
+// extend_timestamp resolves that ambiguity the same way every real
+// AVTP/gPTP receiver does (standard IEEE 1722 presentation-time
+// reconstruction, ported from c-RCP's rcp_avtp_extend_timestamp()): of the
+// several 48-bit instants congruent to wire_ts modulo 2^32, it returns
+// whichever is CLOSEST to reference_now. Naively zero-extending wire_ts (OR
+// -ing it onto reference_now's own high bits, unadjusted) is wrong whenever
+// wire_ts's low bits happen to be numerically smaller than reference_now's
+// — that reads a request meant for ~100ms in the future as ~4.29 seconds
+// (2^32 ns) in the past instead.
+//
+// The result is intended to be computed ONCE, at admission time
+// (reference_now = the current gPTP-domain clock at that moment), then
+// compared on every later tick against that same fixed result —
+// reference_now is a resolution anchor, not something the caller
+// re-supplies per tick.
+inline uint64_t extend_timestamp(uint32_t wire_ts, uint64_t reference_now) noexcept {
+    constexpr uint64_t period = uint64_t{1} << 32;
+    constexpr uint64_t half   = period / 2;
+    const uint64_t base       = reference_now & ~(period - 1);
+    uint64_t       candidate  = base | uint64_t{wire_ts};
+
+    if (candidate > reference_now && (candidate - reference_now) > half) {
+        // candidate is more than half a period ahead of reference_now —
+        // the instant one period earlier is the closer match.
+        candidate -= period;
+    } else if (candidate < reference_now && (reference_now - candidate) > half) {
+        // Symmetric case: one period later is closer.
+        candidate += period;
+    }
+    return candidate;
+}
+
+// ── Subtype dispatch & the TSCF-without-time-sync drop rule ────────────────
+// Ported from c-RCP's rcp_avtp_should_drop_tscf()/_tscf_reserved_all_zero(),
+// both governed by TC18 §13.3's own configurable disposition for a
+// TSCF-headed AVTPDU an RC Server cannot (or chooses not to) honor the
+// ordinary way.
+
+// peek_subtype reads just the subtype byte (offset 0) from a received
+// AVTPDU, so a caller can decide which of decode_ntscf_header()/
+// decode_tscf_header() to invoke without a full decode attempt first.
+inline std::error_code peek_subtype(const uint8_t* b, size_t len, uint8_t& out_subtype) noexcept {
+    if (len < 1) return make_error_code(AvtpErrc::short_buffer);
+    out_subtype = b[0];
+    return {};
+}
+
+// TscfFallback selects between TC18 §11.1's unconditional wording ("AVTPDUs
+// having a TSCF header are dropped, and no response send") and §13.3's own
+// alternative, more specific, explicitly configurable rule ("...or dropped,
+// depending on the configuration of the RC Server") for a TSCF-headed
+// AVTPDU an RC Server cannot honor the ordinary way — shared by
+// should_drop_tscf()'s unsupported-time-sync rule and
+// tscf_reserved_all_zero()'s reserved-bytes rule below, since both of
+// §13.3's own sentences describing them have the identical "...or dropped,
+// depending on the configuration..." shape. Drop (0) reproduces this
+// codec's own original, unconditional-drop disposition — a caller that
+// does not opt in sees no behavior change.
+enum class TscfFallback : uint8_t {
+    Drop   = 0, // drop the frame outright (this codec's default disposition)
+    Ignore = 1, // ignore the TSCF-specific semantics that could not be
+                // honored and process the request as if no presentation
+                // time were included
+};
+
+// REQ-AVTP-014/021: true iff `subtype` is kSubtypeTscf, time sync is not
+// supported, and `unsupported_time_sync_policy` is TscfFallback::Drop.
+// Returns false for every subtype other than kSubtypeTscf, regardless of
+// server_time_sync_supported or unsupported_time_sync_policy — this rule is
+// TSCF-only.
+inline bool should_drop_tscf(bool server_time_sync_supported, uint8_t subtype,
+                              TscfFallback unsupported_time_sync_policy) noexcept {
+    if (subtype != kSubtypeTscf) return false;
+    if (!server_time_sync_supported) return unsupported_time_sync_policy == TscfFallback::Drop;
+    return false;
+}
+
+// REQ-AVTP-022, TC18 §13.3's second configurable rule: "If the reserved
+// bytes in the header are all zero, then the request shall be queued as if
+// the header was in NTSCF format or dropped, depending on configuration."
+// Returns true iff hdr's own reserved0/reserved1 are both zero — callers
+// combine this with a caller-owned TscfFallback exactly the way
+// should_drop_tscf()'s own unsupported_time_sync_policy parameter is used.
+inline bool tscf_reserved_all_zero(const TscfHeader& hdr) noexcept {
+    return hdr.reserved0 == 0 && hdr.reserved1 == 0;
 }
 
 } // namespace avtp
