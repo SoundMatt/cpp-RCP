@@ -56,6 +56,42 @@ accepted. Unlike the pre-replacement sliding-window bitmap this spec
 supersedes, there is no window to exhaust — acceptance is a single
 comparison against the high-water mark.
 
+**STATUS CORRECTED 2026-08-21 (cpp-RCP issue #129 / RELAY Phase 17 Phase 2
+pass) — two distinct corrections, both documentation-only:**
+
+1. **Wiring gap, not algorithm gap.** This section previously implied
+   `RxSequenceGuard` — and by extension the SP1/SP2 properties verified
+   here — functions as a real, active mitigation for H-004. It does not:
+   `RxSequenceGuard` is **never instantiated anywhere outside its own unit
+   test** — not in `mock::Server`'s dispatch, and not in any transport
+   `Server`. SP1/SP2 are correctly verified properties of the
+   `RxSequenceGuard` *primitive itself*, but a formally-verified primitive
+   that nothing in this codebase calls provides no actual protection
+   against H-004 today. See `HARA.md`'s own corrected H-004 section for
+   the full account (mirroring c-RCP's own resolution of the identical
+   ambiguity, issues #601/#606). Wiring `RxSequenceGuard` into
+   `rcp/mock.hpp`'s dispatch is explicitly out of scope for this pass
+   (Phase 4/server-dispatch work) — this correction only makes this
+   section stop overstating what already-verified fact it establishes.
+2. **This spec models the pre-Phase-2-pass algorithm.** The same Phase 2
+   pass that produced this correction also content-corrected
+   `e2e::RxSequenceGuard`'s actual comparison rule against c-RCP's
+   `rcp_e2e_seq_evaluate()`: acceptance is now an RFC 1982 forward-window
+   comparison over the 8-bit AVTPDU `sequence_num` space (forward distance
+   in `[1, 127]`), not the plain non-wrapping `n > last_seq` this file's
+   `tla/RxSequenceGuard.tla` still models (its own `Accept(n)` action). A
+   non-wrapping model is a real behavioral divergence from the corrected
+   C++ implementation, not merely an abstraction choice the "Assumptions
+   and Abstractions" section below already accounts for (that section's
+   "unsigned 32-bit wrap-around... is not modelled directly" note predates
+   and does not cover this). Re-deriving `RxSequenceGuard.tla` (and its
+   `.cfg`) against the RFC 1982 rule — including the independent
+   `rx_seq_safestate_enable`-gated discontinuity signal this pass also
+   added — is **not undertaken in this pass** (a distinct formal-modeling
+   task, not a documentation fix); tracked as a follow-up. Until then,
+   SP1/SP2 as stated here should be read as verified properties of the
+   *prior* algorithm, not the current one.
+
 **ASIL tracing**: H-004 (request replay/out-of-order delivery), SG-004,
 REQ-E2E-007.
 
