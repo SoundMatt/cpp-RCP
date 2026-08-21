@@ -105,19 +105,22 @@ TEST_CASE("coverage_buffer layout is stream_id + avtp_timestamp + ACF header + p
 }
 
 // cpp-RCP-N2-03 / cpp-RCP-GBB-TS: for ACF_GBB the wire carries an 8-byte
-// message_timestamp *inside* the Message Info block, spliced between its
-// two header quadlets — the specification's single-ACF_GBB CRC-coverage
-// figure draws one "Byte Message Info" group whose rows are, in order,
-// the acf_msg_type/acf_msg_length/pad/mtv/rsv/byte_bus_id quadlet, then
-// message_time_stamp as a double-height 64-bit block, then the
-// evt/rsv/hs/cs/transaction_num/op/rsp/err/ms/read_size quadlet. The CRC
-// coverage buffer must reproduce that byte order exactly, because the CRC
-// has to cover the bytes actually transmitted. Before v2.22.0 this test
-// pinned the wrong layout (timestamp after *both* quadlets, at coverage
-// offset 20); the offsets below are derived from the figure, not from
-// coverage_buffer's own output.
-TEST_CASE("coverage_buffer splices the 8-byte message_timestamp between the ACF header's two "
-          "quadlets for ACF_GBB",
+// message_timestamp *inside* the Message Info block, immediately after the
+// complete 8-byte header (contiguous, not spliced between the header's two
+// quadlets) — the specification's single-ACF_GBB CRC-coverage figure draws
+// one "Byte Message Info" group whose rows are, in order, the
+// acf_msg_type/acf_msg_length/pad/mtv/rsv/byte_bus_id quadlet, then the
+// evt/rsv/hs/cs/transaction_num/op/rsp/err/ms/read_size quadlet, then
+// message_time_stamp as a double-height 64-bit block. The CRC coverage
+// buffer must reproduce that byte order exactly, because the CRC has to
+// cover the bytes actually transmitted. A prior pass (v2.22.0) spliced the
+// timestamp between the two quadlets instead; that was a regression against
+// c-RCP's confirmed-RC5-conformant `rcp_acf_encode_gbb()`, reverted during
+// the Phase 17 rewrite (cpp-RCP issue #129) — the offsets below are derived
+// from acf.hpp's actual `kAcfGbbTimestampOffset` (contiguous, after the full
+// header), not from a hand-derived figure.
+TEST_CASE("coverage_buffer places the 8-byte message_timestamp contiguously after the ACF "
+          "header's two quadlets for ACF_GBB",
           "[e2e][REQ-E2E-002]") {
     auto sid = make_stream_id(0x02, 0x0003);
     AcfMessageInfo info;
@@ -137,8 +140,8 @@ TEST_CASE("coverage_buffer splices the 8-byte message_timestamp between the ACF 
     // Fixed prefix: stream_id (8, big-endian) + avtp_timestamp (4).
     // Message Info block therefore begins at coverage offset 12:
     //   12..15  quadlet 0
-    //   16..23  message_timestamp, big-endian
-    //   24..27  quadlet 1
+    //   16..19  quadlet 1
+    //   20..27  message_timestamp, big-endian
     //   28..    payload
     const size_t mi_off = 8 + 4;
     // Quadlet 0: byte0 = (0x0D << 1) | 0 = 0x1A; byte2 has mtv (bit5) set
@@ -146,13 +149,14 @@ TEST_CASE("coverage_buffer splices the 8-byte message_timestamp between the ACF 
     REQUIRE(buf[mi_off + 0] == 0x1A);
     REQUIRE(buf[mi_off + 2] == 0x20);
     REQUIRE(buf[mi_off + 3] == 9);
-    // message_timestamp at block offset 4 (coverage offset 16), big-endian.
-    REQUIRE(buf[mi_off + 4]  == 0x01);
-    REQUIRE(buf[mi_off + 11] == 0x08);
-    // Quadlet 1 at block offset 12 (coverage offset 24): byte1 is
+    // Quadlet 1 at block offset 4 (coverage offset 16): byte1 is
     // transaction_num, which is the cheapest positive proof the second
-    // quadlet really moved from offset 4 to offset 12.
-    REQUIRE(buf[mi_off + 13] == 0x5A);
+    // quadlet stayed right after the first, not after the timestamp.
+    REQUIRE(buf[mi_off + 5] == 0x5A);
+    // message_timestamp at block offset 8 (coverage offset 20), big-endian,
+    // immediately after the complete header.
+    REQUIRE(buf[mi_off + 8]  == 0x01);
+    REQUIRE(buf[mi_off + 15] == 0x08);
     // Payload follows the complete 16-byte block, unchanged.
     REQUIRE(buf[mi_off + 16] == 0x11);
     REQUIRE(buf[mi_off + 17] == 0x22);
@@ -285,8 +289,8 @@ TEST_CASE("acf_msg_length end-to-end matches the specification's own worked exam
         REQUIRE(info.acf_msg_length == 7); // 0x07
 
         auto frame = encode_acf_gbb(info, ts, payload);
-        // 16-byte Message Info block (quadlet0 + 8-byte message_timestamp +
-        // quadlet1) + 8-byte payload = 24.
+        // 16-byte Message Info block (quadlet0 + quadlet1 + 8-byte
+        // message_timestamp, contiguous) + 8-byte payload = 24.
         REQUIRE(frame.size() == rcp::acf::kAcfGbbMessageInfoLen + payload.size()); // 16+8=24
 
         auto sid = make_stream_id(0x03, 1);
@@ -297,15 +301,15 @@ TEST_CASE("acf_msg_length end-to-end matches the specification's own worked exam
         REQUIRE((frame[0] & 0x01) == 0);
         REQUIRE(frame[1] == 7);
 
-        // The timestamp occupies octets 4..11 of the message, not 8..15 —
-        // this is the arithmetic the 0x07 figure only closes with the
-        // timestamp inside the Message Info block (4 + 8 + 4 + 8 + 4 = 28).
-        REQUIRE(frame[4]  == 0x11); // message_timestamp MSB
-        REQUIRE(frame[11] == 0x88); // message_timestamp LSB
-        // Quadlet 1 begins at octet 12; with every field left at its
-        // default in this fixture, all four of its bytes are 0.
-        REQUIRE(frame[12] == 0x00);
-        REQUIRE(frame[15] == 0x00);
+        // Quadlet 1 occupies octets 4..7, immediately after quadlet 0; with
+        // every field left at its default in this fixture, all four of its
+        // bytes are 0.
+        REQUIRE(frame[4] == 0x00);
+        REQUIRE(frame[7] == 0x00);
+        // The timestamp occupies octets 8..15 — contiguous, right after the
+        // complete 8-byte header, not spliced between the two quadlets.
+        REQUIRE(frame[8]  == 0x11); // message_timestamp MSB
+        REQUIRE(frame[15] == 0x88); // message_timestamp LSB
     }
 }
 
@@ -313,8 +317,11 @@ TEST_CASE("acf_msg_length end-to-end matches the specification's own worked exam
 // single-ACF_GBB CRC-coverage figure field for field: acf_msg_type = 0x0D,
 // acf_msg_length = 0x07, pad = 1, a 7-real-byte payload padded to 8, and a
 // trailing CRC32 — 28 octets total. Every octet position below comes from
-// that figure's row structure (quadlet 0 || 64-bit message_time_stamp ||
-// quadlet 1 || byte_msg_payload || CRC32), not from this codec's output.
+// that figure's row structure (quadlet 0 || quadlet 1 || 64-bit
+// message_time_stamp || byte_msg_payload || CRC32) — the timestamp is
+// contiguous right after the complete 8-byte header, not spliced between
+// the two quadlets — cross-checked against c-RCP's confirmed-RC5-conformant
+// `rcp_acf_encode_gbb()`, not derived from this codec's own output.
 TEST_CASE("ACF_GBB full-message layout matches the specification's CRC-coverage figure "
           "octet for octet",
           "[e2e][acf][REQ-WIRE-005][REQ-E2E-002]") {
@@ -340,16 +347,17 @@ TEST_CASE("ACF_GBB full-message layout matches the specification's CRC-coverage 
     //   [1]  = 0x07 & 0xFF                        = 0x07
     //   [2]  = (1 << 6) | (mtv << 5) | (0x123>>8) = 0x40|0x20|0x01 = 0x61
     //   [3]  = 0x123 & 0xFF                       = 0x23
-    //   [4..11] = message_timestamp, big-endian
-    //   [12] = (evt=0 << 4) | (hs=0 << 1) | cs=0  = 0x00
-    //   [13] = transaction_num                    = 0x42
-    //   [14] = (op << 7) | (0x0AB >> 8)           = 0x80|0x00 = 0x80
-    //   [15] = 0x0AB & 0xFF                       = 0xAB
+    //   [4]  = (evt=0 << 4) | (hs=0 << 1) | cs=0  = 0x00
+    //   [5]  = transaction_num                    = 0x42
+    //   [6]  = (op << 7) | (0x0AB >> 8)           = 0x80|0x00 = 0x80
+    //   [7]  = 0x0AB & 0xFF                       = 0xAB
+    //   [8..15] = message_timestamp, big-endian, immediately after the
+    //             complete 8-byte header
     //   [16..23] = byte_msg_payload (7 real + 1 pad)
     const std::vector<uint8_t> expected{
         0x1A, 0x07, 0x61, 0x23,
-        0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xF0, 0x0D,
         0x00, 0x42, 0x80, 0xAB,
+        0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xF0, 0x0D,
         0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0x00,
     };
 

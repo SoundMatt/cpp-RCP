@@ -92,54 +92,33 @@ TEST_CASE("ACF_GBB round-trips a 64-bit message_timestamp alongside the shared h
 }
 
 // ── Hand-computed expected-byte-sequence vectors ──────────────────────────────
-// Every byte below is computed by hand from the field values and this file's
-// own derived bit layout (see acf.hpp's "ACF shared header" comment) — not
-// copied from anywhere, and in particular not read back out of the
+// Every byte below is computed by hand from the field values and this
+// file's own derived bit layout (see acf.hpp's "ACF shared header" comment)
+// — not copied from anywhere, and in particular not read back out of the
 // encoder's own output (which would only prove the encoder agrees with
 // itself). Byte-by-byte derivation (MSB-first bit numbering, bit0 = MSB of
-// byte0, matching the specification's own diagrams):
+// byte0):
 //
-// Shared-header quadlet 0 (wire octets 0..3 of every ACF message):
+// byte_message_info, octets 0..7 (identical layout for ACF_ABB and
+// ACF_GBB — see acf.hpp's "ACF shared header" comment):
 //   byte0 = (acf_msg_type[6:0] << 1) | acf_msg_length[8]
 //   byte1 = acf_msg_length[7:0]
 //   byte2 = (pad[1:0] << 6) | (mtv << 5) | (rsv=00 << 3) | byte_bus_id[10:8]
 //   byte3 = byte_bus_id[7:0]
-// Shared-header quadlet 1:
-//   byte0 = (evt[3:0] << 4) | (rsv=00 << 2) | (hs << 1) | cs
+//   byte4 = (evt[3:0] << 4) | (rsv=00 << 2) | (hs << 1) | cs
 //     where evt[3:0] = (evt_ack << 3) | evt_op[2:0]
-//   byte1 = transaction_num
-//   byte2 = (op << 7) | (rsp << 6) | (err << 5) | (ms << 4) | read_size[11:8]
-//   byte3 = read_size[7:0]
+//   byte5 = transaction_num
+//   byte6 = (op << 7) | (rsp << 6) | (err << 5) | (ms << 4) | read_size[11:8]
+//   byte7 = read_size[7:0]
 //
-// The two quadlets' *positions* differ by message type, and this is the
-// one thing that must be pinned from the specification rather than from
-// this codec (see acf.hpp's kAcfGbbTimestampOffset comment block for the
-// full verification, summarized here):
-//
-//   ACF_ABB — no message_timestamp field exists at all:
-//     octets  0..3   quadlet 0
-//     octets  4..7   quadlet 1
-//     octets  8..    byte_msg_payload
-//
-//   ACF_GBB — the specification's single-ACF_GBB CRC-coverage figure draws
-//   one "Byte Message Info" group whose three rows are, in order, quadlet
-//   0, then message_time_stamp as a double-height 64-bit block, then
-//   quadlet 1; its compound-request figure (an mtv=0 ACF_GBB) likewise
-//   puts the fields that repurpose the timestamp slot between the same two
-//   quadlets; and its response-field table lists message_timestamp
-//   ("Present in ACF_GBB, omitted in ACF_ABB") between byte_bus_id
-//   (quadlet 0's last field) and evt (quadlet 1's first field):
-//     octets  0..3   quadlet 0
-//     octets  4..11  message_timestamp, big-endian
-//     octets 12..15  quadlet 1
-//     octets 16..    byte_msg_payload
-//   Arithmetic cross-check from the same figure: it states
-//   acf_msg_length = 0x07 quadlets = 28 octets for a 7-real-byte,
-//   1-pad-byte payload with a CRC32 trailer, and 4 + 8 + 4 + 8 + 4 = 28
-//   only works out with the timestamp inside the Message Info block. (Its
-//   ACF_ABB counterpart states 0x05 = 20 octets: 4 + 4 + 8 + 4 = 20.)
-//
-//   remaining bytes = payload, unchanged
+// ACF_ABB has no message_timestamp field at all — byte_msg_payload begins
+// immediately at octet 8. ACF_GBB appends the 64-bit message_timestamp
+// immediately AFTER this same 8-byte header (octets 8..15), then
+// byte_msg_payload at octet 16 — ported from c-RCP's acf.h/acf.c, this
+// project's RC5-conformant reference for this module (see acf.hpp's own
+// "ACF_GBB Message Info wire geometry" comment for the full derivation,
+// including c-RCP's own test_peek_gbb_request_type() and its
+// .fusa-reqs.json REQ-ACF-044 citation).
 
 TEST_CASE("ACF_ABB hand-computed expected byte sequence", "[acf][REQ-WIRE-004][REQ-WIRE-006]") {
     AcfMessageInfo info;
@@ -201,57 +180,49 @@ TEST_CASE("ACF_GBB hand-computed expected byte sequence", "[acf][REQ-WIRE-005][R
     info.ms                         = true;
     info.read_size_or_segment_num = 4095; // 12 bits, max value: 0xFFF
 
-    // Quadlet 0 (wire octets 0..3):
+    // byte_message_info, octets 0..7 (contiguous — see this file's own
+    // layout comment above):
     //   byte0 = (0x0D << 1) | (7 >> 8 & 1) = 0x1A | 0 = 0x1A
     //   byte1 = 7 & 0xFF = 0x07
     //   byte2 = (1 << 6) | (1 << 5) | (300 >> 8 & 7) = 0x40 | 0x20 | 0x01 = 0x61
     //   byte3 = 300 & 0xFF = 0x2C
-    // Quadlet 1 (wire octets 12..15 for ACF_GBB — see this file's layout
-    // comment above; these are octets 4..7 only for ACF_ABB):
-    //   byte0 = (0x3 << 4) | (0 << 1) | 1 = 0x30 | 0x01 = 0x31
-    //   byte1 = 200 = 0xC8
-    //   byte2 = 0 | (1<<6) | (1<<5) | (1<<4) | (4095 >> 8 & 0xF) = 0x40|0x20|0x10|0x0F = 0x7F
-    //   byte3 = 4095 & 0xFF = 0xFF
-    const std::vector<uint8_t> expected_q0 = {0x1A, 0x07, 0x61, 0x2C};
-    const std::vector<uint8_t> expected_q1 = {0x31, 0xC8, 0x7F, 0xFF};
+    //   byte4 = (0x3 << 4) | (0 << 1) | 1 = 0x30 | 0x01 = 0x31
+    //   byte5 = 200 = 0xC8
+    //   byte6 = 0 | (1<<6) | (1<<5) | (1<<4) | (4095 >> 8 & 0xF) = 0x40|0x20|0x10|0x0F = 0x7F
+    //   byte7 = 4095 & 0xFF = 0xFF
+    const std::vector<uint8_t> expected_header = {0x1A, 0x07, 0x61, 0x2C, 0x31, 0xC8, 0x7F, 0xFF};
     const uint64_t ts = 0x1122334455667788ULL;
     const std::vector<uint8_t> expected_ts = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
     const std::vector<uint8_t> payload = {0xAA, 0xBB, 0xCC, 0xDD};
 
     // The whole expected ACF_GBB message, written out as one literal at the
     // spec-derived octet positions rather than assembled from the encoder's
-    // own constants: quadlet 0 || message_timestamp || quadlet 1 || payload.
+    // own constants: byte_message_info || message_timestamp || payload.
     const std::vector<uint8_t> expected_frame = {
-        // octets 0..3   — quadlet 0
-        0x1A, 0x07, 0x61, 0x2C,
-        // octets 4..11  — message_timestamp, big-endian (spliced *between*
-        //                 the two header quadlets, per the specification's
-        //                 single-ACF_GBB CRC-coverage figure and its
-        //                 compound-request figure)
+        // octets 0..7   — byte_message_info (contiguous, same layout ACF_ABB uses)
+        0x1A, 0x07, 0x61, 0x2C, 0x31, 0xC8, 0x7F, 0xFF,
+        // octets 8..15  — message_timestamp, big-endian
         0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-        // octets 12..15 — quadlet 1
-        0x31, 0xC8, 0x7F, 0xFF,
         // octets 16..19 — byte_msg_payload
         0xAA, 0xBB, 0xCC, 0xDD,
     };
 
     auto frame = encode_acf_gbb(info, ts, payload);
-    REQUIRE(frame.size() == 20); // 4 + 8 + 4 + 4
+    REQUIRE(frame.size() == 20); // 8 + 8 + 4
     REQUIRE(frame == expected_frame);
 
     // Same assertion again, sliced field by field at literal offsets, so a
     // failure names which field moved rather than just "the buffer differs".
-    REQUIRE(std::vector<uint8_t>(frame.begin() + 0,  frame.begin() + 4)  == expected_q0);
-    REQUIRE(std::vector<uint8_t>(frame.begin() + 4,  frame.begin() + 12) == expected_ts);
-    REQUIRE(std::vector<uint8_t>(frame.begin() + 12, frame.begin() + 16) == expected_q1);
+    REQUIRE(std::vector<uint8_t>(frame.begin() + 0,  frame.begin() + 8)  == expected_header);
+    REQUIRE(std::vector<uint8_t>(frame.begin() + 8,  frame.begin() + 16) == expected_ts);
     REQUIRE(std::vector<uint8_t>(frame.begin() + 16, frame.end())        == payload);
 
-    // Regression guard for the pre-v2.22.0 layout specifically: back then
-    // octet 4 was transaction-info (quadlet 1's evt/hs/cs byte) and octet 8
-    // was the timestamp's first byte. Those two octets are the cheapest
-    // possible discriminator between the two layouts.
-    REQUIRE(frame[4] == 0x11); // timestamp MSB, not 0x31 (quadlet 1 byte0)
-    REQUIRE(frame[8] == 0x55); // still inside the timestamp, not 0x31 either
+    // Regression guard for the spliced-layout bug this pass reverts: under
+    // that (wrong) layout, octet 4 held quadlet 1's evt/hs/cs byte (0x31)
+    // and octet 8 held the timestamp's first byte (0x11). Under the correct
+    // contiguous layout it's the other way around.
+    REQUIRE(frame[4] == 0x31); // still inside the contiguous header, not the timestamp
+    REQUIRE(frame[8] == 0x11); // timestamp MSB, right after the 8-byte header
 
     // Decoding the hand-written literal (not the encoder's output) must
     // recover every field — this is the direction that proves the decoder
@@ -624,4 +595,404 @@ TEST_CASE("to_message carries message_timestamp only for ACF_GBB", "[acf][relay-
     gbb_info.acf_msg_type = kAcfMsgTypeGbb;
     auto gbb_msg = to_message(gbb_info, /*message_timestamp=*/0xDEADBEEF, {});
     REQUIRE(gbb_msg.timestamp == 0xDEADBEEF);
+}
+
+// ── Phase 17 (c-RCP port): message-type constants & GBB/ABB header-length relation ──
+
+TEST_CASE("ACF_ABB/ACF_GBB message type wire values", "[acf]") {
+    REQUIRE(kAcfMsgTypeAbb == 0x0E);
+    REQUIRE(kAcfMsgTypeGbb == 0x0D);
+}
+
+TEST_CASE("kAcfGbbMessageInfoLen is exactly kAcfCommonHeaderLen + 8", "[acf]") {
+    // The presence/absence of message_timestamp is the only structural
+    // difference between the two variants.
+    REQUIRE(kAcfCommonHeaderLen + 8 == kAcfGbbMessageInfoLen);
+}
+
+// ── pad_len (ported from c-RCP's rcp_acf_pad_len()) ───────────────────────────
+
+TEST_CASE("pad_len computes the octets needed to reach the next quadlet boundary", "[acf]") {
+    REQUIRE(pad_len(8) == 0);
+    REQUIRE(pad_len(9) == 3);
+    REQUIRE(pad_len(10) == 2);
+    REQUIRE(pad_len(11) == 1);
+    REQUIRE(pad_len(12) == 0);
+}
+
+// ── acf_msg_length / payload bounds (ported from c-RCP's RCP_ACF_MAX_QUADLETS
+// / RCP_ACF_ABB_MAX_PAYLOAD / RCP_ACF_GBB_MAX_PAYLOAD) ────────────────────────
+
+TEST_CASE("kAcfAbbMaxPayload/kAcfGbbMaxPayload are derived from the 9-bit acf_msg_length field", "[acf]") {
+    REQUIRE(kAcfMaxQuadlets == 0x1FF);
+    REQUIRE(kAcfAbbMaxPayload == static_cast<size_t>(kAcfMaxQuadlets) * 4 - kAcfCommonHeaderLen);
+    REQUIRE(kAcfGbbMaxPayload == static_cast<size_t>(kAcfMaxQuadlets) * 4 - kAcfGbbMessageInfoLen);
+    REQUIRE(kAcfGbbMaxPayload < kAcfAbbMaxPayload); // GBB's fixed region is 8 bytes larger
+}
+
+// ── peek_msg_type (ported from c-RCP's rcp_acf_peek_msg_type()) ──────────────
+
+TEST_CASE("peek_msg_type reads the first byte's acf_msg_type", "[acf]") {
+    AcfMessageInfo info;
+    auto frame = encode_acf_abb(info, {});
+    uint8_t msg_type = 0;
+    REQUIRE_FALSE(peek_msg_type(frame.data(), frame.size(), msg_type));
+    REQUIRE(msg_type == kAcfMsgTypeAbb);
+}
+
+TEST_CASE("peek_msg_type rejects an empty buffer", "[acf]") {
+    uint8_t msg_type = 0;
+    REQUIRE(peek_msg_type(nullptr, 0, msg_type));
+}
+
+// ── header_is_request / request_header_constraints_valid (ported from c-RCP's
+// rcp_acf_header_is_request()/_request_header_constraints_valid()) ───────────
+
+TEST_CASE("header_is_request is true for rsp=0 and false for rsp=1", "[acf]") {
+    AcfMessageInfo hdr;
+    REQUIRE(header_is_request(hdr)); // rsp=0: a request
+
+    hdr.rsp = true;
+    REQUIRE_FALSE(header_is_request(hdr)); // rsp=1: a response
+}
+
+TEST_CASE("request_header_constraints_valid accepts a fresh, unmodified request header", "[acf]") {
+    AcfMessageInfo hdr;
+    REQUIRE(request_header_constraints_valid(hdr, /*cs_has_meaning=*/false));
+}
+
+TEST_CASE("request_header_constraints_valid rejects hs/rsp/err set on a request", "[acf]") {
+    AcfMessageInfo hs_hdr;
+    hs_hdr.hs = true;
+    REQUIRE_FALSE(request_header_constraints_valid(hs_hdr, false));
+
+    AcfMessageInfo rsp_hdr;
+    rsp_hdr.rsp = true;
+    REQUIRE_FALSE(request_header_constraints_valid(rsp_hdr, false));
+
+    AcfMessageInfo err_hdr;
+    err_hdr.err = true;
+    REQUIRE_FALSE(request_header_constraints_valid(err_hdr, false));
+}
+
+TEST_CASE("request_header_constraints_valid rejects cs=1 unless cs_has_meaning", "[acf]") {
+    AcfMessageInfo hdr;
+    hdr.cs = true;
+    REQUIRE_FALSE(request_header_constraints_valid(hdr, /*cs_has_meaning=*/false));
+    REQUIRE(request_header_constraints_valid(hdr, /*cs_has_meaning=*/true));
+}
+
+// ── evt_row2_is_plain (TC18 §13.5 Table 33's ADC/PWM_IN/I2C/LIN/CAN/UART/
+// ISELED/MDIO row) ─────────────────────────────────────────────────────────
+
+TEST_CASE("evt_row2_is_plain is true only for evt[2:0] == 0", "[acf]") {
+    REQUIRE(evt_row2_is_plain(0x0));
+    for (uint8_t v = 1; v <= 6; ++v) {
+        REQUIRE_FALSE(evt_row2_is_plain(v));
+    }
+    REQUIRE_FALSE(evt_row2_is_plain(0x7)); // reserved config-write selector
+}
+
+TEST_CASE("evt_row2_is_plain ignores evt[3] (the ack-request bit)", "[acf]") {
+    // evt[3] is outside evt[2:0]'s 3-bit scope — a request with evt[3] set
+    // but evt[2:0] = 000b is still plain.
+    REQUIRE(evt_row2_is_plain(0x8));
+}
+
+// ── evt_requests_acknowledge (TC18 §13.5: "evt[3] is used to request an
+// acknowledge") ───────────────────────────────────────────────────────────
+
+TEST_CASE("evt_requests_acknowledge reflects evt[3] regardless of evt[2:0]", "[acf]") {
+    REQUIRE_FALSE(evt_requests_acknowledge(0x00));
+    REQUIRE_FALSE(evt_requests_acknowledge(0x07));
+    REQUIRE(evt_requests_acknowledge(0x08));
+    REQUIRE(evt_requests_acknowledge(0x0F));
+}
+
+// ── TC18 §13.5.1 compound-wait evt[2:0] comparison rule (ported from c-RCP's
+// rcp_acf_compound_wait_evt_valid()/_compound_wait_match()) ──────────────────
+
+TEST_CASE("compound_wait_evt_valid is true for every mode but the reserved one", "[acf]") {
+    REQUIRE(compound_wait_evt_valid(0x0));
+    REQUIRE(compound_wait_evt_valid(0x1));
+    REQUIRE(compound_wait_evt_valid(0x2));
+    REQUIRE(compound_wait_evt_valid(0x4));
+    REQUIRE(compound_wait_evt_valid(0x5));
+    REQUIRE(compound_wait_evt_valid(0x6));
+    REQUIRE(compound_wait_evt_valid(0x7));
+}
+
+TEST_CASE("compound_wait_evt_valid is false for evt[2:0] == 011b regardless of the upper bits", "[acf]") {
+    REQUIRE_FALSE(compound_wait_evt_valid(0x3));
+    REQUIRE_FALSE(compound_wait_evt_valid(0xB)); // 1011b
+    REQUIRE_FALSE(compound_wait_evt_valid(0xFB & 0x0F));
+}
+
+TEST_CASE("compound_wait_match: status shorter than payload never matches", "[acf]") {
+    const uint8_t payload[4] = {0x01, 0x02, 0x03, 0x04};
+    const uint8_t status[3]  = {0x01, 0x02, 0x03};
+
+    // Exact match on the shared 3-byte prefix would otherwise succeed — the
+    // length rule must short-circuit before any mode-specific comparison.
+    REQUIRE_FALSE(compound_wait_match(0x0, payload, sizeof(payload), status, sizeof(status)));
+}
+
+TEST_CASE("compound_wait_match caps status to payload_length (the specification's own SPI example)", "[acf]") {
+    const uint8_t payload[4] = {0x00, 0x00, 0x00, 0x02};
+    uint8_t       status[20];
+    std::fill(std::begin(status), std::end(status), uint8_t{0xAA}); // tail bytes: never read
+    status[0] = 0x00; status[1] = 0x00; status[2] = 0x00; status[3] = 0x02;
+
+    REQUIRE(compound_wait_match(0x0, payload, sizeof(payload), status, sizeof(status)));
+
+    // Changing a byte within the compared prefix must still be seen.
+    status[3] = 0x03;
+    REQUIRE_FALSE(compound_wait_match(0x0, payload, sizeof(payload), status, sizeof(status)));
+}
+
+TEST_CASE("compound_wait_match exact-match mode (evt[2:0] = 000b)", "[acf]") {
+    const uint8_t payload[2] = {0x01, 0x02};
+    const uint8_t equal[2]   = {0x01, 0x02};
+    const uint8_t differs[2] = {0x01, 0x03};
+
+    REQUIRE(compound_wait_match(0x0, payload, 2, equal, 2));
+    REQUIRE_FALSE(compound_wait_match(0x0, payload, 2, differs, 2));
+    REQUIRE(compound_wait_match(0x0, nullptr, 0, nullptr, 0));
+}
+
+TEST_CASE("compound_wait_match AND-with-1s-mask mode (evt[2:0] = 001b)", "[acf]") {
+    // The specification's own example: byte_msg_payload = 0x00000002 checks
+    // whether the second IO pin (bit 1) is asserted.
+    const uint8_t payload[4]    = {0x00, 0x00, 0x00, 0x02};
+    const uint8_t bit_set[4]    = {0x00, 0x00, 0x00, 0x02};
+    const uint8_t bit_clear[4]  = {0x00, 0x00, 0x00, 0x00};
+    const uint8_t other_bits[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+
+    REQUIRE(compound_wait_match(0x1, payload, 4, bit_set, 4));
+    REQUIRE_FALSE(compound_wait_match(0x1, payload, 4, bit_clear, 4));
+    // Payload's own 0-bits are don't-care: status's other set bits (which
+    // correspond to payload 0-bits) must not affect the outcome.
+    REQUIRE(compound_wait_match(0x1, payload, 4, other_bits, 4));
+}
+
+TEST_CASE("compound_wait_match AND-with-0s-mask mode (evt[2:0] = 010b)", "[acf]") {
+    const uint8_t payload[4]         = {0x00, 0x00, 0x00, 0x02};
+    const uint8_t bit_clear[4]       = {0x00, 0x00, 0x00, 0x00};
+    const uint8_t bit_set[4]         = {0x00, 0x00, 0x00, 0x02};
+    const uint8_t other_bits_only[4] = {0xFF, 0xFF, 0xFF, 0xFD};
+
+    REQUIRE(compound_wait_match(0x2, payload, 4, bit_clear, 4));
+    REQUIRE_FALSE(compound_wait_match(0x2, payload, 4, bit_set, 4));
+    REQUIRE(compound_wait_match(0x2, payload, 4, other_bits_only, 4));
+}
+
+TEST_CASE("compound_wait_match leading-quadlet hi-word >= mode (evt[2:0] = 100b)", "[acf]") {
+    const uint8_t payload[4] = {0x00, 0x0A, 0x00, 0x00}; // hi word = 10
+    const uint8_t lower[4]   = {0x00, 0x05, 0x00, 0x00}; // hi word = 5
+    const uint8_t higher[4]  = {0x00, 0x0F, 0x00, 0x00}; // hi word = 15
+    const uint8_t equal[4]   = {0x00, 0x0A, 0x00, 0x00};
+
+    REQUIRE(compound_wait_match(0x4, payload, 4, lower, 4));   // 10>=5
+    REQUIRE_FALSE(compound_wait_match(0x4, payload, 4, higher, 4)); // 10>=15
+    REQUIRE(compound_wait_match(0x4, payload, 4, equal, 4));   // 10>=10
+}
+
+TEST_CASE("compound_wait_match leading-quadlet hi-word <= mode (evt[2:0] = 101b)", "[acf]") {
+    const uint8_t payload[4] = {0x00, 0x0A, 0x00, 0x00}; // hi word = 10
+    const uint8_t lower[4]   = {0x00, 0x05, 0x00, 0x00};
+    const uint8_t higher[4]  = {0x00, 0x0F, 0x00, 0x00};
+    const uint8_t equal[4]   = {0x00, 0x0A, 0x00, 0x00};
+
+    REQUIRE_FALSE(compound_wait_match(0x5, payload, 4, lower, 4)); // 10<=5
+    REQUIRE(compound_wait_match(0x5, payload, 4, higher, 4));      // 10<=15
+    REQUIRE(compound_wait_match(0x5, payload, 4, equal, 4));       // 10<=10
+}
+
+TEST_CASE("compound_wait_match leading-quadlet lo-word >= mode (evt[2:0] = 110b)", "[acf]") {
+    const uint8_t payload[4] = {0xFF, 0xFF, 0x00, 0x0A}; // lo word = 10
+    const uint8_t lower[4]   = {0xFF, 0xFF, 0x00, 0x05}; // lo word = 5
+    const uint8_t higher[4]  = {0xFF, 0xFF, 0x00, 0x0F}; // lo word = 15
+
+    REQUIRE(compound_wait_match(0x6, payload, 4, lower, 4));       // 10>=5
+    REQUIRE_FALSE(compound_wait_match(0x6, payload, 4, higher, 4)); // 10>=15
+}
+
+TEST_CASE("compound_wait_match leading-quadlet lo-word <= mode (evt[2:0] = 111b)", "[acf]") {
+    const uint8_t payload[4] = {0xFF, 0xFF, 0x00, 0x0A}; // lo word = 10
+    const uint8_t lower[4]   = {0xFF, 0xFF, 0x00, 0x05};
+    const uint8_t higher[4]  = {0xFF, 0xFF, 0x00, 0x0F};
+
+    REQUIRE_FALSE(compound_wait_match(0x7, payload, 4, lower, 4)); // 10<=5
+    REQUIRE(compound_wait_match(0x7, payload, 4, higher, 4));      // 10<=15
+}
+
+TEST_CASE("compound_wait_match ge/le modes reject a payload shorter than one quadlet", "[acf]") {
+    const uint8_t payload[3] = {0x00, 0x0A, 0x00};
+    const uint8_t status[3]  = {0x00, 0x00, 0x00};
+
+    REQUIRE_FALSE(compound_wait_match(0x4, payload, 3, status, 3));
+    REQUIRE_FALSE(compound_wait_match(0x5, payload, 3, status, 3));
+    REQUIRE_FALSE(compound_wait_match(0x6, payload, 3, status, 3));
+    REQUIRE_FALSE(compound_wait_match(0x7, payload, 3, status, 3));
+}
+
+TEST_CASE("compound_wait_match reserved mode (evt[2:0] = 011b) always returns false", "[acf]") {
+    // Callers must gate on compound_wait_evt_valid() first; this pins the
+    // function's own defined (always-false) behavior if they don't.
+    const uint8_t payload[2] = {0x01, 0x02};
+    REQUIRE_FALSE(compound_wait_match(0x3, payload, 2, payload, 2));
+}
+
+// ── reg_write_len (TC18 §13.7.1.2, RC5-corrected formula) ────────────────────
+
+TEST_CASE("reg_write_len computes the EP0 register-write effective length", "[acf]") {
+    // (acf_msg_length - 3) * 4 - pad - 2.
+    REQUIRE(reg_write_len(5, 0) == (5 - 3) * 4 - 0 - 2);
+    REQUIRE(reg_write_len(7, 1) == (7 - 3) * 4 - 1 - 2);
+}
+
+TEST_CASE("reg_write_len fails safe to 0 rather than underflowing", "[acf]") {
+    REQUIRE(reg_write_len(0, 0) == 0);
+    REQUIRE(reg_write_len(2, 0) == 0); // < 3 quadlets: no room for the fixed region at all
+    REQUIRE(reg_write_len(3, 255) == 0); // pad + address overhead exceeds what's left
+}
+
+// ── peek_gbb_request_type (conditional-request modules' shared repurposed-
+// timestamp-region accessor) ──────────────────────────────────────────────
+
+TEST_CASE("peek_gbb_request_type reads frame[8] for a genuine GBB frame", "[acf]") {
+    AcfMessageInfo info;
+    auto frame = encode_acf_gbb(info, /*message_timestamp=*/0, {});
+    // Repurpose the timestamp region's first octet, as the conditional-
+    // request modules (compound/triggered/chained/timed) do when mtv=0.
+    REQUIRE(frame.size() > kAcfCommonHeaderLen);
+    frame[kAcfCommonHeaderLen] = 0x0F;
+
+    uint8_t request_type = 0xFF;
+    REQUIRE(peek_gbb_request_type(frame.data(), frame.size(), request_type));
+    REQUIRE(request_type == 0x0F);
+}
+
+TEST_CASE("peek_gbb_request_type rejects an ACF_ABB frame outright", "[acf]") {
+    AcfMessageInfo info;
+    std::vector<uint8_t> frame = encode_acf_abb(info, {0x0F});
+
+    uint8_t request_type = 0xFF;
+    REQUIRE_FALSE(peek_gbb_request_type(frame.data(), frame.size(), request_type));
+    REQUIRE(request_type == 0xFF); // left unchanged
+}
+
+TEST_CASE("peek_gbb_request_type rejects a GBB frame too short to hold the request_type octet", "[acf]") {
+    AcfMessageInfo info;
+    auto frame = encode_acf_gbb(info, 0, {});
+    frame.resize(kAcfCommonHeaderLen); // exactly the 8-byte header, no request_type octet
+
+    uint8_t request_type = 0xFF;
+    REQUIRE_FALSE(peek_gbb_request_type(frame.data(), frame.size(), request_type));
+    REQUIRE(request_type == 0xFF);
+}
+
+// ── Response builders (ported from c-RCP's rcp_acf_build_error_response()/
+// _build_acknowledge_response()/_build_acknowledge_rejected_response()) ──────
+
+TEST_CASE("build_error_response carries byte_bus_id, transaction_num, and the error code", "[acf]") {
+    auto resp = build_error_response(7, 200, WireErrorCode::ReqStorageOverflow);
+
+    AcfMessageInfo hdr;
+    std::vector<uint8_t> payload;
+    REQUIRE_FALSE(decode_acf_abb(resp.data(), resp.size(), hdr, payload));
+    REQUIRE(response_kind_of(hdr) == ResponseKind::ErrorResponse);
+    REQUIRE(hdr.err == true);
+    REQUIRE(hdr.rsp == true);
+    REQUIRE(hdr.byte_bus_id == 7);
+    REQUIRE(hdr.transaction_num == 200);
+    REQUIRE(payload.size() == 1);
+    REQUIRE(payload[0] == static_cast<uint8_t>(WireErrorCode::ReqStorageOverflow));
+}
+
+TEST_CASE("build_error_response never classifies as Acknowledge", "[acf]") {
+    auto resp = build_error_response(1, 1, WireErrorCode::UnsupportedCmd);
+
+    AcfMessageInfo hdr;
+    std::vector<uint8_t> payload;
+    REQUIRE_FALSE(decode_acf_abb(resp.data(), resp.size(), hdr, payload));
+    uint8_t evt = static_cast<uint8_t>((hdr.evt_ack ? 0x08 : 0) | (hdr.evt_op & 0x07));
+    REQUIRE(evt != kEvtAcknowledge);
+    REQUIRE(response_kind_of(hdr) == ResponseKind::ErrorResponse);
+}
+
+TEST_CASE("build_acknowledge_rejected_response carries byte_bus_id, transaction_num, and the error code",
+          "[acf]") {
+    auto resp = build_acknowledge_rejected_response(7, 200, WireErrorCode::ReqStorageOverflow);
+
+    AcfMessageInfo hdr;
+    std::vector<uint8_t> payload;
+    REQUIRE_FALSE(decode_acf_abb(resp.data(), resp.size(), hdr, payload));
+    REQUIRE(response_kind_of(hdr) == ResponseKind::Acknowledge);
+    uint8_t evt = static_cast<uint8_t>((hdr.evt_ack ? 0x08 : 0) | (hdr.evt_op & 0x07));
+    REQUIRE(evt == kEvtAcknowledge);
+    REQUIRE(hdr.err == true);
+    REQUIRE(hdr.rsp == true);
+    REQUIRE(hdr.byte_bus_id == 7);
+    REQUIRE(hdr.transaction_num == 200);
+    REQUIRE(payload.size() == 1);
+    REQUIRE(payload[0] == static_cast<uint8_t>(WireErrorCode::ReqStorageOverflow));
+}
+
+TEST_CASE("build_acknowledge_rejected_response differs from build_error_response only in evt",
+          "[acf]") {
+    // Pins the distinction directly: same transaction_num/error code, but
+    // the two builders' own responses must classify differently
+    // (Acknowledge vs Error), and only the rejected-acknowledge shape's own
+    // evt is 0xF.
+    auto ack_resp = build_acknowledge_rejected_response(3, 55, WireErrorCode::UnsupportedCmd);
+    auto err_resp = build_error_response(3, 55, WireErrorCode::UnsupportedCmd);
+
+    AcfMessageInfo ack_hdr, err_hdr;
+    std::vector<uint8_t> ack_payload, err_payload;
+    REQUIRE_FALSE(decode_acf_abb(ack_resp.data(), ack_resp.size(), ack_hdr, ack_payload));
+    REQUIRE_FALSE(decode_acf_abb(err_resp.data(), err_resp.size(), err_hdr, err_payload));
+
+    REQUIRE(response_kind_of(ack_hdr) == ResponseKind::Acknowledge);
+    REQUIRE(response_kind_of(err_hdr) == ResponseKind::ErrorResponse);
+    // Both carry err=1 and the same payload octet — only evt tells them apart.
+    REQUIRE(ack_hdr.err == true);
+    REQUIRE(err_hdr.err == true);
+    REQUIRE(ack_payload[0] == err_payload[0]);
+}
+
+TEST_CASE("build_acknowledge_response builds a genuine Acknowledge with no payload", "[acf]") {
+    auto resp = build_acknowledge_response(5, 9);
+
+    AcfMessageInfo hdr;
+    std::vector<uint8_t> payload;
+    REQUIRE_FALSE(decode_acf_abb(resp.data(), resp.size(), hdr, payload));
+    REQUIRE(response_kind_of(hdr) == ResponseKind::Acknowledge);
+    REQUIRE(hdr.err == false);
+    REQUIRE(hdr.rsp == true);
+    REQUIRE(hdr.byte_bus_id == 5);
+    REQUIRE(hdr.transaction_num == 9);
+    REQUIRE(payload.empty());
+}
+
+// ── GBB worked-example pin, adapted to this codec's caller-owns-padding
+// convention (GBB counterpart of the existing ABB
+// "acf_msg_length/pad wire bits round-trip..." test above) ───────────────────
+
+TEST_CASE("ACF_GBB acf_msg_length/pad wire bits round-trip the specification's own worked-example "
+          "values",
+          "[acf][REQ-WIRE-005]") {
+    AcfMessageInfo info;
+    info.acf_msg_length = 7; // Message Info+timestamp (4 quadlets) + padded payload (2) + CRC trailer (1)
+    info.pad             = 1; // 7 payload bytes + 1 pad byte = 8 bytes = 2 quadlets
+    info.mtv              = true;
+    std::vector<uint8_t> payload(8, 0); // 7 "real" + 1 padding byte, caller-padded per convention
+
+    auto frame = encode_acf_gbb(info, /*message_timestamp=*/0x1122334455667788ULL, payload);
+    AcfMessageInfo out;
+    uint64_t out_ts = 0;
+    std::vector<uint8_t> out_payload;
+    REQUIRE_FALSE(decode_acf_gbb(frame.data(), frame.size(), out, out_ts, out_payload));
+    REQUIRE(out.acf_msg_length == 7);
+    REQUIRE(out.pad == 1);
 }
