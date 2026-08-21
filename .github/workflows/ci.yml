@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, rewrite/v3-from-c-rcp]
   pull_request:
-    branches: [main]
+    branches: [main, rewrite/v3-from-c-rcp]
   workflow_dispatch:
 
 concurrency:
