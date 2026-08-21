@@ -60,9 +60,12 @@
 // extension of a pre-existing dispatch_uart(); see dispatch_uart's own
 // comment for why UART needed its own req.op-branching shape; ISELED's is
 // this header's FIRST wiring of rcp::iseled::IseledEndpoint at all — see
-// dispatch_iseled's own comment for why it decodes/encodes the wire
-// payload via ISELED's own existing Figure 40/41 codec rather than passing
-// raw bytes through untouched; MDIO's is this header's FIRST wiring of
+// dispatch_iseled's own comment for why it passes the raw byte_msg_payload
+// straight through to IseledEndpoint::handle_request, same as dispatch_i2c/
+// dispatch_lin do (Phase 3's rcp/iseled.hpp rewrite replaced its earlier
+// structured Address/Data ACF-payload model with the same raw-byte-stream
+// codec I2C/LIN already use — see rcp/iseled.hpp's own header comment);
+// MDIO's is this header's FIRST wiring of
 // rcp::mdio::MdioEndpoint at all — see dispatch_mdio's own comment for why,
 // unlike ISELED, no MDIO byte-level wire codec exists anywhere in this
 // codebase to decode/encode against, and what deliberately simplified
@@ -214,8 +217,6 @@ inline acf::WireErrorCode wire_error_code_for(const std::error_code& ec) noexcep
         return acf::WireErrorCode::InvalidParameter; // write payload would overflow the TX queue — client-caused, same rationale as read_size_exceeds_bound above
     if (ec == make_error_code(iseled::IseledErrc::config_write_not_supported))
         return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
-    if (ec == make_error_code(iseled::IseledErrc::field_out_of_range))
-        return acf::WireErrorCode::InvalidParameter; // instruction/address/data exceeds its documented wire field width — client-caused, same rationale as avtp::short_buffer's mapping above
     if (ec == make_error_code(mdio::MdioErrc::config_write_not_supported))
         return acf::WireErrorCode::UnsupportedCmd; // evt[2:0]==111b config-write, not yet implemented by this mock
     if (ec == make_error_code(mdio::MdioErrc::payload_exceeds_mode_width))
@@ -351,19 +352,18 @@ public:
     // dispatched read request drains whatever rx_fill() has already put
     // there.
 
-    // set_iseled_response scripts the IseledResponse (address/data) value a
-    // subsequent dispatch()-driven ISELED transaction records — the same
-    // "test scripts the bus, this mock does not model actual hardware"
-    // pattern set_i2c_response/set_lin_response above already establish.
-    // Unlike those two, which script a raw byte vector, ISELED's response
-    // is already a fixed Address/Data struct (Figure 41), so this scripts
-    // that struct directly rather than a byte vector. Applies to the next
+    // set_iseled_response scripts the raw response bytes a subsequent
+    // dispatch()-driven ISELED read transaction records — the same "test
+    // scripts the bus, this mock does not model actual hardware" pattern
+    // set_i2c_response/set_lin_response above already establish (ISELED's
+    // ACF-level codec is a raw byte stream, same as I2C/LIN — see
+    // rcp/iseled.hpp's own header comment on why it is not the earlier,
+    // now-replaced structured Address/Data model). Applies to the next
     // plain (evt[2:0]==000b) ISELED request only in spirit — like
     // set_i2c_response, it stays in effect until overwritten, there is no
-    // auto-clear. Defaults to IseledResponse{0, 0} (a validly in-range,
-    // all-zero response) until first called.
-    void set_iseled_response(iseled::IseledResponse response) {
-        iseled_response_ = response;
+    // auto-clear. Defaults to an empty response until first called.
+    void set_iseled_response(std::vector<uint8_t> response) {
+        iseled_response_ = std::move(response);
     }
 
     // No set_mdio_response()-shaped hook here either, but for yet a
@@ -744,39 +744,28 @@ private:
         return {};
     }
 
-    // ISELED, same as I2C/LIN (extraction §13.7.12.3), pairs a request with
-    // a full Address/Data response in a single transaction rather than a
-    // read/write-branched register — this dispatch path does not branch on
+    // ISELED, same as I2C/LIN (§13.7.12.3), operates on the raw
+    // byte_msg_payload directly — this dispatch path does not branch on
     // req.op either, same rationale as dispatch_i2c/dispatch_lin's own
-    // comment. Unlike I2C/LIN, whose transfer()/handle_request calls
-    // operate on raw std::vector<uint8_t> payload bytes directly, ISELED
-    // already has a real Figure 40/41 byte-level codec
-    // (encode_iseled_request/decode_iseled_request,
-    // encode_iseled_response/decode_iseled_response — see rcp/iseled.hpp's
-    // own header comment on why those exist and what they do and do not
-    // cover), so this dispatch path decodes `payload` into an
-    // IseledRequest via decode_iseled_request and encodes
-    // IseledEndpoint::handle_request's resulting response back via
-    // encode_iseled_response, rather than passing raw bytes through
-    // untouched the way dispatch_i2c/dispatch_lin do — this is calling
-    // rcp/iseled.hpp's own pre-existing codec, not inventing a new one.
-    // Table 33 Row 2's 3-way Plain/Reserved/ConfigWrite classification
-    // (rcp::endpoint::evt_row2_kind_of) is checked by handle_request
-    // itself, before request/response is ever recorded by transact() — see
+    // comment, and passes `payload` straight to
+    // IseledEndpoint::handle_request unchanged, the same "mock has already
+    // ACF-decoded the frame, so it calls the endpoint's own dispatch entry
+    // point with the raw payload rather than re-invoking rcp/iseled.hpp's
+    // own encode/decode_command_request() codec a second time" pattern
+    // dispatch_i2c uses. Table 33 Row 2's 3-way Plain/Reserved/ConfigWrite
+    // classification (rcp::endpoint::evt_row2_kind_of) is checked by
+    // handle_request itself, before anything is recorded — see
     // handle_request's own doc comment for why a Reserved or ConfigWrite
     // evt must never reach it.
     //
     // This mock has no real ISELED daisy-chain hardware behind it (same
     // disclaimer every other endpoint type in this file carries), so the
-    // Address/Data response value transact() records is whatever
-    // set_iseled_response() last scripted (default-constructed,
-    // IseledResponse{0, 0}, if never called) — the same "test scripts the
-    // bus, this mock does not model actual hardware" pattern
-    // set_i2c_response/set_lin_response already establish for their own
-    // bus-transfer models. A successful request's response payload is
-    // whatever handle_request recorded, encoded back via
-    // encode_iseled_response, answered as a ReadResponse, mirroring
-    // dispatch_i2c/dispatch_lin's read-response shape.
+    // response bytes recorded on a successful Plain request are whatever
+    // set_iseled_response() last scripted (empty if never called) — the
+    // same "test scripts the bus, this mock does not model actual
+    // hardware" pattern set_i2c_response/set_lin_response already establish
+    // for their own bus-transfer models. Answered as a ReadResponse,
+    // mirroring dispatch_i2c/dispatch_lin's read-response shape.
     std::error_code dispatch_iseled(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                      acf::AcfMessageInfo& out_resp,
                                      std::vector<uint8_t>& out_resp_payload) noexcept {
@@ -784,12 +773,10 @@ private:
             return set_error_response(req, make_error_code(regmap::RegMapErrc::request_rejected),
                                        out_resp, out_resp_payload);
         }
-        iseled::IseledRequest request;
-        auto ec = iseled::decode_iseled_request(payload.data(), payload.size(), request);
+        auto ec = iseled_.handle_request(req.evt_op, payload);
         if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
-        ec = iseled_.handle_request(req.evt_op, request, iseled_response_);
-        if (ec) return set_error_response(req, ec, out_resp, out_resp_payload);
-        out_resp_payload = iseled::encode_iseled_response(iseled_.last_response());
+        iseled_.receive(iseled_response_);
+        out_resp_payload = iseled_.last_received();
         out_resp = acf::make_response(req, req.evt_ack ? acf::ResponseKind::Acknowledge
                                                           : acf::ResponseKind::ReadResponse);
         return {};
@@ -801,9 +788,10 @@ private:
     // request itself, so read vs write really is a different operation
     // here, not a single full-duplex/raw-transfer call the way SPI/I2C/
     // LIN's dispatch paths stay op-agnostic (see dispatch_uart's own
-    // comment for the identical rationale). Unlike ISELED, which already
-    // has a real Figure 40/41 byte-level codec to decode/encode `payload`
-    // against, NO MDIO byte-level wire codec (Figure 43/Table 60) exists
+    // comment for the identical rationale). Unlike ISELED/I2C/LIN, whose
+    // ACF byte_msg_payload IS the raw wire content itself (no further
+    // decode needed at this dispatch layer), NO MDIO byte-level wire codec
+    // (Figure 43/Table 60) exists
     // anywhere in this codebase yet — mdio.hpp deliberately stops at the
     // (mode, mdio_address, mdio_payload) struct level (see its own header
     // comment on the addressing-model fix), the same gap dispatch_can's own
@@ -876,7 +864,7 @@ private:
     std::deque<uint16_t>       adc_samples_{};
     std::vector<uint8_t>       lin_response_{};
     bool                       lin_responded_ = true;
-    iseled::IseledResponse     iseled_response_{};
+    std::vector<uint8_t>       iseled_response_{};
 };
 
 } // namespace mock
