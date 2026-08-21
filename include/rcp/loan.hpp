@@ -64,8 +64,21 @@
 // (see loan()'s own release closure below) instead of growing the free
 // list further — the same degradation c-RCP's own pool_append() documents,
 // never a leak or corruption, only a forfeited reuse opportunity.
+//
+// ── Phase 17 allocation fault-injection seam (cpp-RCP issue #129) ───────────
+// loan()'s cache-miss branch below (`new std::vector<uint8_t>(size, 0)`) is
+// a genuine heap allocation this codebase previously had no way to
+// deterministically fail in a test -- unlike this file's own kPoolMaxEntries
+// bound above, which is a size_ >= Capacity comparison with nothing to
+// allocate at all. BufferPool now optionally accepts an rcp::alloc::
+// FaultInjector* (default nullptr -- fully backward compatible; every
+// existing construction site, including new_buffer_pool(), is unaffected)
+// so that call site can be exercised via fault injection. See rcp/
+// alloc.hpp's own header comment for why this is an opt-in, instance-owned
+// seam rather than a global allocator hook.
 #pragma once
 
+#include "alloc.hpp"
 #include "rcp.hpp"
 
 #include <array>
@@ -83,6 +96,16 @@ constexpr size_t kPoolMaxEntries = 64;
 
 class BufferPool {
 public:
+    BufferPool() = default;
+
+    // fault_injector, when non-null, is consulted (should_fail()) before
+    // this pool's one genuine allocation call site — the cache-miss branch
+    // of loan() below — actually allocates. Optional and defaulted to
+    // nullptr so every pre-existing construction site (including
+    // new_buffer_pool()) is unaffected; see this file's own header comment.
+    // fault_injector is not owned by this pool and must outlive it.
+    explicit BufferPool(alloc::FaultInjector* fault_injector) : fault_injector_(fault_injector) {}
+
     ~BufferPool() {
         close();
         for (size_t i = 0; i < entries_len_; i++) delete entries_[i];
@@ -90,7 +113,13 @@ public:
 
     // loan returns a zeroed buffer of exactly size bytes, drawn from the
     // pool if a same-or-larger buffer is available for reuse, or freshly
-    // allocated otherwise.
+    // allocated otherwise. Returns alloc::AllocErrc::simulated_allocation_
+    // failure, unchanged, if a cache-miss allocation would be needed and
+    // this pool's fault_injector (if any) reports it should fail —
+    // the pool's own state is left exactly as it was before the call in
+    // that case (no partial buffer taken from the free list is lost: the
+    // free-list search below only removes an entry on a cache *hit*, which
+    // never reaches the fault-injection check at all).
     std::error_code loan(int size, std::unique_ptr<rcp::Loan>& out) {
         if (closed_.load(std::memory_order_acquire)) return ErrClosed;
         if (size < 0) return std::make_error_code(std::errc::invalid_argument);
@@ -111,6 +140,8 @@ public:
         if (raw) {
             raw->assign(static_cast<size_t>(size), 0); // re-zero: no stale data leaks across reuse
         } else {
+            if (fault_injector_ && fault_injector_->should_fail())
+                return alloc::make_error_code(alloc::AllocErrc::simulated_allocation_failure);
             raw = new std::vector<uint8_t>(static_cast<size_t>(size), 0);
         }
 
@@ -158,6 +189,8 @@ private:
     // are not (matching c-RCP's own design exactly).
     std::array<std::vector<uint8_t>*, kPoolMaxEntries> entries_{};
     size_t                                              entries_len_ = 0; // always <= kPoolMaxEntries
+
+    alloc::FaultInjector* fault_injector_ = nullptr; // not owned; see constructor doc comment
 };
 
 inline std::unique_ptr<BufferPool> new_buffer_pool() {
