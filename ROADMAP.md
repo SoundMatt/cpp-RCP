@@ -153,7 +153,7 @@ work, since every endpoint type's functional config block depends on it.
 0. Branch setup, issue cleanup, this ROADMAP section (done).
 1. Core wire/protocol: `acf`, `avtp`, `request` (+sequencer+scheduler folded into this codebase's existing unified shape), `fragment` (new — CAN XL multi-segment support this codebase never had), `respqueue` (new — TC18 §12.7.9 TX queue, no prior equivalent), `loan`.
 2. Safety layer: `e2e`, `lifecycle`, `watchdog`, a fresh allocation seam (dependency-injected/`std::pmr`-style, not a global hook table) with fault-injection tests from day one.
-3. Per-endpoint modules, batched: `can`, `lin`, `iseled`, `adc`, `pwm`, `gpio`, `spi` (incl. the confirmed missing `nr_cs`/`deassert_cs_pause` delta), `uart`, `mdio`, `wakeup`.
+3. Per-endpoint modules, batched: `can`, `lin`, `iseled`, `i2c`, `adc`, `pwm`, `gpio`, `spi` (incl. the confirmed missing `nr_cs`/`deassert_cs_pause` delta), `uart`, `mdio`, `wakeup`.
 4. Server/dispatch: `regmap` (c-RCP's is ~7x more complete — a real content gap, not style), `mock` (wire in the response classifier, Table 30/33 evt validation, the `RxSequenceGuard` E2E replay guard, and fragmentation dispatch from day one), `server`/`endpoint.hpp`, `discovery`, `adapt`.
 5. Transport: `udp`, `l2`, `shmem`, `admin`; re-verify `tls`/`capi` against the new core.
 6. Requirement catalog: re-derive `.fusa-reqs.json` from c-RCP's current 1282-entry catalog (already RC5-correct, atomicity-audited, `status`/`scope`/`tc18`/`tc18_master_id` populated), authored fresh with per-function tags and c-RCP's id-prefix conventions (e.g. `REQ-RMAP-*` over this codebase's current `REQ-REGMAP-*`) — no separate atomicity/retagging pass needed since it's new authorship.

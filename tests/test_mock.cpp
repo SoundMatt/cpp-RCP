@@ -760,42 +760,32 @@ TEST_CASE("UART request is rejected before RCP_CONFIGURED, same operational gati
 // ── ISELED ────────────────────────────────────────────────────────────────────
 // Table 30/33 Row 2 evt[2:0] validation, seventh endpoint type after I2C, ADC,
 // PWM_IN, LIN, CAN, and UART: IseledEndpoint wired into dispatch() at
-// byte_bus_id 9 for the FIRST time (this file had zero ISELED wiring before
-// this pass — see mock.hpp's own header comment and dispatch_iseled's own
-// comment). Unlike CAN's fire-a-frame-with-no-readback shape, ISELED pairs a
-// request with a full Address/Data response, decoded/encoded through
-// rcp/iseled.hpp's own pre-existing Figure 40/41 codec — see
-// dispatch_iseled's and set_iseled_response's own comments in rcp/mock.hpp
-// for why there is a set_iseled_response() hook and why a successful Plain
-// request answers ReadResponse with the encoded response payload.
+// byte_bus_id 9. Phase 3's rcp/iseled.hpp rewrite replaced its earlier
+// structured Address/Data ACF-payload model with the same raw-byte-stream
+// codec I2C/LIN already use — see rcp/iseled.hpp's own header comment —
+// so, like dispatch_i2c/dispatch_lin, dispatch_iseled passes the raw
+// byte_msg_payload straight to IseledEndpoint::handle_request rather than
+// decoding/encoding it through a struct-based codec.
 
-TEST_CASE("ISELED plain request (evt[2:0]==000b) decodes the payload, transacts against the "
-          "scripted response, and answers ReadResponse with the encoded response",
+TEST_CASE("ISELED plain request (evt[2:0]==000b) records the sent bytes, transacts against the "
+          "scripted response, and answers ReadResponse with the scripted response bytes",
           "[mock][REQ-MOCK-023]") {
     mock::Server server;
     REQUIRE_FALSE(server.advance_to_rcp_configured());
 
-    iseled::IseledResponse scripted;
-    scripted.address = 0x0102;
-    scripted.data    = 0x0BEF;
+    const std::vector<uint8_t> scripted{0x01, 0x02, 0xBE, 0xEF};
     server.set_iseled_response(scripted);
 
-    iseled::IseledRequest request;
-    request.instruction = 0x3;
-    request.address      = 0x0102;
-    request.data         = {0x11, 0x22};
-    auto payload = iseled::encode_iseled_request(request);
+    const std::vector<uint8_t> payload{0x03, 0x01, 0x02, 0x11, 0x22};
 
     auto req = standard_request(mock::kIseledByteBusId, /*write=*/true, /*evt_op=*/0);
     acf::AcfMessageInfo resp;
     std::vector<uint8_t> resp_payload;
     REQUIRE_FALSE(server.dispatch(0, req, payload, resp, resp_payload));
     REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
-    REQUIRE(resp_payload == iseled::encode_iseled_response(scripted));
-    REQUIRE(server.iseled().last_request().instruction == 0x3);
-    REQUIRE(server.iseled().last_request().address == 0x0102);
-    REQUIRE(server.iseled().last_request().data == std::vector<uint8_t>{0x11, 0x22});
-    REQUIRE(server.iseled().last_response().data == 0x0BEF);
+    REQUIRE(resp_payload == scripted);
+    REQUIRE(server.iseled().last_sent() == payload);
+    REQUIRE(server.iseled().last_received() == scripted);
 }
 
 TEST_CASE("ISELED request with a reserved evt[2:0] (001b-110b) is rejected with wire error code "
@@ -804,9 +794,7 @@ TEST_CASE("ISELED request with a reserved evt[2:0] (001b-110b) is rejected with 
     mock::Server server;
     REQUIRE_FALSE(server.advance_to_rcp_configured());
 
-    iseled::IseledRequest request;
-    request.address = 0x0010;
-    auto payload = iseled::encode_iseled_request(request);
+    const std::vector<uint8_t> payload{0x00, 0x10};
 
     for (uint8_t evt_op = 1; evt_op <= 6; ++evt_op) {
         auto req = standard_request(mock::kIseledByteBusId, /*write=*/true, evt_op);
@@ -817,8 +805,8 @@ TEST_CASE("ISELED request with a reserved evt[2:0] (001b-110b) is rejected with 
         REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
         REQUIRE(resp_payload ==
                 std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
-        REQUIRE(server.iseled().last_request().address == 0);
-        REQUIRE(server.iseled().last_response().address == 0);
+        REQUIRE(server.iseled().last_sent().empty());
+        REQUIRE(server.iseled().last_received().empty());
     }
 }
 
@@ -828,9 +816,7 @@ TEST_CASE("ISELED request with evt[2:0]==111b (config-write) is rejected with wi
     mock::Server server;
     REQUIRE_FALSE(server.advance_to_rcp_configured());
 
-    iseled::IseledRequest request;
-    request.address = 0x0010;
-    auto payload = iseled::encode_iseled_request(request);
+    const std::vector<uint8_t> payload{0x00, 0x10};
 
     auto req = standard_request(mock::kIseledByteBusId, /*write=*/true, /*evt_op=*/7);
     acf::AcfMessageInfo resp;
@@ -840,7 +826,7 @@ TEST_CASE("ISELED request with evt[2:0]==111b (config-write) is rejected with wi
     REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
     REQUIRE(resp_payload ==
             std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::UnsupportedCmd)});
-    REQUIRE(server.iseled().last_request().address == 0);
+    REQUIRE(server.iseled().last_sent().empty());
 }
 
 TEST_CASE("ISELED request is rejected before RCP_CONFIGURED, same operational gating as "
@@ -849,8 +835,7 @@ TEST_CASE("ISELED request is rejected before RCP_CONFIGURED, same operational ga
     mock::Server server;
     REQUIRE(server.lifecycle().state() == lifecycle::ServerState::HwUnconfigured);
 
-    iseled::IseledRequest request;
-    auto payload = iseled::encode_iseled_request(request);
+    const std::vector<uint8_t> payload{};
     auto req = standard_request(mock::kIseledByteBusId, /*write=*/true, /*evt_op=*/0);
     acf::AcfMessageInfo resp;
     std::vector<uint8_t> resp_payload;
