@@ -58,6 +58,10 @@ add_executable(test_request test_request.cpp)
 target_link_libraries(test_request PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_request COMMAND test_request)
 
+add_executable(test_server test_server.cpp)
+target_link_libraries(test_server PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_server COMMAND test_server)
+
 add_executable(test_e2e test_e2e.cpp)
 target_link_libraries(test_e2e PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_e2e COMMAND test_e2e)
