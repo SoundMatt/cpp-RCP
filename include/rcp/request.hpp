@@ -13,8 +13,6 @@
 // fusa:req REQ-CMP-001
 // fusa:req REQ-CMP-002
 // fusa:req REQ-CMP-003
-// fusa:req REQ-CMP-008
-// fusa:req REQ-CMP-009
 // fusa:req REQ-CMP-010
 // fusa:req REQ-CMP-011
 // fusa:req REQ-CMP-012
@@ -36,7 +34,6 @@
 // fusa:req REQ-CMP-028
 // fusa:req REQ-CMP-029
 // fusa:req REQ-TRIG-001
-// fusa:req REQ-TRIG-003
 // fusa:req REQ-TRIG-004
 // fusa:req REQ-TRIG-005
 // fusa:req REQ-TRIG-006
@@ -48,7 +45,6 @@
 // fusa:req REQ-TRIG-012
 // fusa:req REQ-TRIG-013
 // fusa:req REQ-CHAIN-002
-// fusa:req REQ-CHAIN-003
 // fusa:req REQ-CHAIN-004
 // fusa:req REQ-CHAIN-005
 // fusa:req REQ-CHAIN-006
@@ -76,6 +72,7 @@
 // fusa:req REQ-CANCEL-009
 // fusa:req REQ-CANCEL-010
 // fusa:req REQ-CANCEL-011
+// fusa:req REQ-CANCEL-012
 // fusa:req REQ-CANCEL-013
 // fusa:req REQ-CANCEL-014
 // fusa:req REQ-CANCEL-015
@@ -235,6 +232,38 @@
 // avtp::encode_tscf() (composed exactly as c-RCP's own thin wrapper does)
 // for the second; neither is core protocol behavior, just a named
 // convenience c-RCP happens to also offer.
+//
+// TODO(phase6-followup): Phase 6 (requirement-catalog re-derivation, cpp-RCP
+// issue #129 batch 3/13) confirmed the following real, currently-unfixed
+// gaps against c-RCP while re-deriving .fusa-reqs.json entries for this
+// file's own already-orphan-cited ids — filed to .fusa-reqs-pending.json
+// (REQ-CMP-008/009, REQ-TRIG-003, REQ-CHAIN-003, REQ-CHAIN-008, REQ-TIMED-
+// 012/013), not fixed here (out of this cataloging pass's scope):
+//   - encode_compound_request()/encode_triggered_request()/encode_chained_
+//     member() never validate their own `type`/payload-size inputs before
+//     encoding (REQ-CMP-008/009, REQ-TRIG-003, REQ-CHAIN-003): each forwards
+//     straight to acf::encode_acf_gbb(), which by its own documented design
+//     (acf.hpp's "always returns bytes, never an error code" contract) never
+//     rejects an oversized payload or unrecognized opcode, and each of these
+//     three functions returns a plain std::vector<uint8_t> (not
+//     std::optional, unlike encode_timed_request()'s own std::nullopt-on-
+//     invalid-input convention just below), so there is structurally no
+//     channel to signal rejection even if the check were added without a
+//     signature change.
+//   - RequestLedger::submit() never rejects a Chained-opcode record whose
+//     chained_predecessor is unset (REQ-CHAIN-008): TC18 §11.2.2.6 requires
+//     a chain request with no predecessor (e.g. the first request in an
+//     AVTPDU) to be rejected and its whole chain ignored; this file has no
+//     CHAIN_ERROR-equivalent RequestErrc value and no detection for this
+//     case at all. Distinct from the "already-aborted chain" case
+//     (REQ-CHAIN-009), which cascade_cancel()/propagate_chain_completion()
+//     genuinely do handle — see delta #4 above.
+//   - No dispatch/admission entry point anywhere in cpp-RCP threads a real
+//     TSCF header's avtp_timestamp into timed_admit()/timed_due()
+//     (REQ-TIMED-012/013): this file provides every primitive the gate
+//     needs, but per this file's own design note two paragraphs below, it
+//     does not itself run a dispatch loop, and no other module in this tree
+//     supplies one either.
 //
 // Field names and behavior below implement TC18's *behavior* as described in
 // an internal structured extraction of the specification; no text from that
