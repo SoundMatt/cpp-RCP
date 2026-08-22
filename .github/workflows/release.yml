@@ -228,23 +228,51 @@ jobs:
       - name: Commit regenerated artifacts to a review branch
         run: |
           TAG="${{ github.ref_name }}"
+
+          # A single `git add a b c` call aborts with a fatal error and
+          # stages NOTHING (not just the missing pathspec -- the whole
+          # invocation) if even one listed file doesn't exist on disk. The
+          # gap/coverage/report artifacts below come from generator steps
+          # above that are themselves `|| true`-guarded (cpfusa
+          # iso26262/iec61508/do178/iec62443/coverage/report "exit non-zero
+          # by design" -- see the comments on those steps), so their output
+          # file may legitimately be absent here if the underlying cpfusa
+          # subcommand crashed before writing it. Those are added one at a
+          # time and skipped with a warning when missing, instead of
+          # aborting the whole staging operation.
+          OPTIONAL_ARTIFACTS="
+            iso26262-gap-report.json
+            iec61508-gap-report.json
+            do178-gap-report.json
+            iec62443-gap-report.json
+            coverage-report.json
+            report.json
+            report.html
+          "
+          for f in $OPTIONAL_ARTIFACTS; do
+            if [ -f "$f" ]; then
+              git add "$f"
+            else
+              echo "::warning::$f not present -- its generator step is || true-guarded (exits non-zero by design), treating as legitimately absent and skipping."
+            fi
+          done
+
+          # Every other artifact's generator step above is NOT `|| true`
+          # -guarded, so if one of these is missing here something already
+          # went more seriously wrong upstream. Add them with no swallowing
+          # `|| true` so a genuinely-missing one still fails this step
+          # loudly instead of silently reporting "nothing to commit".
           git add \
             fmea.csv fmea.json \
             safety-case.json safety-case.md safety-case.mermaid \
             tooling/tara.json tooling/tara.md \
             sbom.json provenance.json artifact-manifest.json \
-            iso26262-gap-report.json \
-            iec61508-gap-report.json \
-            do178-gap-report.json \
-            iec62443-gap-report.json \
-            coverage-report.json \
             sas.json sas.md \
             sci.json \
             audit-pack.zip \
             fusa-badge.svg \
-            report.json report.html \
-            qualify-report.json \
-            || true
+            qualify-report.json
+
           if git diff --cached --quiet; then
             echo "No artifact changes for $TAG — nothing to commit."
             echo "ARTIFACTS_CHANGED=false" >> "$GITHUB_ENV"
