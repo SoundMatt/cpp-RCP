@@ -72,9 +72,16 @@ public:
 
         if (!cfg_.auto_promote) return ec;
 
-        // Promote standby on retriable failure.
+        // Promote standby on retriable failure. Pass along the exact
+        // RequestFn* this call observed active (captured under the lock
+        // above, before the call): if two send() calls race on the same
+        // failing active pointer, only the one whose promote_from() runs
+        // first actually flips active_; the other's observed pointer no
+        // longer matches active_ by the time it acquires the lock, so it is
+        // a no-op instead of an unconditional toggle that would flip
+        // active_ right back (see promote_from()).
         if (ec == ErrClosed || ec == ErrTimeout) {
-            promote();
+            promote_from(active);
             for (int i = 0; i < cfg_.max_retries; ++i) {
                 RequestFn* retry_active;
                 {
@@ -109,6 +116,22 @@ public:
     }
 
 private:
+    // promote_from is send()'s internal, CAS-style counterpart to the public
+    // promote() above: it only flips active_ away from the specific pointer
+    // the caller observed failing. If active_ has already moved on (e.g. a
+    // concurrent send() on the same observed-failing pointer promoted first),
+    // this is a no-op rather than re-toggling — without this guard, two
+    // send() calls that both observe the primary failing concurrently would
+    // together apply the toggle twice (primary->standby, then straight back
+    // standby->primary), silently leaving active_ on the confirmed-bad
+    // primary for every later caller (REQ-RED-006).
+    void promote_from(RequestFn* observed_active) {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (active_ == observed_active) {
+            active_ = (active_ == &primary_) ? &standby_ : &primary_;
+        }
+    }
+
     RequestFn primary_;
     RequestFn standby_;
     RequestFn* active_;
