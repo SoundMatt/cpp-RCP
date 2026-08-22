@@ -143,6 +143,19 @@
 // being a materially separate architecture item from this file's own
 // primitives. This file remains "primitives, not a running dispatcher",
 // same as every other header in this codebase.
+//
+// UPDATE (Phase 4/Phase 17 batch C, cpp-RCP issue #129): the deferral two
+// paragraphs above is now closed for the single-member dispatch case —
+// rcp/mock.hpp's Server::dispatch_e2e() wires RxSequenceGuard (via its own
+// seq_gate_admits()), StreamFaultTracker, RxWatchdog, and StreamStatus
+// into a real dispatch path, matching c-RCP's own rcp_mock_server_
+// dispatch_e2e() (src/mock.c:1892-2038). The full multi-member AVTPDU
+// frame-level version (matching c-RCP's own frame_seq_gate_admits()/
+// dispatch_frame_e2e(), src/mock.c:3038-3552) remains a later batch's job
+// — see mock.hpp's own dispatch_e2e() doc comment for the exact split and
+// what state a frame-level pass will reuse unchanged. The primitives below
+// are still unmodified by this update: only their wiring, one file over,
+// changed.
 #pragma once
 
 #include <rcp/acf.hpp>
