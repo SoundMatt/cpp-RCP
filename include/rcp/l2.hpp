@@ -6,6 +6,8 @@
 // fusa:req REQ-L2-006
 // fusa:req REQ-L2-007
 // fusa:req REQ-L2-008
+// fusa:req REQ-L2-009
+// fusa:req REQ-L2-010
 
 // Native IEEE 1722-over-Ethernet (raw L2) transport for the OPEN Alliance
 // TC18 Remote Control Protocol Specification v0.5.1_RC — carries real
@@ -177,6 +179,33 @@ inline std::error_code decode_eth_header(const uint8_t* b, size_t len, EthHeader
     std::copy(b + kMacLen, b + 2 * kMacLen, out.src.begin());
     out.ethertype = avtp::detail::get_u16(b + 2 * kMacLen);
     return {};
+}
+
+// is_unicast_mac — content gap found during this batch's own c-RCP delta
+// verification pass: ported from c-RCP's rcp_l2_mac_is_unicast()
+// (c-RCP/src/l2.c:79-82, REQ-L2-011), which this header had no equivalent
+// of at all before this pass. True iff mac is a unicast address: the I/G
+// (individual/group) bit — the least-significant bit of the first octet —
+// is 0. False for any multicast address, including the all-ones broadcast
+// address (ff:ff:ff:ff:ff:ff), itself a special case of multicast under
+// this same bit test — standard IEEE 802.3 addressing, not TC18-specific.
+// rcp::lifecycle::WriterCtx::via_non_unicast_frame (rcp/lifecycle.hpp,
+// REQ-LIFECYCLE-027) is the intended consumer, matching c-RCP's own header
+// comment for rcp_l2_mac_is_unicast() exactly ("the primitive an
+// integrator uses to classify a frame's destination MAC... before
+// constructing that writer context") — TC18 §12.3.1.1/.2/.3 requires a
+// write request be accepted only when its frame's destination MAC is
+// unicast. Nothing in this rewrite's dispatch path (rcp/mock.hpp,
+// rcp/regmap.hpp::writer_ctx()) actually derives via_unicast from a live
+// destination MAC yet — regmap::writer_ctx() takes it as an
+// already-classified caller-supplied bool, and no production call site
+// calls writer_ctx() at all today (confirmed by repo-wide search) — so
+// wiring THIS primitive into that gate is a separate, broader gap than
+// this batch's own dispatch-wiring scope (Server/dispatch, not transport);
+// this function exists so that future wiring has the primitive ready,
+// exactly as c-RCP already does.
+inline bool is_unicast_mac(const MacAddress& mac) noexcept {
+    return (mac[0] & 0x01u) == 0u;
 }
 
 // ── Frame ─────────────────────────────────────────────────────────────────────
@@ -374,6 +403,149 @@ inline std::error_code decode_l2_multi_frame(const uint8_t* b, size_t len,
     return decode_multi_frame(b + kEthHeaderLen, len - kEthHeaderLen, out_frame);
 }
 
+// ── AVTP envelope-only decode (pure, no socket, every platform) ─────────────
+// AvtpFrameHeader/decode_avtp_frame_header/decode_l2_frame_header decode just
+// the NTSCF/TSCF envelope of one inbound frame — use_tscf, stream_id,
+// sequence_num, the TSCF timestamp fields, and where the ACF payload region
+// begins — WITHOUT parsing that payload into individual acf::AcfEntry
+// messages the way decode_multi_frame()/decode_l2_multi_frame() above do.
+// Server::serve()'s FrameHandler path (below) needs exactly this: raw,
+// unparsed ACF bytes to hand to a caller like rcp::mock::Server::
+// dispatch_frame()/dispatch_frame_e2e(), which do their own member-splitting
+// (mock.hpp's own split_frame_members()), conditional/cancellation-opcode
+// peeking (mock.hpp's own peek_conditional_request_type()), and E2E CRC
+// verification directly off the wire bytes — CRC coverage in particular is
+// computed over the raw header octets themselves (see mock.hpp's own
+// dispatch_e2e() doc comment), so a decode-then-re-encode round trip through
+// acf::AcfEntry is not just unnecessary here but the wrong shape of input for
+// that caller.
+struct AvtpFrameHeader {
+    bool            use_tscf        = false; // false = NTSCF, true = TSCF
+    avtp::StreamId  stream_id{};
+    uint16_t        sequence_num    = 0;
+    bool            timestamp_valid = false; // TSCF "tv" bit; false under NTSCF
+    uint32_t        avtp_timestamp  = 0;     // TSCF-only; 0 under NTSCF
+    size_t          acf_offset      = 0;     // offset of the raw ACF payload region within the buffer this was decoded from
+};
+
+inline std::error_code decode_avtp_frame_header(const uint8_t* b, size_t len, AvtpFrameHeader& out) {
+    if (len < 1) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+
+    out.use_tscf = (b[0] == avtp::kSubtypeTscf);
+    if (out.use_tscf) {
+        avtp::TscfHeader hdr;
+        if (auto ec = avtp::decode_tscf_header(b, len, hdr)) return ec;
+        out.stream_id       = hdr.stream_id;
+        out.sequence_num    = hdr.sequence_num;
+        out.timestamp_valid = hdr.timestamp_valid;
+        out.avtp_timestamp  = hdr.avtp_timestamp;
+        out.acf_offset      = avtp::kTscfHeaderLen;
+        if (static_cast<size_t>(hdr.control_data_length) != len - out.acf_offset)
+            return avtp::make_error_code(avtp::AvtpErrc::length_mismatch);
+    } else {
+        avtp::NtscfHeader hdr;
+        if (auto ec = avtp::decode_ntscf_header(b, len, hdr)) return ec;
+        out.stream_id       = hdr.stream_id;
+        out.sequence_num    = hdr.sequence_num;
+        out.timestamp_valid = false;
+        out.avtp_timestamp  = 0;
+        out.acf_offset      = avtp::kNtscfHeaderLen;
+        if (static_cast<size_t>(hdr.control_data_length) != len - out.acf_offset)
+            return avtp::make_error_code(avtp::AvtpErrc::length_mismatch);
+    }
+    return {};
+}
+
+inline std::error_code decode_l2_frame_header(const uint8_t* b, size_t len,
+                                               EthHeader& out_hdr, AvtpFrameHeader& out_avtp) {
+    if (auto ec = decode_eth_header(b, len, out_hdr)) return ec;
+    if (out_hdr.ethertype != kEtherType) return make_error_code(L2Errc::bad_ethertype);
+    return decode_avtp_frame_header(b + kEthHeaderLen, len - kEthHeaderLen, out_avtp);
+}
+
+// ── FrameMemberResult / FrameHandler — frame-level dispatch wiring ──────────
+// The dispatch-wiring gap this pair closes: rcp::l2::Server::Handler below
+// (unchanged) dispatches ONE already-decoded ACF message at a time — the
+// same shape rcp::mock::Server::dispatch() takes — which is the obvious,
+// natural thing to wire a caller's own request handler to, but silently
+// bypasses every one of rcp::mock::Server's frame-level behaviors: TC18
+// Table 24 response/ack routing suppression (mock::Server::
+// suppress_response_per_stream_cfg(), applied inside every one of that
+// class's ten dispatch_<type>() wrappers, never inside its single-message
+// dispatch() itself), conditional/cancellation-opcode routing
+// (mock::Server::peek_conditional_request_type(), reachable only through
+// mock::Server::decode_and_dispatch()/dispatch_frame()/dispatch_frame_e2e(),
+// never through dispatch()), and E2E/fragment-aware dispatch
+// (mock::Server::dispatch_frame_e2e(), which independently CRC-verifies and
+// reassembles each frame member). A caller that wires Handler straight to
+// mock::Server::dispatch() gets every operational request answered, but with
+// every one of those three behaviors silently downgraded.
+//
+// FrameHandler/set_frame_handler() below is the correct wiring path: it
+// receives the RAW, unparsed ACF payload of one whole inbound frame (every
+// member concatenated, exactly as split_frame_members() expects) plus the
+// frame's own stream_id and sequence_num, and returns one FrameMemberResult
+// per member — the same "no wire response was built for this member" (
+// response.rsp == false) contract mock::Server::FrameMemberResult's own doc
+// comment establishes for the four cases that produce one: Table 24
+// suppression, an admission outcome with no evt[3] ack
+// (Queued/Pending/Cancellation/Suspended), and (dispatch_frame_e2e() only) a
+// frame-level sequence-gate rejection. Server::serve() (below) drops every
+// such member from the outgoing response rather than encoding an empty
+// response for it, and sends nothing at all if every member in the frame was
+// dropped this way — matching the "0 means send nothing" half of Table 24
+// (REQ-RMAP-048/049) that mock::Server itself has no transport to actually
+// enforce (see suppress_response_per_stream_cfg()'s own doc comment).
+//
+// FrameMemberResult is a deliberate PARALLEL type, not a shared one:
+// mock::Server::FrameMemberResult (rcp/mock.hpp) has the identical field
+// shape (result/byte_bus_id/response/response_payload) but this header does
+// not include rcp/mock.hpp or depend on its type — matching this file's own
+// documented preference (see Frame's own header comment above) for parallel
+// concrete types over a shared interface. A caller wiring
+// mock::Server::dispatch_frame()/dispatch_frame_e2e() as a FrameHandler
+// copies each mock::Server::FrameMemberResult into one of these, field for
+// field — e.g.:
+//
+//   l2_server.set_frame_handler([&](size_t client, avtp::StreamId sid,
+//                                    uint8_t seq, const std::vector<uint8_t>& acf,
+//                                    std::vector<l2::FrameMemberResult>& out) {
+//       std::vector<mock::FrameMemberResult> mres;
+//       size_t n = mock_server.dispatch_frame_e2e(client, sid, seq, acf, mres);
+//       out.reserve(mres.size());
+//       for (auto& m : mres)
+//           out.push_back({m.result, m.byte_bus_id, m.response, std::move(m.response_payload)});
+//       return n;
+//   });
+//
+// message_timestamp is deliberately not carried here, matching
+// mock::Server::FrameMemberResult's own identical omission — a GBB-typed
+// response (make_response() echoes the request's own acf_msg_type,
+// rcp/acf.hpp) loses its message_timestamp through this path exactly as it
+// already does through Server::Handler's own pre-existing single-message
+// signature below, which has never carried one either; not a regression
+// this pair introduces.
+struct FrameMemberResult {
+    std::error_code       result;
+    avtp::ByteBusId        byte_bus_id = 0; // 0 when result could not even be determined
+    acf::AcfMessageInfo    response;         // default-constructed (rsp == false) unless a genuine wire response was built
+    std::vector<uint8_t>   response_payload;
+};
+
+// FrameHandler — see the doc comment above this struct for the full
+// contract. Takes the raw ACF payload of one whole inbound frame (`acf`,
+// every member concatenated, unparsed) plus that frame's own `stream_id`/
+// `sequence_num`, fills `out_results` with one FrameMemberResult per member
+// it dispatched, and returns how many that was (mirroring
+// mock::Server::dispatch_frame()/dispatch_frame_e2e()'s own `size_t`
+// return). Declared at namespace scope (not nested in Server) so it is
+// visible identically on every platform, matching this header's own
+// Handler-is-visible-everywhere-even-on-the-stub convention below.
+using FrameHandler = std::function<size_t(size_t client, avtp::StreamId stream_id,
+                                           uint8_t sequence_num,
+                                           const std::vector<uint8_t>& acf,
+                                           std::vector<FrameMemberResult>& out_results)>;
+
 #if defined(RCP_L2_LINUX)
 
 // kRecvTimeoutMillis: SO_RCVTIMEO applied to every real Server/Client socket
@@ -444,12 +616,32 @@ inline bool set_recv_timeout(int fd, int millis) {
 // Server opens an AF_PACKET/SOCK_RAW socket bound to one network interface,
 // filtered to EtherType 0x22F0 at socket-creation time, reads this host's
 // own MAC address off that interface (detail::get_hwaddr) to use as the
-// source address on every reply it sends, decodes each inbound frame as a
-// MultiFrame, and dispatches every ACF request the frame carries — same
-// per-request handling as rcp/udp.hpp::Server, same Handler signature,
-// shaped to match rcp::mock::Server::dispatch — then sends the reply back
-// to the sender's own source MAC on the same interface. Needs CAP_NET_RAW
-// (or root) to open the socket at all; construct, then call ok().
+// source address on every reply it sends, decodes each inbound frame's own
+// AVTP envelope, and dispatches every ACF request the frame carries, then
+// sends the reply back to the sender's own source MAC on the same interface.
+// Needs CAP_NET_RAW (or root) to open the socket at all; construct, then
+// call ok().
+//
+// Two handler shapes, set independently via set_handler()/set_frame_handler()
+// below — if both are set, set_frame_handler()'s FrameHandler takes priority
+// for every inbound frame (see serve()'s own comment):
+//
+//  - Handler: dispatches ONE already-decoded ACF message at a time, same
+//    shape as rcp::mock::Server::dispatch() and rcp/udp.hpp::Server's own
+//    Handler. Simple, and sufficient for a caller (e.g.
+//    tests/l2_veth_roundtrip.cpp) that only needs to answer plain,
+//    unconditional Standard requests with no Table 24 routing config, no
+//    conditional/cancellation opcodes, and no E2E/fragmentation in play.
+//  - FrameHandler (this file's own namespace-scope type, see its own doc
+//    comment above): dispatches one WHOLE frame's raw ACF bytes at a time,
+//    the shape rcp::mock::Server::dispatch_frame()/dispatch_frame_e2e()
+//    take — this is the entry point that actually gets Table 24 suppression,
+//    conditional/cancellation-opcode routing, and E2E/fragment dispatch, and
+//    is the one a caller wiring this Server to a real rcp::mock::Server (or
+//    any dispatcher with the same frame-level contract) should use. See this
+//    file's own FrameHandler doc comment above for why Handler alone,
+//    wired straight to mock::Server::dispatch(), silently downgrades all
+//    three of those behaviors.
 class Server {
 public:
     using Handler = std::function<std::error_code(size_t client,
@@ -495,6 +687,18 @@ public:
         handler_ = std::move(h);
     }
 
+    // set_frame_handler — see this class's own header comment for the full
+    // contract and why this is the entry point a caller wiring a real
+    // rcp::mock::Server (or any frame-level dispatcher) should use instead of
+    // set_handler() above. Takes priority over Handler for every inbound
+    // frame once set (serve()'s own comment) — set both only if intentionally
+    // relying on that priority (e.g. tests exercising both paths against the
+    // same Server).
+    void set_frame_handler(FrameHandler h) {
+        std::lock_guard<std::mutex> lk(mu_);
+        frame_handler_ = std::move(h);
+    }
+
     void close() {
         if (!closed_.exchange(true)) {
             if (fd_ >= 0) {
@@ -517,6 +721,7 @@ private:
     std::atomic<uint16_t> seq_{0};
     std::mutex   mu_;
     Handler      handler_;
+    FrameHandler frame_handler_;
     std::thread  serve_thread_;
 
     // client_ids_ assigns each distinct sender MAC a stable, opaque size_t
@@ -556,27 +761,82 @@ private:
             // and be mistaken for a fresh inbound request.
             if (from.sll_pkttype == PACKET_OUTGOING) continue;
 
-            EthHeader   hdr;
-            MultiFrame  req;
-            if (decode_l2_multi_frame(buf.data(), static_cast<size_t>(n), hdr, req)) continue;
+            EthHeader       eth_hdr;
+            AvtpFrameHeader avtp_hdr;
+            if (decode_l2_frame_header(buf.data(), static_cast<size_t>(n), eth_hdr, avtp_hdr)) continue;
+            const size_t acf_off = kEthHeaderLen + avtp_hdr.acf_offset;
 
             MultiFrame resp;
-            resp.use_tscf        = req.use_tscf;
+            resp.use_tscf        = avtp_hdr.use_tscf;
             resp.stream_id       = stream_id_;
             resp.sequence_num    = static_cast<uint16_t>(++seq_);
-            resp.timestamp_valid = req.timestamp_valid;
-            resp.avtp_timestamp  = req.avtp_timestamp;
-            resp.messages.reserve(req.messages.size());
+            resp.timestamp_valid = avtp_hdr.timestamp_valid;
+            resp.avtp_timestamp  = avtp_hdr.avtp_timestamp;
+
+            // Snapshot both handlers under mu_ (protects against a
+            // concurrent set_handler()/set_frame_handler() call, same as
+            // this loop's own pre-existing client_id_for() lock scope) and
+            // release the lock again before running either one — a Handler/
+            // FrameHandler body has no business running while this Server's
+            // own mutex is held.
+            size_t       client;
+            Handler      handler_copy;
+            FrameHandler frame_handler_copy;
             {
                 std::lock_guard<std::mutex> lk(mu_);
-                size_t client = client_id_for(hdr.src);
+                client             = client_id_for(eth_hdr.src);
+                handler_copy       = handler_;
+                frame_handler_copy = frame_handler_;
+            }
+
+            if (frame_handler_copy) {
+                // FrameHandler path — see this class's own header comment
+                // and this file's own FrameMemberResult/FrameHandler doc
+                // comment above: Table 24 suppression, conditional/
+                // cancellation-opcode routing, and E2E/fragment dispatch are
+                // all the FrameHandler's own job (rcp::mock::Server::
+                // dispatch_frame()/dispatch_frame_e2e() already apply every
+                // one of them internally) — this Server's only remaining
+                // job is handing it the raw ACF bytes and re-framing
+                // whatever member responses it returns.
+                std::vector<uint8_t> acf_bytes(buf.begin() + static_cast<long>(acf_off),
+                                                buf.begin() + n);
+                std::vector<FrameMemberResult> results;
+                frame_handler_copy(client, avtp_hdr.stream_id, avtp_hdr.sequence_num, acf_bytes, results);
+
+                resp.messages.reserve(results.size());
+                for (auto& r : results) {
+                    // response.rsp == false means "nothing to send for this
+                    // member" (Table 24 suppression, an evt[3]-less
+                    // admission outcome, or a frame-level sequence-gate
+                    // rejection) — dropped, not encoded as an empty
+                    // response. See this file's own FrameHandler doc
+                    // comment above.
+                    if (!r.response.rsp) continue;
+                    acf::AcfEntry entry;
+                    entry.info    = r.response;
+                    entry.payload = std::move(r.response_payload);
+                    resp.messages.push_back(std::move(entry));
+                }
+                // Every member in this frame was suppressed/produced no
+                // wire response: send nothing at all, matching Table 24's
+                // own "0 means send nothing" contract rather than emitting
+                // an empty AVTPDU.
+                if (resp.messages.empty()) continue;
+            } else {
+                std::vector<acf::AcfEntry> req_messages;
+                if (acf::decode_acf_messages(buf.data() + acf_off, static_cast<size_t>(n) - acf_off,
+                                              req_messages)) {
+                    continue;
+                }
+                resp.messages.reserve(req_messages.size());
                 // §12.9.1.1: "check each of them individually if to be
                 // processed or not" — each request in the frame is
                 // dispatched and answered on its own, not as a batch.
-                for (const auto& m : req.messages) {
+                for (const auto& m : req_messages) {
                     acf::AcfEntry out_entry;
-                    if (handler_) {
-                        auto ec = handler_(client, m.info, m.payload, out_entry.info, out_entry.payload);
+                    if (handler_copy) {
+                        auto ec = handler_copy(client, m.info, m.payload, out_entry.info, out_entry.payload);
                         (void)ec; // Handler always populates out_entry.info even on
                                   // failure, same contract rcp::mock::Server::dispatch
                                   // and rcp/udp.hpp::Server document.
@@ -587,12 +847,12 @@ private:
                 }
             }
 
-            auto out_bytes = encode_l2_multi_frame(hdr.src, local_mac_, resp);
+            auto out_bytes = encode_l2_multi_frame(eth_hdr.src, local_mac_, resp);
             sockaddr_ll to{};
             to.sll_family   = AF_PACKET;
             to.sll_ifindex  = ifindex_;
             to.sll_halen    = kMacLen;
-            std::copy(hdr.src.begin(), hdr.src.end(), to.sll_addr);
+            std::copy(eth_hdr.src.begin(), eth_hdr.src.end(), to.sll_addr);
             ::sendto(fd_, out_bytes.data(), out_bytes.size(), 0,
                      reinterpret_cast<sockaddr*>(&to), sizeof(to));
         }
@@ -783,6 +1043,7 @@ public:
     Server(avtp::StreamId, const char*) {}
     MacAddress local_mac() const noexcept { return {}; }
     void set_handler(Handler) {}
+    void set_frame_handler(FrameHandler) {}
     void close() {}
     bool ok() const noexcept { return false; }
 };

@@ -3649,6 +3649,24 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-L2-009",
+      "title": "Server::FrameHandler reaches mock::Server's Table 24 suppression, conditional/cancellation-opcode routing, and E2E dispatch",
+      "text": "rcp::l2::Server::set_frame_handler()'s FrameHandler shall receive the raw, unparsed ACF payload of one whole inbound L2 frame together with that frame's own stream_id and sequence_num (decoded via rcp::l2::decode_l2_frame_header()/decode_avtp_frame_header()), so that a caller wiring it to rcp::mock::Server::dispatch_frame()/dispatch_frame_e2e() reaches TC18 Table 24 response/ack routing suppression, conditional/cancellation-opcode routing, and E2E/fragment-aware dispatch for every request carried over L2 -- none of which rcp::l2::Server::Handler's pre-existing single-message signature (no stream_id parameter, routes only through rcp::mock::Server::dispatch()) can reach.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.7.7 Table 24 (response/ack routing suppression)"
+    },
+    {
+      "id": "REQ-L2-010",
+      "title": "is_unicast_mac classifies a destination MAC as unicast or multicast/broadcast",
+      "text": "rcp::l2::is_unicast_mac shall return true iff the given MAC address's I/G (individual/group) bit -- the least-significant bit of its first octet -- is 0, matching standard IEEE 802.3 addressing and mirroring c-RCP's rcp_l2_mac_is_unicast() (REQ-L2-011 in that project's own catalog) -- the primitive TC18 §12.3.1.1/.2/.3's unicast-destination-required write-authorization rule (rcp::lifecycle::WriterCtx::via_non_unicast_frame, REQ-LIFECYCLE-027) needs to classify a frame's destination MAC.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.3.1.1/.2/.3 (write request accepted only when its frame's destination MAC is unicast)"
     }
   ]
 }

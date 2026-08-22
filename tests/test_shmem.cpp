@@ -1,21 +1,25 @@
 // fusa:test REQ-SHMEM-001
 // fusa:test REQ-SHMEM-002
 // fusa:test REQ-SHMEM-003
+// fusa:test REQ-SHMEM-004
 // fusa:test REQ-SHMEM-005
 // fusa:test REQ-SHMEM-006
+// fusa:test REQ-SHMEM-007
 // fusa:test REQ-SHMEM-008
 // fusa:test REQ-SHMEM-009
 // fusa:test REQ-SHMEM-010
 
 // Tests for rcp/shmem.hpp — the in-process, bounded-queue request channel
-// (cpp-RCP issue #129 Phase 5 wave 2). REQ-SHMEM-004 (recv() timeout on an
-// empty queue) and REQ-SHMEM-007 (recv() BUSY when the next queued item
-// exceeds a caller-supplied destination buffer) have no analog here and are
-// intentionally not covered below — see rcp/shmem.hpp's own header comment
-// and detail::FrameSlots's comment for why: Channel::request() has no
-// blocking wait (there is nothing to time out on) and decodes straight out
-// of its own owned slot storage rather than into a separately-sized caller
-// buffer (there is no fixed destination capacity to overflow).
+// (cpp-RCP issue #129 Phase 5 wave 2).
+//
+// NOTE: an earlier draft of this comment claimed REQ-SHMEM-004/007 had "no
+// analog" here, based on c-RCP's own shmem.h numbering (where those ids mean
+// recv() timeout / recv() destination-buffer-too-small). That was a
+// numbering mix-up: THIS project's .fusa-reqs.json assigns REQ-SHMEM-004 to
+// "Registry::lookup finds a channel registered via add_channel" and
+// REQ-SHMEM-007 to "the caller-supplied client id is forwarded to the
+// handler unchanged" — both ordinary, directly testable behaviors, covered
+// below like every other entry in this file.
 
 #include <catch2/catch_test_macros.hpp>
 #include <rcp/shmem.hpp>
@@ -130,6 +134,32 @@ TEST_CASE("shmem Channel::request round-trips an ACF_GBB request through the GBB
     REQUIRE_FALSE(ch->request(0, req, {}, resp, resp_payload));
     REQUIRE(saw_gbb);
     REQUIRE(resp.acf_msg_type == acf::kAcfMsgTypeGbb); // make_response() copies acf_msg_type from req
+}
+
+TEST_CASE("shmem Channel::request forwards the caller-supplied client id to the handler "
+          "unchanged",
+          "[shmem][REQ-SHMEM-007]") {
+    auto ch = new_channel(5);
+    size_t seen_client = static_cast<size_t>(-1);
+    ch->set_handler([&](size_t client, const acf::AcfMessageInfo& req,
+                         const std::vector<uint8_t>&, acf::AcfMessageInfo& out_resp,
+                         std::vector<uint8_t>&) {
+        seen_client = client;
+        out_resp    = acf::make_response(req, acf::ResponseKind::Acknowledge);
+        return std::error_code{};
+    });
+
+    auto req = standard_request(1, 1);
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+
+    REQUIRE_FALSE(ch->request(/*client=*/12345, req, {}, resp, resp_payload));
+    REQUIRE(seen_client == 12345);
+
+    // A different client id on a second call is forwarded independently --
+    // not cached or defaulted from the first call.
+    REQUIRE_FALSE(ch->request(/*client=*/0, req, {}, resp, resp_payload));
+    REQUIRE(seen_client == 0);
 }
 
 TEST_CASE("shmem Channel::request answers Acknowledge by default when no handler is set",
@@ -472,11 +502,14 @@ TEST_CASE("shmem a Channel's state is freed exactly once regardless of shared_pt
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 // Registry itself has no c-RCP analog at all (rcp_shmem_avtp_pair_new()
-// returns exactly one pair, with no keyed lookup of any kind) -- these
-// stay untagged with a REQ-SHMEM-* id rather than force-fitting one.
+// returns exactly one pair, with no keyed lookup of any kind) -- most of
+// these stay untagged with a REQ-SHMEM-* id rather than force-fitting one.
+// REQ-SHMEM-004 is the one exception: this project's own .fusa-reqs.json
+// assigns that id specifically to the lookup-finds-a-registered-channel
+// behavior below.
 
 TEST_CASE("shmem Registry::lookup finds a channel registered via add_channel",
-          "[shmem][registry]") {
+          "[shmem][registry][REQ-SHMEM-004]") {
     auto reg = new_registry();
     auto ch  = new_channel(7);
     REQUIRE_FALSE(reg->add_channel(ch));
