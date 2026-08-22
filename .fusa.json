@@ -2,6 +2,7 @@
   "version": "1",
   "project": {
     "name": "cpp-RCP",
+    "version": "2.26.0",
     "module": "github.com/SoundMatt/cpp-RCP",
     "standard": "iso26262",
     "asil": "ASIL-B"
