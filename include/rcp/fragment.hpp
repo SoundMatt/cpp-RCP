@@ -13,9 +13,22 @@
 // fusa:req REQ-FRAG-013
 // fusa:req REQ-FRAG-014
 // fusa:req REQ-FRAG-015
-// fusa:req REQ-FRAG-016
 // fusa:req REQ-FRAG-017
 // fusa:req REQ-FRAG-018
+//
+// REQ-FRAG-016 (rcp_fragment_reasm_result_t's own RCP_FRAGMENT_REASM_ERR_
+// ALLOC, "reports an allocation failure distinctly from every other failure
+// mode") deliberately has no catalog entry or tag here: it is structurally
+// inapplicable, not missing behavior. Reassembler is backed by a fixed
+// std::array member (see "Fixed-capacity from day one" below), not
+// c-RCP's own realloc()-grown heap buffer, so there is no allocation on the
+// reassembly path at all to ever fail -- any attempt to grow past the fixed
+// capacity is already covered by ReasmResult::kErrTooLarge (REQ-FRAG-015).
+// c-RCP's own REQ-FRAG-016 carries no TC18 citation of its own either, so
+// this is a documented judgment call (matching this codebase's established
+// convention -- see e.g. Phase 6 batch 1's REQ-ACF-037/REQ-AVTP-016/027 --
+// for an architecture divergence with nothing TC18-scoped to file as a gap),
+// not a gap filed to .fusa-reqs-pending.json.
 
 // Multi-AVTPDU message fragmentation and reassembly for the TC18 Remote
 // Control Protocol wire layer (TC18 §13.7.11.3) — brand new to cpp-RCP.
