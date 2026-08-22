@@ -1830,3 +1830,520 @@ TEST_CASE("check_watchdog_overflow()/stream_rx_blocked()/dispatch_e2e() all fail
     REQUIRE_FALSE(ec);
     REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
 }
+
+// ── Fragmented E2E dispatch (Phase 4/Phase 17 batch D1, cpp-RCP issue #129) ──
+// Ported from c-RCP's tests/test_mock.c coverage for rcp_mock_server_
+// dispatch_e2e_fragment() (REQ-E2E-038/039/046, REQ-ISELED-025, REQ-FRAG-*),
+// reduced to this mock's own single public dispatch_e2e_fragment() entry
+// point shape — see that method's own doc comment for why. See
+// tests/test_fragment.cpp/tests/test_respqueue.cpp for fragment::Reassembler/
+// respqueue::RespQueue's own already-covered unit-level behavior — this
+// section is INTEGRATION coverage (via dispatch_e2e_fragment()), not a
+// re-test of those classes' own internals.
+
+namespace {
+
+// build_fragments splits `payload` into the ordered sequence of ACF_ABB wire
+// fragments dispatch_e2e_fragment() itself expects: every fragment but the
+// last is plain (no CRC trailer); the last carries a genuine E2E fragmented
+// CRC (REQ-E2E-038, e2e::compute_fragmented_crc — computed over the FIRST
+// fragment's own raw encoded header bytes, followed by the full,
+// unfragmented `payload`) via the same [header][real payload][CRC32] shape
+// e2e::wrap() itself builds, mirrored here by hand since wrap() only knows
+// the single-frame CRC formula. A one-segment plan (payload already fits in
+// one fragment) degrades to a genuine e2e::wrap_framed() call instead — the
+// exact "never fragmented" shape dispatch_e2e_fragment() itself falls back
+// to dispatch_e2e() for.
+std::vector<std::vector<uint8_t>> build_fragments(avtp::StreamId stream_id, avtp::ByteBusId bus_id,
+                                                    uint8_t transaction_num, bool write, uint8_t evt_op,
+                                                    uint16_t final_read_size, const std::vector<uint8_t>& payload,
+                                                    size_t max_fragment_payload) {
+    const size_t seg_count = fragment::plan_count(payload.size(), max_fragment_payload);
+    REQUIRE(seg_count > 0);
+    std::vector<fragment::Segment> segs(seg_count);
+    REQUIRE_FALSE(fragment::plan(payload.size(), max_fragment_payload, segs.data(), seg_count));
+
+    std::vector<uint8_t>              first_header_bytes;
+    std::vector<std::vector<uint8_t>> frames;
+    for (size_t i = 0; i < seg_count; ++i) {
+        acf::AcfMessageInfo hdr;
+        hdr.byte_bus_id               = bus_id;
+        hdr.transaction_num           = transaction_num;
+        hdr.op                        = write;
+        hdr.evt_op                    = evt_op;
+        hdr.ms                        = segs[i].ms;
+        hdr.read_size_or_segment_num  = segs[i].ms ? segs[i].segment_num : final_read_size;
+        const std::vector<uint8_t> slice(payload.begin() + static_cast<long>(segs[i].offset),
+                                          payload.begin() + static_cast<long>(segs[i].offset + segs[i].len));
+
+        if (segs[i].ms) {
+            auto frame = acf::encode_acf_abb(hdr, slice);
+            if (i == 0) {
+                first_header_bytes.assign(frame.begin(), frame.begin() + static_cast<long>(acf::kAcfCommonHeaderLen));
+            }
+            frames.push_back(std::move(frame));
+            continue;
+        }
+
+        if (seg_count == 1) {
+            // Never actually fragmented — the same single-frame CRC shape
+            // wrap_gpio_write() above already uses.
+            frames.push_back(e2e::wrap_framed(/*is_ntscf_framed=*/true, kE2eHeaderOctet1, /*tu=*/false, stream_id,
+                                               /*avtp_timestamp=*/std::nullopt, hdr, /*message_timestamp=*/std::nullopt,
+                                               slice));
+            continue;
+        }
+
+        hdr.acf_msg_length = acf::compute_acf_msg_length(hdr.acf_msg_type, slice.size());
+        e2e::apply_acf_length_adjustment(hdr); // +1 quadlet, reflected in the header this final fragment encodes
+        auto frame = acf::encode_acf_abb(hdr, slice);
+        const uint32_t crc = e2e::compute_fragmented_crc(avtp::kSubtypeNtscf, kE2eHeaderOctet1, /*tu=*/false,
+                                                           stream_id, /*avtp_timestamp=*/std::nullopt,
+                                                           first_header_bytes, payload);
+        e2e::append_crc(frame, crc);
+        frames.push_back(std::move(frame));
+    }
+    return frames;
+}
+
+} // namespace
+
+TEST_CASE("dispatch_e2e_fragment in plain command mode (ep_req_crc_enable unset) decodes and "
+          "delegates exactly like dispatch_e2e/dispatch()",
+          "[mock][e2e][fragment][REQ-E2E-038]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    // ep_req_crc_enable left at its own struct default (false).
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                 static_cast<uint8_t>(WriteSemantics::Or));
+    auto payload = gpio::encode_gpio_payload(0x0000'000F);
+    auto frame   = acf::encode_acf_abb(req, payload); // NOT CRC-wrapped, ms=false — plain command mode input
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = server.dispatch_e2e_fragment(0, e2e_stream(0x7001), frame, resp, resp_payload);
+
+    REQUIRE_FALSE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::WriteResponse);
+    REQUIRE(server.gpio().read() == 0x0000'000F);
+}
+
+TEST_CASE("dispatch_e2e_fragment falls back to dispatch_e2e unchanged for an unresolvable "
+          "stream_id",
+          "[mock][e2e][fragment][REQ-E2E-038]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kGpioEndpointId - 1].ep_req_crc_enable = true;
+    // Deliberately no set_request_stream_cfg() call.
+
+    const auto stream_id = e2e_stream(0x7002);
+    auto frame = wrap_gpio_write(stream_id, /*transaction_num=*/1, 0x0000'00F0);
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = server.dispatch_e2e_fragment(0, stream_id, frame, resp, resp_payload);
+
+    REQUIRE_FALSE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::WriteResponse);
+    REQUIRE(server.gpio().read() == 0x0000'00F0);
+    REQUIRE(server.fragment_reassembler(stream_id) == nullptr); // still unresolvable — no slot exists
+    REQUIRE(server.resp_queue_for_stream(stream_id) == nullptr);
+}
+
+TEST_CASE("dispatch_e2e_fragment falls back to dispatch_e2e unchanged for a genuinely "
+          "single-fragment (never-fragmented) CRC-protected request",
+          "[mock][e2e][fragment][REQ-E2E-038]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kGpioEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = e2e_stream(0x7003);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id = stream_id;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    auto frames = build_fragments(stream_id, mock::kGpioByteBusId, /*transaction_num=*/2, /*write=*/true,
+                                   static_cast<uint8_t>(WriteSemantics::Or), /*final_read_size=*/0,
+                                   gpio::encode_gpio_payload(0x0000'00FF), /*max_fragment_payload=*/64);
+    REQUIRE(frames.size() == 1); // 4-byte payload comfortably fits in one 64-byte fragment
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = server.dispatch_e2e_fragment(0, stream_id, frames[0], resp, resp_payload);
+
+    REQUIRE_FALSE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::WriteResponse);
+    REQUIRE(server.gpio().read() == 0x0000'00FF);
+    REQUIRE_FALSE(server.fragment_reassembler(stream_id)->is_collecting());
+}
+
+TEST_CASE("dispatch_e2e_fragment reassembles a genuinely multi-fragment E2E request across an "
+          "intermediate and a final fragment, and dispatches it through the same admission/"
+          "handler path as dispatch()/dispatch_e2e()",
+          "[mock][e2e][fragment][REQ-E2E-038][REQ-E2E-039]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kGpioEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = e2e_stream(0x7004);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id = stream_id;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    auto frames = build_fragments(stream_id, mock::kGpioByteBusId, /*transaction_num=*/3, /*write=*/true,
+                                   static_cast<uint8_t>(WriteSemantics::Or), /*final_read_size=*/0,
+                                   gpio::encode_gpio_payload(0x0000'00F0), /*max_fragment_payload=*/2);
+    REQUIRE(frames.size() == 2); // 4-byte payload split into two 2-byte fragments
+
+    acf::AcfMessageInfo   resp1;
+    std::vector<uint8_t>  resp_payload1;
+    auto ec1 = server.dispatch_e2e_fragment(0, stream_id, frames[0], resp1, resp_payload1);
+    REQUIRE(ec1 == mock::make_error_code(mock::DispatchErrc::fragment_pending));
+    REQUIRE_FALSE(resp1.rsp);
+    REQUIRE(resp_payload1.empty());
+    REQUIRE(server.gpio().read() == 0); // nothing dispatched yet
+    REQUIRE(server.fragment_reassembler(stream_id)->is_collecting());
+
+    acf::AcfMessageInfo   resp2;
+    std::vector<uint8_t>  resp_payload2;
+    auto ec2 = server.dispatch_e2e_fragment(0, stream_id, frames[1], resp2, resp_payload2);
+    REQUIRE_FALSE(ec2);
+    REQUIRE(acf::response_kind_of(resp2) == acf::ResponseKind::WriteResponse);
+    REQUIRE(server.gpio().read() == 0x0000'00F0);
+    REQUIRE_FALSE(server.fragment_reassembler(stream_id)->is_collecting());
+}
+
+TEST_CASE("dispatch_e2e_fragment rejects an out-of-order intermediate segment_num with no wire "
+          "response, and resets the reassembler so a later, correctly-ordered sequence still "
+          "works",
+          "[mock][e2e][fragment][REQ-FRAG-001]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kI2cEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = e2e_stream(0x7005);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id = stream_id;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    server.set_i2c_response({0xCA, 0xFE});
+
+    auto frames = build_fragments(stream_id, mock::kI2cByteBusId, /*transaction_num=*/4, /*write=*/true,
+                                   /*evt_op=*/0, /*final_read_size=*/0,
+                                   std::vector<uint8_t>{0x01, 0x02, 0x03, 0x04, 0x05, 0x06},
+                                   /*max_fragment_payload=*/2);
+    REQUIRE(frames.size() == 3); // two intermediate segments (segment_num 0, 1) + one final
+
+    // Feed the SECOND intermediate fragment (segment_num == 1) first — the
+    // reassembler is not yet collecting and expects segment_num == 0.
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = server.dispatch_e2e_fragment(0, stream_id, frames[1], resp, resp_payload);
+    REQUIRE(ec == mock::make_error_code(mock::DispatchErrc::fragment_rejected));
+    REQUIRE_FALSE(resp.rsp);
+    REQUIRE(resp_payload.empty());
+    REQUIRE_FALSE(server.fragment_reassembler(stream_id)->is_collecting()); // reset, not left half-collected
+
+    // The reassembler was reset, not left wedged — a fresh, correctly-ordered
+    // sequence on the SAME stream still reassembles and dispatches cleanly.
+    auto ec0 = server.dispatch_e2e_fragment(0, stream_id, frames[0], resp, resp_payload);
+    REQUIRE(ec0 == mock::make_error_code(mock::DispatchErrc::fragment_pending));
+    auto ec1 = server.dispatch_e2e_fragment(0, stream_id, frames[1], resp, resp_payload);
+    REQUIRE(ec1 == mock::make_error_code(mock::DispatchErrc::fragment_pending));
+    auto ec2 = server.dispatch_e2e_fragment(0, stream_id, frames[2], resp, resp_payload);
+    REQUIRE_FALSE(ec2);
+    REQUIRE(server.i2c().last_sent() == std::vector<uint8_t>{0x01, 0x02, 0x03, 0x04, 0x05, 0x06});
+    REQUIRE(resp_payload == std::vector<uint8_t>{0xCA, 0xFE});
+}
+
+TEST_CASE("dispatch_e2e_fragment's fragmented CRC check (REQ-E2E-038) reports crc_error with a "
+          "POCI_FAILURE error response on the final fragment, and latches the stream faulted "
+          "when rx_enforce_e2e is set",
+          "[mock][e2e][fragment][REQ-E2E-021][REQ-E2E-038][REQ-E2E-046]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kGpioEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = e2e_stream(0x7006);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id      = stream_id;
+    cfg.rx_enforce_e2e = true;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    auto frames = build_fragments(stream_id, mock::kGpioByteBusId, /*transaction_num=*/5, /*write=*/true,
+                                   static_cast<uint8_t>(WriteSemantics::Or), /*final_read_size=*/0,
+                                   gpio::encode_gpio_payload(0x0000'00FF), /*max_fragment_payload=*/2);
+    REQUIRE(frames.size() == 2);
+    frames[1][frames[1].size() - 1] ^= 0xFF; // corrupt one CRC byte on the final fragment
+
+    acf::AcfMessageInfo   resp1;
+    std::vector<uint8_t>  resp_payload1;
+    auto ec1 = server.dispatch_e2e_fragment(0, stream_id, frames[0], resp1, resp_payload1);
+    REQUIRE(ec1 == mock::make_error_code(mock::DispatchErrc::fragment_pending));
+
+    acf::AcfMessageInfo   resp2;
+    std::vector<uint8_t>  resp_payload2;
+    auto ec2 = server.dispatch_e2e_fragment(0, stream_id, frames[1], resp2, resp_payload2);
+    REQUIRE(ec2 == e2e::make_error_code(e2e::E2eErrc::crc_error));
+    REQUIRE(acf::response_kind_of(resp2) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload2.size() == 1);
+    REQUIRE(resp_payload2[0] == static_cast<uint8_t>(acf::WireErrorCode::PociFailure));
+    REQUIRE(server.gpio().read() == 0); // the write never reached the endpoint
+    REQUIRE(server.stream_rx_blocked(stream_id));
+    REQUIRE_FALSE(server.fragment_reassembler(stream_id)->is_collecting());
+}
+
+TEST_CASE("dispatch_e2e_fragment's per-stream fragment::Reassembler capacity is a SEPARATE bound "
+          "from the ACF-frame re-encode ceiling: exceeding it mid-sequence reports "
+          "fragment_rejected with NO wire response at all",
+          "[mock][e2e][fragment][REQ-FRAG-005]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kI2cEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = e2e_stream(0x7007);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id = stream_id;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+    // Deliberately tightened, mirroring c-RCP issue #611's own test (a
+    // deliberately tightened rcp_mock_server_fragment_reassembler() ceiling
+    // that admits the first fragment alone but is exceeded by the
+    // reassembled total).
+    REQUIRE(server.fragment_reassembler(stream_id) != nullptr);
+    *server.fragment_reassembler(stream_id) = fragment::Reassembler(/*max_total_len=*/3);
+
+    auto frames = build_fragments(stream_id, mock::kI2cByteBusId, /*transaction_num=*/6, /*write=*/true,
+                                   /*evt_op=*/0, /*final_read_size=*/0, std::vector<uint8_t>{0x01, 0x02, 0x03, 0x04},
+                                   /*max_fragment_payload=*/2);
+    REQUIRE(frames.size() == 2); // 2 + 2 bytes; the first 2 fit under max_total_len==3, the total (4) does not
+
+    acf::AcfMessageInfo   resp1;
+    std::vector<uint8_t>  resp_payload1;
+    auto ec1 = server.dispatch_e2e_fragment(0, stream_id, frames[0], resp1, resp_payload1);
+    REQUIRE(ec1 == mock::make_error_code(mock::DispatchErrc::fragment_pending));
+
+    acf::AcfMessageInfo   resp2;
+    std::vector<uint8_t>  resp_payload2;
+    auto ec2 = server.dispatch_e2e_fragment(0, stream_id, frames[1], resp2, resp_payload2);
+    REQUIRE(ec2 == mock::make_error_code(mock::DispatchErrc::fragment_rejected));
+    REQUIRE_FALSE(resp2.rsp); // NO wire response — c-RCP's own RCP_MOCK_DISPATCH_REJECTED builds none either
+    REQUIRE(resp_payload2.empty());
+    REQUIRE_FALSE(server.fragment_reassembler(stream_id)->is_collecting());
+}
+
+TEST_CASE("dispatch_e2e_fragment's oversized-reassembly check (c-RCP issue #614/#616) rejects a "
+          "genuinely valid, CRC-correct reassembled request with a REAL WireErrorCode::"
+          "RequestRejected wire ErrorResponse when it cannot be re-expressed as one ACF frame — "
+          "never a silent drop",
+          "[mock][e2e][fragment][REQ-E2E-038]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kI2cEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = e2e_stream(0x7008);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id = stream_id;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    // 2050 octets: comfortably under fragment::Reassembler's own default
+    // 4096-octet capacity (so reassembly itself completes and the fragmented
+    // CRC genuinely validates), but over acf::kAcfAbbMaxPayload (2036) — the
+    // exact "every fragment valid, combined CRC valid, doesn't fit back into
+    // one frame" scenario issue #614/#616 found.
+    std::vector<uint8_t> big_payload(2050);
+    for (size_t i = 0; i < big_payload.size(); ++i) big_payload[i] = static_cast<uint8_t>(i);
+    REQUIRE(big_payload.size() > acf::kAcfAbbMaxPayload);
+    REQUIRE(big_payload.size() <= fragment::kDefaultReassemblyCapacity);
+
+    auto frames = build_fragments(stream_id, mock::kI2cByteBusId, /*transaction_num=*/7, /*write=*/true,
+                                   /*evt_op=*/0, /*final_read_size=*/0, big_payload, /*max_fragment_payload=*/700);
+    REQUIRE(frames.size() == 3);
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    for (size_t i = 0; i + 1 < frames.size(); ++i) {
+        auto ec = server.dispatch_e2e_fragment(0, stream_id, frames[i], resp, resp_payload);
+        REQUIRE(ec == mock::make_error_code(mock::DispatchErrc::fragment_pending));
+    }
+
+    auto ec = server.dispatch_e2e_fragment(0, stream_id, frames.back(), resp, resp_payload);
+    REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse); // a REAL wire response — not dropped
+    REQUIRE(resp_payload.size() == 1);
+    REQUIRE(resp_payload[0] == static_cast<uint8_t>(acf::WireErrorCode::RequestRejected));
+    REQUIRE_FALSE(server.fragment_reassembler(stream_id)->is_collecting()); // reset, ready for a fresh sequence
+}
+
+TEST_CASE("maybe_fragment_response slices an over-large ISELED read response across multiple "
+          "respqueue::RespQueue entries (REQ-ISELED-025, REQ-RMAP-062) when it does not fit in "
+          "one ACF frame, byte-for-byte reconstructible from the queue",
+          "[mock][e2e][fragment][respqueue][REQ-ISELED-025][REQ-RMAP-062]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kIseledEndpointId - 1].ep_req_crc_enable = true;
+    // rx_resp_stream_index defaults to 1 (RequestStreamConfig's own struct
+    // default) — give it a real response_streams[] row to resolve against;
+    // a default-valued row (max_avtpdu_size == 0) keeps the ceiling at this
+    // ACF variant's own kAcfAbbMaxPayload.
+    server.registers().response_streams = {regmap::ResponseQueueConfig{}};
+
+    const auto stream_id = e2e_stream(0x7009);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id = stream_id;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    std::vector<uint8_t> scripted(3000);
+    for (size_t i = 0; i < scripted.size(); ++i) scripted[i] = static_cast<uint8_t>(i * 7 + 1);
+    server.set_iseled_response(scripted);
+    REQUIRE(scripted.size() > acf::kAcfAbbMaxPayload);
+
+    // A tiny (5-byte) ISELED request payload, artificially split into two
+    // 3-byte fragments — just enough to force dispatch_e2e_fragment()'s own
+    // genuinely-reassembled path (maybe_fragment_response() is only reached
+    // from there, not from the "never fragmented" dispatch_e2e() fallback).
+    const std::vector<uint8_t> request_payload{0x03, 0x01, 0x02, 0x11, 0x22};
+    auto frames = build_fragments(stream_id, mock::kIseledByteBusId, /*transaction_num=*/8, /*write=*/true,
+                                   /*evt_op=*/0, /*final_read_size=*/0, request_payload, /*max_fragment_payload=*/3);
+    REQUIRE(frames.size() == 2);
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec1 = server.dispatch_e2e_fragment(0, stream_id, frames[0], resp, resp_payload);
+    REQUIRE(ec1 == mock::make_error_code(mock::DispatchErrc::fragment_pending));
+
+    auto ec2 = server.dispatch_e2e_fragment(0, stream_id, frames[1], resp, resp_payload);
+    REQUIRE(ec2 == mock::make_error_code(mock::DispatchErrc::response_fragmented));
+    REQUIRE_FALSE(resp.rsp);          // nothing to send synchronously...
+    REQUIRE(resp_payload.empty());    // ...the real response is on the queue instead.
+
+    respqueue::RespQueue* queue = server.resp_queue_for_stream(stream_id);
+    REQUIRE(queue != nullptr);
+    REQUIRE(queue->len() > 1); // genuinely fragmented, not one lone entry
+
+    // Drain the queue and reassemble: every fragment but the last must carry
+    // ms=true with a strictly increasing segment_num starting at 0; the last
+    // must carry ms=false. Concatenating every fragment's own payload in
+    // order must reproduce the original scripted bytes exactly.
+    std::vector<uint8_t> reassembled;
+    uint16_t             expected_segment_num = 0;
+    size_t               popped               = 0;
+    std::vector<uint8_t> frame;
+    while (queue->pop(frame)) {
+        acf::AcfMessageInfo  hdr;
+        std::vector<uint8_t> payload;
+        REQUIRE_FALSE(acf::decode_acf_abb(frame.data(), frame.size(), hdr, payload));
+        ++popped;
+        if (hdr.ms) {
+            REQUIRE(hdr.read_size_or_segment_num == expected_segment_num);
+            ++expected_segment_num;
+        }
+        reassembled.insert(reassembled.end(), payload.begin(), payload.end());
+    }
+    REQUIRE(popped > 1);
+    REQUIRE(reassembled == scripted);
+}
+
+TEST_CASE("maybe_fragment_response rejects an over-large response with a REAL "
+          "WireErrorCode::RequestRejected wire ErrorResponse (not a silent drop) when the "
+          "resolved request stream's own rx_resp_stream_index names no configured response-"
+          "queue row",
+          "[mock][e2e][fragment][respqueue][REQ-ISELED-025]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kIseledEndpointId - 1].ep_req_crc_enable = true;
+    // Deliberately no regs_.response_streams row — rx_resp_stream_index (== 1
+    // by default) resolves to nothing.
+
+    const auto stream_id = e2e_stream(0x700A);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id = stream_id;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    std::vector<uint8_t> scripted(3000, 0xAB);
+    server.set_iseled_response(scripted);
+
+    const std::vector<uint8_t> request_payload{0x03, 0x01, 0x02, 0x11, 0x22};
+    auto frames = build_fragments(stream_id, mock::kIseledByteBusId, /*transaction_num=*/9, /*write=*/true,
+                                   /*evt_op=*/0, /*final_read_size=*/0, request_payload, /*max_fragment_payload=*/3);
+    REQUIRE(frames.size() == 2);
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    REQUIRE(server.dispatch_e2e_fragment(0, stream_id, frames[0], resp, resp_payload) ==
+            mock::make_error_code(mock::DispatchErrc::fragment_pending));
+
+    auto ec = server.dispatch_e2e_fragment(0, stream_id, frames[1], resp, resp_payload);
+    REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload.size() == 1);
+    REQUIRE(resp_payload[0] == static_cast<uint8_t>(acf::WireErrorCode::RequestRejected));
+    REQUIRE(server.resp_queue_for_stream(stream_id) == nullptr);
+}
+
+TEST_CASE("maybe_fragment_response honors a configured response-stream max_avtpdu_size "
+          "(REQ-RMAP-062), producing MORE, smaller fragments than the default ACF-ceiling split",
+          "[mock][e2e][fragment][respqueue][REQ-RMAP-062]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kIseledEndpointId - 1].ep_req_crc_enable = true;
+
+    regmap::ResponseQueueConfig rq_cfg;
+    rq_cfg.max_avtpdu_size = 32; // quadlets -> 128 octets, well under kAcfAbbMaxPayload
+    server.registers().response_streams = {rq_cfg};
+
+    const auto stream_id = e2e_stream(0x700B);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id = stream_id;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    std::vector<uint8_t> scripted(300, 0x5A);
+    server.set_iseled_response(scripted);
+
+    const std::vector<uint8_t> request_payload{0x03, 0x01, 0x02, 0x11, 0x22};
+    auto frames = build_fragments(stream_id, mock::kIseledByteBusId, /*transaction_num=*/10, /*write=*/true,
+                                   /*evt_op=*/0, /*final_read_size=*/0, request_payload, /*max_fragment_payload=*/3);
+    REQUIRE(frames.size() == 2);
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    REQUIRE(server.dispatch_e2e_fragment(0, stream_id, frames[0], resp, resp_payload) ==
+            mock::make_error_code(mock::DispatchErrc::fragment_pending));
+    REQUIRE(server.dispatch_e2e_fragment(0, stream_id, frames[1], resp, resp_payload) ==
+            mock::make_error_code(mock::DispatchErrc::response_fragmented));
+
+    respqueue::RespQueue* queue = server.resp_queue_for_stream(stream_id);
+    REQUIRE(queue != nullptr);
+    const size_t configured_ceiling =
+        respqueue::RespQueue::max_fragment_payload(static_cast<size_t>(rq_cfg.max_avtpdu_size) * 4,
+                                                     acf::kAcfCommonHeaderLen);
+    const size_t expected_fragments = fragment::plan_count(scripted.size(), configured_ceiling);
+    REQUIRE(expected_fragments > 1);
+    REQUIRE(queue->len() == expected_fragments);
+
+    std::vector<uint8_t> reassembled;
+    std::vector<uint8_t> frame;
+    while (queue->pop(frame)) {
+        acf::AcfMessageInfo  hdr;
+        std::vector<uint8_t> payload;
+        REQUIRE_FALSE(acf::decode_acf_abb(frame.data(), frame.size(), hdr, payload));
+        REQUIRE(frame.size() <= configured_ceiling + acf::kAcfCommonHeaderLen);
+        reassembled.insert(reassembled.end(), payload.begin(), payload.end());
+    }
+    REQUIRE(reassembled == scripted);
+}
+
+TEST_CASE("fragment_reassembler()/resp_queue_for_stream() fail toward nullptr for an "
+          "unresolvable stream_id",
+          "[mock][e2e][fragment][respqueue]") {
+    mock::Server server;
+    const auto stream_id = e2e_stream(0x700C);
+    // Deliberately no set_request_stream_cfg() call.
+    REQUIRE(server.fragment_reassembler(stream_id) == nullptr);
+    REQUIRE(server.resp_queue_for_stream(stream_id) == nullptr);
+}
