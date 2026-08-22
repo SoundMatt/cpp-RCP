@@ -177,6 +177,10 @@ add_executable(test_relay test_relay.cpp)
 target_link_libraries(test_relay PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_relay COMMAND test_relay)
 
+add_executable(test_adapt test_adapt.cpp)
+target_link_libraries(test_adapt PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_adapt COMMAND test_adapt)
+
 add_executable(test_cli test_cli.cpp)
 target_link_libraries(test_cli PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_cli COMMAND test_cli)
