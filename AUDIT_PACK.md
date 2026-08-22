@@ -69,6 +69,23 @@ itself was written to correct.
 Required threshold: 80% branch coverage. MC/DC coverage target of 80% is
 tracked as an open item for an ASIL-C upgrade path.
 
+Real MC/DC (condition/decision) evidence, distinct from the `cpfusa
+coverage --mcdc`/`--dal DAL-B` branch-coverage fallback above, is now
+measured in CI by `.github/workflows/ci.yml`'s `mcdc` job (Phase 7 batch
+2 / cpp-RCP #129): LLVM's own `-fcoverage-mcdc` instrumentation, built
+and run against the full `ctest` suite, exported via `llvm-cov export`
+(not `cpfusa coverage --mcdc-file`, whose parser expects JSON keys real
+`llvm-cov export` output does not produce — see the job's own header
+comment; filed upstream as SoundMatt/cpp-FuSa#64-class). Freshly measured
+immediately before this PR (Homebrew LLVM 18.1.8, matching the CI job's
+own clang-18, on `include/rcp/*.hpp`): 313/466 = 67.17% real MC/DC
+condition-pair coverage (corroborated by a second local run on LLVM
+22.1.8: 426/629 = 67.73%, close agreement across a 4-major-version
+toolchain gap). The `mcdc` job ratchet-gates a 60% floor — real margin
+below that measurement, not a 100% or 80% claim — so this stays
+open-item/informational for the 80% ASIL-C target above while still
+catching a real regression today.
+
 ---
 
 ## 4. DO-178C (DAL-C) Applicability
@@ -101,6 +118,7 @@ All of the following gates must pass for a tagged release:
 | IEC 61508 report | `cpfusa iec61508` | Gap report generated (advisory) |
 | DO-178C report | `cpfusa do178` | Gap report generated (advisory) |
 | Coverage | `cpfusa coverage` | ≥ 80% branch |
+| MC/DC (real, LLVM) | `ci.yml`'s `mcdc` job (`llvm-cov export`) | Ratchet floor: ≥ 60% (not 100%; see §3) |
 | SCI (Software Change Impact) | `cpfusa sci` | No unmitigated impacts |
 | Audit pack | `cpfusa audit-pack` | Generated |
 | Release badge | `cpfusa badge` | Green |
