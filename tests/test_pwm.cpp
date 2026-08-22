@@ -530,6 +530,16 @@ TEST_CASE("PWM_OUT decode_read_request rejects a short frame", "[pwm][REQ-PWM-02
     REQUIRE(decode_read_request(buf.data(), buf.size(), 0, txn) == make_error_code(PwmErrc::short_frame));
 }
 
+TEST_CASE("PWM_OUT decode_read_request rejects a non-ACF_ABB frame", "[pwm][REQ-PWM-061]") {
+    rcp::acf::AcfMessageInfo hdr;
+    hdr.byte_bus_id = 7;
+    hdr.op          = false;
+    const auto frame = rcp::acf::encode_acf_gbb(hdr, 0, {});
+
+    uint8_t txn = 0;
+    REQUIRE(decode_read_request(frame.data(), frame.size(), 7, txn) == make_error_code(PwmErrc::bad_msg_type));
+}
+
 TEST_CASE("PWM_OUT decode_read_request rejects a misaddressed frame", "[pwm][REQ-PWM-062]") {
     auto frame = encode_read_request(7, 1);
     uint8_t txn = 0;
@@ -637,6 +647,38 @@ TEST_CASE("PwmErrc reports a non-empty message in its own category", "[pwm][REQ-
     auto ec = make_error_code(PwmErrc::no_signal);
     REQUIRE(ec.category() == pwm_category());
     REQUIRE_FALSE(ec.message().empty());
+}
+
+// c-RCP models PWM_OUT/PWM_IN error strings via two distinct functions
+// (rcp_ep_pwm_out_strerror()/rcp_ep_pwm_in_strerror(), REQ-PWM-024/REQ-PWM-041
+// respectively); this port shares one PwmErrc/pwm_category() across both
+// endpoint types (see the file header), so one exhaustive test discharges
+// both requirements' "non-NULL, non-empty, distinct message per code,
+// including an out-of-range value" contract at once.
+TEST_CASE("PwmErrc::message is non-empty and distinct for every defined code, and for an out-of-range code",
+          "[pwm][REQ-PWM-024][REQ-PWM-041]") {
+    const PwmErrc codes[] = {
+        PwmErrc::no_signal,       PwmErrc::config_write_not_supported, PwmErrc::short_frame,
+        PwmErrc::bad_msg_type,    PwmErrc::wrong_bus,                  PwmErrc::wrong_op,
+        PwmErrc::bad_payload_len, PwmErrc::reserved_evt,               PwmErrc::bad_evt,
+        PwmErrc::reconfig_short,  PwmErrc::reconfig_out_of_range,
+    };
+    std::vector<std::string> messages;
+    for (auto code : codes) {
+        auto msg = make_error_code(code).message();
+        REQUIRE_FALSE(msg.empty());
+        messages.push_back(msg);
+    }
+    for (size_t i = 0; i < messages.size(); ++i) {
+        for (size_t j = i + 1; j < messages.size(); ++j) {
+            REQUIRE(messages[i] != messages[j]);
+        }
+    }
+
+    // Out-of-range value: the category's own message() still returns a
+    // non-empty, non-crashing string via its default case.
+    auto out_of_range = pwm_category().message(9999);
+    REQUIRE_FALSE(out_of_range.empty());
 }
 
 TEST_CASE("wire_error maps bad_payload_len to InvalidParameter and no_signal to PwmInNoSignal",
