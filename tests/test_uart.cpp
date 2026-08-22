@@ -7,6 +7,46 @@
 // fusa:test REQ-UART-007
 // fusa:test REQ-UART-008
 // fusa:test REQ-UART-009
+// fusa:test REQ-UART-010
+// fusa:test REQ-UART-011
+// fusa:test REQ-UART-012
+// fusa:test REQ-UART-013
+// fusa:test REQ-UART-014
+// fusa:test REQ-UART-015
+// fusa:test REQ-UART-016
+// fusa:test REQ-UART-017
+// fusa:test REQ-UART-018
+// fusa:test REQ-UART-019
+// fusa:test REQ-UART-020
+// fusa:test REQ-UART-021
+// fusa:test REQ-UART-022
+// fusa:test REQ-UART-023
+// fusa:test REQ-UART-024
+// fusa:test REQ-UART-025
+// fusa:test REQ-UART-026
+// fusa:test REQ-UART-027
+// fusa:test REQ-UART-028
+// fusa:test REQ-UART-029
+// fusa:test REQ-UART-030
+// fusa:test REQ-UART-031
+// fusa:test REQ-UART-032
+// fusa:test REQ-UART-033
+// fusa:test REQ-UART-034
+// fusa:test REQ-UART-035
+// fusa:test REQ-UART-036
+// fusa:test REQ-UART-037
+// fusa:test REQ-UART-038
+// fusa:test REQ-UART-039
+// fusa:test REQ-UART-040
+// fusa:test REQ-UART-041
+// fusa:test REQ-UART-042
+// fusa:test REQ-UART-043
+// fusa:test REQ-UART-044
+// fusa:test REQ-UART-045
+// fusa:test REQ-UART-046
+// fusa:test REQ-UART-047
+// fusa:test REQ-UART-048
+// fusa:test REQ-UART-049
 
 // Tests for rcp/uart.hpp — the UART endpoint type (ROADMAP.md milestone 48,
 // "Basic Endpoint Types II — I2C, UART, ADC, PWM_OUT, PWM_IN", v2.4.0).
@@ -538,7 +578,14 @@ TEST_CASE("set_trigger applies when authorized", "[uart][REQ-UART-045]") {
 
 // ── The EP_func register block (§13.7.8.2 Table 51) ──────────────────────────
 
-TEST_CASE("render_registers matches Table 51's own offsets", "[uart][REQ-UART-036][REQ-UART-038]") {
+// Also covers REQ-UART-048's own "implemented" half: baud_rate_kbps/
+// wire_timeout_bit_times round-trip through Table 51's own kbit/s and
+// bit-time units, kept as separate fields from the pre-existing baud_rate/
+// uart_timeout_ms (see functional_cfg_init's own coverage above, and the
+// struct's own file comment for the "STILL PARTIAL" residual limitation
+// this dual-tag does not itself re-demonstrate).
+TEST_CASE("render_registers matches Table 51's own offsets",
+          "[uart][REQ-UART-036][REQ-UART-038][REQ-UART-048]") {
     UartFunctionalCfg cfg;
     functional_cfg_init(cfg);
     cfg.ep_enable             = true;
@@ -570,6 +617,30 @@ TEST_CASE("render_registers matches Table 51's own offsets", "[uart][REQ-UART-03
     REQUIRE(out[kRegTimeout] == 9);
     REQUIRE(out[kRegTrail] == 10);
     REQUIRE(kEpFuncLen == 0x000Du);
+}
+
+// REQ-UART-032: uart_ep_status (kRegEpStatus, Table 51 0x0004, 16 bit R/W)
+// exists and round-trips through both halves of the register block, matching
+// every other endpoint type's own status-register precedent (e.g. SPI's
+// spi_ep_status, WAKEUP's wup_ep_status). render_registers()'s own coverage
+// of this register is already exercised (dual-tagged) by "render_registers
+// matches Table 51's own offsets" above; this TEST_CASE closes the other
+// half — apply_reconfig()'s own parse path — which no existing TEST_CASE
+// exercised for this specific register before.
+TEST_CASE("apply_reconfig writes ep_status, matching every other endpoint type's own "
+          "status-register precedent",
+          "[uart][REQ-UART-032]") {
+    UartFunctionalCfg cfg;
+    functional_cfg_init(cfg);
+
+    const uint8_t payload[4] = {0x00, static_cast<uint8_t>(kRegEpStatus), 0xBE, 0xEF};
+    REQUIRE_FALSE(apply_reconfig(cfg, payload, sizeof(payload)));
+    REQUIRE(cfg.ep_status == 0xBEEF);
+
+    EpFuncBlock out{};
+    render_registers(cfg, out);
+    REQUIRE(out[kRegEpStatus] == 0xBE);
+    REQUIRE(out[kRegEpStatus + 1] == 0xEF);
 }
 
 TEST_CASE("apply_reconfig writes a multi-register span", "[uart][REQ-UART-039][REQ-UART-040]") {
@@ -943,6 +1014,38 @@ TEST_CASE("decode_read_response rejects wrong_bus and short_frame", "[uart][REQ-
     const uint8_t too_short[2] = {static_cast<uint8_t>(rcp::acf::kAcfMsgTypeAbb << 1), 0};
     REQUIRE(decode_read_response(too_short, sizeof(too_short), 2, out_rx, timed, ts, txn) ==
             make_error_code(UartErrc::short_frame));
+}
+
+// ── Compound-wait against a UART endpoint (REQ-UART-035) ────────────────────
+// c-RCP's own disposition: no UART-specific compound-wait logic exists — a
+// caller goes through acf::compound_wait_match() directly, supplying the RX
+// FIFO's own real contents as the comparison's "status" buffer. Exercises
+// that mechanism against a UART-flavored scenario mirroring
+// tests/test_spi.cpp's own identical demonstration for SPI: the RX FIFO can
+// never hold more than uart_rx_fifo_size octets, so an expected
+// byte_msg_payload longer than the FIFO's own current contents never
+// matches, and a payload no longer than the FIFO's contents is compared only
+// against that same-length prefix (TC18 §13.5.1's shared length rule).
+TEST_CASE("compound-wait against a UART RX FIFO goes through acf::compound_wait_match, bounded "
+          "by the FIFO's own real contents",
+          "[uart][REQ-UART-035]") {
+    std::vector<uint8_t> payload{0x01, 0x02, 0x03, 0x04}; // the request's own 4-byte byte_msg_payload
+    std::vector<uint8_t> rx_fifo_contents{0x01, 0x02, 0x03, 0x04, 0xAA, 0xBB}; // 6 bytes currently buffered
+
+    REQUIRE(rcp::acf::compound_wait_evt_valid(0x0)); // exact-match mode
+    REQUIRE(rcp::acf::compound_wait_match(0x0, payload.data(), payload.size(), rx_fifo_contents.data(),
+                                           rx_fifo_contents.size()));
+
+    // A byte_msg_payload longer than the FIFO's own current contents can
+    // never match — the FIFO's own contents length caps the comparison, per
+    // uart_rx_fifo_size's own bound.
+    std::vector<uint8_t> longer_payload{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+    REQUIRE_FALSE(rcp::acf::compound_wait_match(0x0, longer_payload.data(), longer_payload.size(),
+                                                 rx_fifo_contents.data(), rx_fifo_contents.size()));
+
+    rx_fifo_contents[2] = 0x99; // now differs within the payload's own 4-byte window
+    REQUIRE_FALSE(rcp::acf::compound_wait_match(0x0, payload.data(), payload.size(), rx_fifo_contents.data(),
+                                                 rx_fifo_contents.size()));
 }
 
 // ── Read-completion arbitration (REQ-UART-033) ──────────────────────────────
