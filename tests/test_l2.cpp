@@ -37,6 +37,8 @@
 #include <rcp/l2.hpp>
 #include <rcp/mock.hpp>
 
+#include <set>
+
 using namespace rcp;
 using namespace rcp::l2;
 
@@ -253,6 +255,45 @@ TEST_CASE("is_unicast_mac reports false for the all-ones broadcast address", "[l
     MacAddress mac;
     mac.fill(0xFF);
     REQUIRE_FALSE(is_unicast_mac(mac));
+}
+
+// ── pending_key — Client response-correlation key (pure, no socket) ─────────
+//
+// rcp::l2::Client::request()/read_loop() correlate an inbound response to
+// its outstanding request via pending_key(byte_bus_id, transaction_num),
+// the same formula rcp/udp.hpp's own top-level pending_key uses (that
+// file's own comment documents the collision this widening fixes) — no
+// real AF_PACKET socket needed to exercise the pure key-computation logic
+// itself (it is unconditional of RCP_L2_LINUX, like is_unicast_mac just
+// above), so this stays in this privilege-free file rather than
+// tests/l2_veth_roundtrip.cpp (this file's own header comment).
+TEST_CASE("pending_key does not collide for byte_bus_id values that differ by a "
+          "multiple of 256 and share a transaction_num",
+          "[l2]") {
+    // byte_bus_id is an 11-bit wire field (0-2047; avtp::ByteBusId's own
+    // comment, acf.hpp's detail::kByteBusIdMask) -- 5 and 261 are both
+    // wire-legal and differ by exactly 256. A previous version of
+    // pending_key returned uint16_t, computing this same left-shift-by-8
+    // but then truncating the result back down to 16 bits, so these two
+    // collided into the identical map key (0x0507) whenever they shared a
+    // transaction_num (cpp-RCP v3.0.0 deep audit finding) — silently
+    // misdelivering one Client::request() caller's response to another's
+    // promise, or hanging one of them indefinitely.
+    REQUIRE(pending_key(5, 7) != pending_key(261, 7));
+    REQUIRE(pending_key(5, 7) == pending_key(5, 7));
+
+    // Sweep every byte_bus_id that used to alias to the same 16-bit key
+    // under the old truncation (i.e. every value 256 apart, across the
+    // whole 11-bit range) crossed with a few transaction_num values, and
+    // confirm every (byte_bus_id, transaction_num) pair now maps to a
+    // distinct key.
+    std::set<uint32_t> seen;
+    for (uint32_t bus = 0; bus <= 2047; bus += 256) {
+        for (uint32_t txn = 0; txn <= 255; txn += 85) {
+            auto key = pending_key(static_cast<avtp::ByteBusId>(bus), static_cast<uint8_t>(txn));
+            REQUIRE(seen.insert(key).second); // must be a fresh key, never seen before
+        }
+    }
 }
 
 // ── AVTP envelope-only decode (decode_avtp_frame_header/decode_l2_frame_header) ──

@@ -208,6 +208,31 @@ inline bool is_unicast_mac(const MacAddress& mac) noexcept {
     return (mac[0] & 0x01u) == 0u;
 }
 
+// pending_key combines byte_bus_id (an 11-bit wire field — avtp::ByteBusId's
+// own comment, and acf.hpp's detail::kByteBusIdMask) and transaction_num (a
+// full 8-bit field) into one collision-free correlation key for Client's own
+// pending_ member below (RCP_L2_LINUX branch only — Client is a stub on
+// every other platform). Same formula and same fix as rcp/udp.hpp's own
+// top-level pending_key (that file's own comment explains the collision
+// this widening fixes). Placed here, unconditional of RCP_L2_LINUX like
+// is_unicast_mac just above, rather than in the RCP_L2_LINUX-only detail
+// namespace below, so this pure function — and the test exercising it
+// directly — compiles and runs on every platform, not only Linux.
+//
+// Shifting bus_id left by 8 keeps every (byte_bus_id, transaction_num) pair
+// distinct: transaction_num occupies bits 0-7 and byte_bus_id (0-2047, 11
+// bits) occupies bits 8-18 of the returned uint32_t, so the two fields never
+// overlap. A previous version of this function returned uint16_t, computing
+// the identical shift but then truncating the result back down to 16 bits —
+// silently dropping byte_bus_id's top 3 bits, so e.g. byte_bus_id 5 and 261
+// (differing by exactly 256) collided whenever they shared a
+// transaction_num, misdelivering one Client's pending response to another
+// (or hanging it indefinitely) under concurrent requests. cpp-RCP v3.0.0
+// deep audit finding; fixed by widening this key to uint32_t.
+inline uint32_t pending_key(avtp::ByteBusId bus_id, uint8_t transaction_num) noexcept {
+    return (static_cast<uint32_t>(bus_id) << 8) | static_cast<uint32_t>(transaction_num);
+}
+
 // ── Frame ─────────────────────────────────────────────────────────────────────
 // Same AVTPDU shape as rcp/udp.hpp::Frame (one NTSCF/TSCF header wrapping
 // one ACF_ABB/ACF_GBB message) — deliberately duplicated here rather than
@@ -929,7 +954,7 @@ public:
         out.message_timestamp = message_timestamp;
         out.payload            = req_payload;
 
-        const uint16_t key = pending_key(req.byte_bus_id, req.transaction_num);
+        const uint32_t key = pending_key(req.byte_bus_id, req.transaction_num);
         auto result = std::make_shared<std::promise<Frame>>();
         auto future = result->get_future();
         {
@@ -984,10 +1009,6 @@ public:
     bool ok() const noexcept { return fd_ >= 0; }
 
 private:
-    static uint16_t pending_key(avtp::ByteBusId bus_id, uint8_t transaction_num) noexcept {
-        return static_cast<uint16_t>((static_cast<uint16_t>(bus_id) << 8) | transaction_num);
-    }
-
     avtp::StreamId stream_id_;
     MacAddress dest_mac_{};
     MacAddress local_mac_{};
@@ -996,7 +1017,7 @@ private:
     std::atomic<bool>     closed_{false};
     std::atomic<uint16_t> seq_{0};
     std::mutex mu_;
-    std::map<uint16_t, std::shared_ptr<std::promise<Frame>>> pending_;
+    std::map<uint32_t, std::shared_ptr<std::promise<Frame>>> pending_;
     std::thread read_thread_;
 
     void read_loop() {
@@ -1021,7 +1042,7 @@ private:
             Frame     resp;
             if (decode_l2_frame(buf.data(), static_cast<size_t>(n), hdr, resp)) continue;
 
-            const uint16_t key = pending_key(resp.info.byte_bus_id, resp.info.transaction_num);
+            const uint32_t key = pending_key(resp.info.byte_bus_id, resp.info.transaction_num);
             std::lock_guard<std::mutex> lk(mu_);
             auto it = pending_.find(key);
             if (it != pending_.end()) {

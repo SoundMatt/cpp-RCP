@@ -185,6 +185,27 @@ struct FrameResponse {
     std::vector<uint8_t>  payload;
 };
 
+// pending_key combines byte_bus_id (an 11-bit wire field — avtp::ByteBusId's
+// own comment, and acf.hpp's detail::kByteBusIdMask) and transaction_num (a
+// full 8-bit field) into one collision-free correlation key for
+// Client::pending_ below. A pure function, independent of RCP_UDP_POSIX like
+// encode_annexj_datagram/decode_annexj_datagram above, so it — and the test
+// exercising it directly — compiles and runs on every platform.
+//
+// Shifting bus_id left by 8 keeps every (byte_bus_id, transaction_num) pair
+// distinct: transaction_num occupies bits 0-7 and byte_bus_id (0-2047, 11
+// bits) occupies bits 8-18 of the returned uint32_t, so the two fields never
+// overlap. A previous version of this function returned uint16_t, computing
+// the identical shift but then truncating the result back down to 16 bits —
+// silently dropping byte_bus_id's top 3 bits, so e.g. byte_bus_id 5 and 261
+// (differing by exactly 256) collided whenever they shared a
+// transaction_num, misdelivering one Client's pending response to another
+// (or hanging it indefinitely) under concurrent requests. cpp-RCP v3.0.0
+// deep audit finding; fixed by widening this key to uint32_t.
+inline uint32_t pending_key(avtp::ByteBusId bus_id, uint8_t transaction_num) noexcept {
+    return (static_cast<uint32_t>(bus_id) << 8) | static_cast<uint32_t>(transaction_num);
+}
+
 #if defined(RCP_UDP_POSIX)
 
 // ── Frame ─────────────────────────────────────────────────────────────────────
@@ -688,7 +709,7 @@ public:
         out.message_timestamp = message_timestamp;
         out.payload           = req_payload;
 
-        const uint16_t key = pending_key(req.byte_bus_id, req.transaction_num);
+        const uint32_t key = pending_key(req.byte_bus_id, req.transaction_num);
         auto result = std::make_shared<std::promise<Frame>>();
         auto future = result->get_future();
         {
@@ -746,10 +767,6 @@ public:
     uint32_t last_recv_encap_seq() const noexcept { return last_recv_encap_seq_.load(); }
 
 private:
-    static uint16_t pending_key(avtp::ByteBusId bus_id, uint8_t transaction_num) noexcept {
-        return static_cast<uint16_t>((static_cast<uint16_t>(bus_id) << 8) | transaction_num);
-    }
-
     avtp::StreamId stream_id_;
     int  fd_;
     std::atomic<bool>     closed_{false};
@@ -757,7 +774,7 @@ private:
     std::atomic<uint32_t> encap_seq_{0};          // Annex J encapsulation sequence number, outgoing
     std::atomic<uint32_t> last_recv_encap_seq_{0}; // most recent one seen on an inbound datagram
     std::mutex mu_;
-    std::map<uint16_t, std::shared_ptr<std::promise<Frame>>> pending_;
+    std::map<uint32_t, std::shared_ptr<std::promise<Frame>>> pending_;
     std::thread read_thread_;
 
     void read_loop() {
@@ -779,7 +796,7 @@ private:
             Frame resp;
             if (decode_frame(avtpdu, avtpdu_len, resp)) continue;
 
-            const uint16_t key = pending_key(resp.info.byte_bus_id, resp.info.transaction_num);
+            const uint32_t key = pending_key(resp.info.byte_bus_id, resp.info.transaction_num);
             std::lock_guard<std::mutex> lk(mu_);
             auto it = pending_.find(key);
             if (it != pending_.end()) {

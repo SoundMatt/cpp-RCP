@@ -37,6 +37,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <set>
+#include <thread>
 
 using namespace rcp;
 using namespace rcp::udp;
@@ -310,6 +312,33 @@ TEST_CASE("encode_annexj_datagram produces a monotonically increasing wire prefi
     }
 }
 
+TEST_CASE("pending_key does not collide for byte_bus_id values that differ by a multiple of "
+          "256 and share a transaction_num",
+          "[udp][REQ-UDP-011]") {
+    // byte_bus_id is an 11-bit wire field (0-2047; avtp::ByteBusId's own
+    // comment, acf.hpp's detail::kByteBusIdMask) -- 5 and 261 are both
+    // wire-legal and differ by exactly 256. A previous version of
+    // pending_key returned uint16_t, computing this same left-shift-by-8
+    // but then truncating the result back down to 16 bits, so these two
+    // collided into the identical map key (0x0507) whenever they shared a
+    // transaction_num (cpp-RCP v3.0.0 deep audit finding).
+    REQUIRE(pending_key(5, 7) != pending_key(261, 7));
+    REQUIRE(pending_key(5, 7) == pending_key(5, 7));
+
+    // Sweep every byte_bus_id that used to alias to the same 16-bit key
+    // under the old truncation (i.e. every value 256 apart, across the
+    // whole 11-bit range) crossed with a few transaction_num values, and
+    // confirm every (byte_bus_id, transaction_num) pair now maps to a
+    // distinct key.
+    std::set<uint32_t> seen;
+    for (uint32_t bus = 0; bus <= 2047; bus += 256) {
+        for (uint32_t txn = 0; txn <= 255; txn += 85) {
+            auto key = pending_key(static_cast<avtp::ByteBusId>(bus), static_cast<uint8_t>(txn));
+            REQUIRE(seen.insert(key).second); // must be a fresh key, never seen before
+        }
+    }
+}
+
 // ── MultiFrame — multiple ACF requests in one AVTPDU (cpp-RCP-04-fresh) ──────
 
 TEST_CASE("MultiFrame round-trips two ACF_ABB messages packed into one AVTPDU",
@@ -558,6 +587,68 @@ TEST_CASE("Client::request correlates concurrent requests by byte_bus_id/transac
 
     REQUIRE(payload1 == std::vector<uint8_t>{1, 1});
     REQUIRE(payload2 == std::vector<uint8_t>{2, 1});
+
+    server.close();
+    client.close();
+}
+
+TEST_CASE("Client::request does not misdeliver or hang for two genuinely concurrent requests "
+          "whose byte_bus_id values differ by a multiple of 256 and share a transaction_num "
+          "(pending_key collision regression)",
+          "[udp][REQ-UDP-011]") {
+    Server server(make_stream_id(0x02, 6), "127.0.0.1", 0);
+    REQUIRE(server.ok());
+
+    // byte_bus_id 5's response is deliberately delayed so its request is
+    // still genuinely pending (inserted into Client::pending_, not yet
+    // erased) when byte_bus_id 261's request -- sharing the same
+    // transaction_num, and differing from 5 by exactly 256 -- gets inserted
+    // into that very same map from a second thread. Under the old uint16_t
+    // pending_key both requests computed the identical map key, so the
+    // second insertion silently clobbered the first's map entry; whichever
+    // response arrived first then got delivered to the WRONG promise (or,
+    // depending on arrival order, byte_bus_id 5's request never got a
+    // response delivered to it at all and hung until ctx's timeout).
+    server.set_handler(make_echo_handler([](const acf::AcfMessageInfo& req, const std::vector<uint8_t>&) {
+        if (req.byte_bus_id == 5) std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        FrameResponse r;
+        r.info = acf::make_response(req, acf::ResponseKind::ReadResponse);
+        // Echo byte_bus_id back (big-endian u16) so this test can prove
+        // each request's OWN response actually came back, not merely that
+        // *a* response arrived — a misdelivered response under the bug
+        // still completes the waiting future, just with the wrong
+        // request's data.
+        r.payload = {static_cast<uint8_t>(req.byte_bus_id >> 8),
+                     static_cast<uint8_t>(req.byte_bus_id)};
+        return r;
+    }));
+
+    Client client(make_stream_id(0x03, 6), "127.0.0.1", server.port());
+    REQUIRE(client.ok());
+
+    acf::AcfMessageInfo   resp5, resp261;
+    std::vector<uint8_t>  payload5, payload261;
+    std::error_code       ec5, ec261;
+
+    std::thread t5([&]{
+        auto ctx = Context::with_timeout(std::chrono::seconds(2));
+        ec5 = client.request(ctx, standard_request(5, 7), {}, resp5, payload5);
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(30)); // let t5's insert land first
+    std::thread t261([&]{
+        auto ctx = Context::with_timeout(std::chrono::seconds(2));
+        ec261 = client.request(ctx, standard_request(261, 7), {}, resp261, payload261);
+    });
+
+    t5.join();
+    t261.join();
+
+    REQUIRE_FALSE(ec5);
+    REQUIRE_FALSE(ec261);
+    REQUIRE(resp5.byte_bus_id   == 5);
+    REQUIRE(resp261.byte_bus_id == 261);
+    REQUIRE(payload5   == std::vector<uint8_t>{0, 5});
+    REQUIRE(payload261 == std::vector<uint8_t>{1, 5});
 
     server.close();
     client.close();
