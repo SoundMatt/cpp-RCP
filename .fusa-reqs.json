@@ -2109,7 +2109,7 @@
     {
       "id": "REQ-RELAY-005",
       "title": "RELAY core bindings and RCP message mapping (\u00a718.2, \u00a714, \u00a715.7.5)",
-      "text": "rcp::Context shall alias relay::Context; SubscriberOptions shall default channel_depth=64 and expose topic_name; endpoint_id_to_relay_id()/relay_id_to_endpoint_id() shall round-trip a byte_bus_id through relay::Message.id as its plain decimal string form (RELAY spec v2.0 \u00a715.7.5), and message_to_request()/response_to_message() shall correctly decode/encode the op, evt_op, and response_kind fields.",
+      "text": "rcp::Context shall alias relay::Context; SubscriberOptions shall default channel_depth=64 and expose topic_name; endpoint_id_to_relay_id()/relay_id_to_endpoint_id() shall round-trip a byte_bus_id through relay::Message.id as its plain decimal string form (RELAY spec v2.0 \u00a715.7.5), and message_to_request()/response_to_message() shall correctly decode/encode the op, evt_op, read_size_or_segment_num, and response_kind fields.",
       "standard": "relay",
       "level": "QM",
       "asil": "QM"
