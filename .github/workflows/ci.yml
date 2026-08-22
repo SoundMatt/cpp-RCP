@@ -85,6 +85,50 @@ jobs:
           name: compile-commands
           path: build/compile_commands.json
 
+  # ── TLA+ formal verification (TLC model checking) ────────────────────────────
+  # Independent of the C++ build (tla/*.tla model the safety-relevant state
+  # machines rcp/lifecycle.hpp and rcp/e2e.hpp implement, not the C++ code
+  # itself), so this job carries no `needs:` on build-and-test, matching
+  # c-RCP's own identically-named formal-verification job. Each spec's
+  # like-named .cfg file in tla/ supplies TLC's CONSTANTS/SPECIFICATION/
+  # INVARIANTS/PROPERTIES — TLC loads it automatically when invoked without
+  # -config (see FORMAL_VERIFICATION.md). TLC itself exits non-zero on any
+  # invariant/property violation or deadlock, so a plain `java -jar ...` per
+  # spec is already a real pass/fail gate — no output-scraping needed.
+  formal-verification:
+    name: formal verification (TLC model checking)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Download TLC (tla2tools.jar)
+        run: curl -sSL -o "$RUNNER_TEMP/tla2tools.jar" https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar
+
+      - name: Model-check WatchdogSafeState.tla
+        working-directory: tla
+        run: java -jar "$RUNNER_TEMP/tla2tools.jar" -workers 4 WatchdogSafeState.tla
+
+      - name: Model-check RxSequenceGuard.tla
+        working-directory: tla
+        run: java -jar "$RUNNER_TEMP/tla2tools.jar" -workers 4 RxSequenceGuard.tla
+
+      - name: Model-check CrcSafeStateLatch.tla
+        working-directory: tla
+        run: java -jar "$RUNNER_TEMP/tla2tools.jar" -workers 4 CrcSafeStateLatch.tla
+
+      - name: Model-check LifecycleStateMachine.tla
+        working-directory: tla
+        run: java -jar "$RUNNER_TEMP/tla2tools.jar" -workers 4 LifecycleStateMachine.tla
+
+      - name: Model-check E2ESafePoint.tla
+        working-directory: tla
+        run: java -jar "$RUNNER_TEMP/tla2tools.jar" -workers 4 E2ESafePoint.tla
+
   # ── rcp/l2.hpp real-socket round trip (Linux, needs CAP_NET_RAW/root) ────────
   # Exercises rcp::l2::Server/Client over a real veth pair — real AF_PACKET
   # sockets, a real Linux network interface pair, real Ethernet frames. This
