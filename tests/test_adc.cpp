@@ -29,6 +29,7 @@
 // fusa:test REQ-ADC-029
 // fusa:test REQ-ADC-030
 // fusa:test REQ-ADC-031
+// fusa:test REQ-ADC-032
 // fusa:test REQ-ADC-033
 // fusa:test REQ-ADC-035
 // fusa:test REQ-ADC-036
@@ -301,6 +302,18 @@ TEST_CASE("trigger_evaluate never fires an edge trigger on the first call", "[ad
     auto fired = trigger_evaluate(s, 5, 10, 100, false);
     REQUIRE(fired == 0);
     REQUIRE(s.has_previous);
+}
+
+TEST_CASE("an ADC measurement value is fixed at 16 bits, matching TC18's byte_msg_payload layout",
+          "[adc][REQ-ADC-032]") {
+    // kAdcValueLen is the single source of truth every wire-level ADC
+    // encode/decode path (encode_response/decode_response, response_
+    // value_count) derives its byte-count arithmetic from -- pin it
+    // directly at 16 bits (RCP_EP_ADC_VALUE_LEN's own value in c-RCP) so
+    // any future change to that constant is caught here explicitly, not
+    // just as an incidental side effect of an unrelated codec test.
+    REQUIRE(kAdcValueLen == sizeof(uint16_t));
+    REQUIRE(kAdcValueLen == 2);
 }
 
 TEST_CASE("trigger_evaluate BELOW_MIN fires on a downward crossing of trigger_min",
