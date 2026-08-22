@@ -15,8 +15,14 @@
 // fusa:test REQ-E2E-021
 // fusa:test REQ-E2E-028
 // fusa:test REQ-E2E-029
+// fusa:test REQ-E2E-030
+// fusa:test REQ-E2E-032
 // fusa:test REQ-E2E-035
+// fusa:test REQ-E2E-036
+// fusa:test REQ-E2E-037
 // fusa:test REQ-E2E-038
+// fusa:test REQ-E2E-040
+// fusa:test REQ-E2E-042
 // fusa:test REQ-E2E-045
 // fusa:test REQ-E2E-046
 
@@ -309,7 +315,7 @@ TEST_CASE("length_with_crc adds exactly kCrcLengthAdjustOctets and saturates on 
 
 TEST_CASE("data_length_for_protected_members multiplies by kCrcLengthAdjustOctets and saturates "
           "on overflow",
-          "[e2e][REQ-E2E-004]") {
+          "[e2e][REQ-E2E-037]") {
     REQUIRE(data_length_for_protected_members(0) == 0);
     REQUIRE(data_length_for_protected_members(3) == 12);
     REQUIRE(data_length_for_protected_members(static_cast<size_t>(-1)) == static_cast<size_t>(-1)); // saturates
@@ -568,7 +574,8 @@ TEST_CASE("append_crc appends exactly 4 big-endian octets", "[e2e][REQ-E2E-004]"
 
 // ── wrap / unwrap (c-RCP issue #420) ──────────────────────────────────────────
 
-TEST_CASE("wrap/unwrap round trips an unpadded ACF_ABB payload", "[e2e][REQ-E2E-005][REQ-E2E-006]") {
+TEST_CASE("wrap/unwrap round trips an unpadded ACF_ABB payload",
+          "[e2e][REQ-E2E-005][REQ-E2E-006][REQ-E2E-032][REQ-E2E-036][REQ-E2E-040]") {
     auto sid = make_stream_id(0x02, 0x0010);
     AcfMessageInfo info;
     info.byte_bus_id = 11;
@@ -588,7 +595,8 @@ TEST_CASE("wrap/unwrap round trips an unpadded ACF_ABB payload", "[e2e][REQ-E2E-
     REQUIRE(result.acf_frame == rcp::acf::encode_acf_abb(original, payload));
 }
 
-TEST_CASE("wrap places the CRC before trailing pad octets, not after", "[e2e][REQ-E2E-005][REQ-E2E-006]") {
+TEST_CASE("wrap places the CRC before trailing pad octets, not after",
+          "[e2e][REQ-E2E-005][REQ-E2E-006][REQ-E2E-042]") {
     auto sid = make_stream_id(0x02, 0x0011);
     AcfMessageInfo info;
     info.byte_bus_id = 12;
@@ -610,7 +618,7 @@ TEST_CASE("wrap places the CRC before trailing pad octets, not after", "[e2e][RE
 }
 
 TEST_CASE("wrap/unwrap round trips a padded ACF_ABB payload with the pad re-seated after the CRC",
-          "[e2e][REQ-E2E-005][REQ-E2E-006]") {
+          "[e2e][REQ-E2E-005][REQ-E2E-006][REQ-E2E-042]") {
     auto sid = make_stream_id(0x02, 0x0012);
     AcfMessageInfo info;
     info.byte_bus_id = 13;
@@ -741,7 +749,7 @@ TEST_CASE("wrap_framed/unwrap_framed force the NTSCF zero-timestamp/false-tu sta
 
 // ── Fragmentation/CRC interaction ─────────────────────────────────────────────
 
-TEST_CASE("fragment_carries_crc is true only for the last fragment", "[e2e][REQ-E2E-010]") {
+TEST_CASE("fragment_carries_crc is true only for the last fragment", "[e2e][REQ-E2E-038]") {
     REQUIRE_FALSE(fragment_carries_crc(/*is_last_fragment=*/false));
     REQUIRE(fragment_carries_crc(/*is_last_fragment=*/true));
 }
@@ -1195,7 +1203,7 @@ TEST_CASE("apply_queue_overflow implements the same purge-normal/retain-safety r
 }
 
 TEST_CASE("overflow_should_enter_safe_state mirrors rx_ovrflw_safestate_enable directly",
-          "[e2e][REQ-E2E-010]") {
+          "[e2e][REQ-E2E-030]") {
     REQUIRE_FALSE(overflow_should_enter_safe_state(false));
     REQUIRE(overflow_should_enter_safe_state(true));
 }

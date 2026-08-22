@@ -5,15 +5,32 @@
 // fusa:test REQ-LIFECYCLE-005
 // fusa:test REQ-LIFECYCLE-006
 // fusa:test REQ-LIFECYCLE-007
+// fusa:test REQ-LIFECYCLE-013
 // fusa:test REQ-LIFECYCLE-014
+// fusa:test REQ-LIFECYCLE-015
+// fusa:test REQ-LIFECYCLE-016
+// fusa:test REQ-LIFECYCLE-017
+// fusa:test REQ-LIFECYCLE-018
+// fusa:test REQ-LIFECYCLE-019
+// fusa:test REQ-LIFECYCLE-020
+// fusa:test REQ-LIFECYCLE-021
 // fusa:test REQ-LIFECYCLE-022
-// fusa:test REQ-LIFECYCLE-023
 // fusa:test REQ-LIFECYCLE-024
+// fusa:test REQ-LIFECYCLE-025
+// fusa:test REQ-LIFECYCLE-026
 // fusa:test REQ-LIFECYCLE-027
+// fusa:test REQ-LIFECYCLE-028
+// fusa:test REQ-LIFECYCLE-029
+// fusa:test REQ-LIFECYCLE-030
 // fusa:test REQ-LIFECYCLE-031
+// fusa:test REQ-LIFECYCLE-032
 // fusa:test REQ-LIFECYCLE-033
+// fusa:test REQ-LIFECYCLE-034
+// fusa:test REQ-LIFECYCLE-035
+// fusa:test REQ-LIFECYCLE-036
 // fusa:test REQ-LIFECYCLE-037
 // fusa:test REQ-LIFECYCLE-038
+// fusa:test REQ-LIFECYCLE-039
 // fusa:test REQ-RMAP-049
 // fusa:test REQ-RMAP-055
 
@@ -360,7 +377,7 @@ TEST_CASE("check_rcp_cfg: a fully-consistent snapshot passes", "[lifecycle][REQ-
 // advance() above — see transition()'s own doc comment for why.
 
 TEST_CASE("transition: same-state is always a no-op success, unlike advance()",
-          "[lifecycle][REQ-LIFECYCLE-002]") {
+          "[lifecycle][REQ-LIFECYCLE-002][REQ-LIFECYCLE-013]") {
     ServerLifecycle lc;
     PlausibilitySnapshot snap;
     WriterCtx writer; // everything false — deliberately unauthorized/non-idle
@@ -424,7 +441,7 @@ TEST_CASE("transition: HwConfigured -> RcpConfigured is also guarded by check_rc
 
 TEST_CASE("transition: RcpConfigured -> HwConfigured demotion requires root client or valid "
           "stream association, NOT the discovery stream alone",
-          "[lifecycle][REQ-LIFECYCLE-002][REQ-LIFECYCLE-037]") {
+          "[lifecycle][REQ-LIFECYCLE-002][REQ-LIFECYCLE-022][REQ-LIFECYCLE-037][REQ-LIFECYCLE-039]") {
     ServerLifecycle lc;
     PlausibilitySnapshot snap;
     WriterCtx via_root;
@@ -471,7 +488,7 @@ TEST_CASE("transition: HwConfigured -> HwUnconfigured reset accepts discovery-st
 
 TEST_CASE("transition: RcpConfigured -> HwUnconfigured reset requires the root client ALONE — "
           "discovery stream is no longer sufficient",
-          "[lifecycle][REQ-LIFECYCLE-002][REQ-LIFECYCLE-037]") {
+          "[lifecycle][REQ-LIFECYCLE-002][REQ-LIFECYCLE-022][REQ-LIFECYCLE-037]") {
     ServerLifecycle lc;
     PlausibilitySnapshot snap;
     WriterCtx via_root;
@@ -546,7 +563,7 @@ TEST_CASE("should_accept: a TSCF frame is dropped when time sync is unsupported 
 
 TEST_CASE("should_accept: HwUnconfigured drops TSCF outright and only accepts ACF_ABB on the "
           "discovery byte_bus_id via NTSCF",
-          "[lifecycle][REQ-LIFECYCLE-014][REQ-LIFECYCLE-033]") {
+          "[lifecycle][REQ-LIFECYCLE-014][REQ-LIFECYCLE-015][REQ-LIFECYCLE-016][REQ-LIFECYCLE-033]") {
     // TSCF is dropped even with time sync supported.
     REQUIRE(should_accept(ServerState::HwUnconfigured, true, rcp::avtp::kSubtypeTscf,
                            rcp::acf::kAcfMsgTypeAbb, kDiscoveryByteBusId,
@@ -570,7 +587,8 @@ TEST_CASE("should_accept: HwUnconfigured drops TSCF outright and only accepts AC
 
 TEST_CASE("should_accept: HwConfigured drops TSCF and non-EP0 traffic, accepts EP0 ACF_ABB, "
           "rejects EP0 ACF_GBB",
-          "[lifecycle][REQ-LIFECYCLE-014][REQ-LIFECYCLE-033]") {
+          "[lifecycle][REQ-LIFECYCLE-014][REQ-LIFECYCLE-028][REQ-LIFECYCLE-029][REQ-LIFECYCLE-032]"
+          "[REQ-LIFECYCLE-033][REQ-LIFECYCLE-034]") {
     REQUIRE(should_accept(ServerState::HwConfigured, true, rcp::avtp::kSubtypeTscf,
                            rcp::acf::kAcfMsgTypeAbb, kDiscoveryByteBusId,
                            rcp::avtp::TscfFallback::Drop) == Disposition::Drop);
@@ -589,7 +607,7 @@ TEST_CASE("should_accept: HwConfigured drops TSCF and non-EP0 traffic, accepts E
 }
 
 TEST_CASE("should_accept: RcpConfigured accepts everything beyond the general time-sync rule",
-          "[lifecycle][REQ-LIFECYCLE-014]") {
+          "[lifecycle][REQ-LIFECYCLE-014][REQ-LIFECYCLE-017][REQ-LIFECYCLE-025]") {
     REQUIRE(should_accept(ServerState::RcpConfigured, true, rcp::avtp::kSubtypeNtscf,
                            rcp::acf::kAcfMsgTypeGbb, /*byte_bus_id=*/42,
                            rcp::avtp::TscfFallback::Drop) == Disposition::Accept);
@@ -601,7 +619,7 @@ TEST_CASE("should_accept: RcpConfigured accepts everything beyond the general ti
 // ── field_writable / field_write_error — register-locking-by-state ──────────────
 
 TEST_CASE("field_writable: HwGeneric is writable only in HwUnconfigured via the discovery stream",
-          "[lifecycle][REQ-LIFECYCLE-023]") {
+          "[lifecycle][REQ-LIFECYCLE-018][REQ-LIFECYCLE-026][REQ-LIFECYCLE-035]") {
     WriterCtx via_discovery;
     via_discovery.via_discovery_stream = true;
     REQUIRE(field_writable(ServerState::HwUnconfigured, FieldKind::HwGeneric, via_discovery));
@@ -617,7 +635,7 @@ TEST_CASE("field_writable: HwGeneric is writable only in HwUnconfigured via the 
 TEST_CASE("field_writable: FunctionalW is unwritable in HwUnconfigured, needs authorization "
           "(incl. discovery) while HwConfigured, and needs authorization (excl. discovery) once "
           "RcpConfigured",
-          "[lifecycle][REQ-LIFECYCLE-023]") {
+          "[lifecycle][REQ-LIFECYCLE-019][REQ-LIFECYCLE-030][REQ-LIFECYCLE-036][REQ-LIFECYCLE-037]") {
     WriterCtx via_discovery;
     via_discovery.via_discovery_stream = true;
     WriterCtx via_owning;
@@ -637,7 +655,7 @@ TEST_CASE("field_writable: FunctionalW is unwritable in HwUnconfigured, needs au
 
 TEST_CASE("field_writable: FunctionalWStar is unconditionally writable in HwUnconfigured and "
           "permanently locked once RcpConfigured",
-          "[lifecycle][REQ-LIFECYCLE-023]") {
+          "[lifecycle][REQ-LIFECYCLE-020]") {
     WriterCtx none;
     REQUIRE(field_writable(ServerState::HwUnconfigured, FieldKind::FunctionalWStar, none));
 
@@ -651,7 +669,7 @@ TEST_CASE("field_writable: FunctionalWStar is unconditionally writable in HwUnco
 }
 
 TEST_CASE("field_writable: ReadOnly is never writable, in any state, by any writer",
-          "[lifecycle][REQ-LIFECYCLE-023]") {
+          "[lifecycle]") {
     WriterCtx via_owning;
     via_owning.via_owning_stream = true;
     REQUIRE_FALSE(field_writable(ServerState::HwUnconfigured, FieldKind::ReadOnly, via_owning));
@@ -660,7 +678,7 @@ TEST_CASE("field_writable: ReadOnly is never writable, in any state, by any writ
 }
 
 TEST_CASE("field_writable: a non-unicast frame denies an otherwise-writable field",
-          "[lifecycle][REQ-LIFECYCLE-023][REQ-LIFECYCLE-027]") {
+          "[lifecycle][REQ-LIFECYCLE-019][REQ-LIFECYCLE-027]") {
     WriterCtx writer;
     writer.via_owning_stream     = true;
     writer.via_non_unicast_frame = true;
@@ -734,4 +752,38 @@ TEST_CASE("field_write_error_w_plus distinguishes locked/state-locked from write
     WriterCtx via_owning;
     via_owning.via_owning_stream = true;
     REQUIRE_FALSE(field_write_error_w_plus(ServerState::HwConfigured, via_owning, false).has_value());
+}
+
+// ── Error category ────────────────────────────────────────────────────────────
+
+TEST_CASE("LifecycleErrc is a distinct error category with non-empty, distinct messages",
+          "[lifecycle][REQ-LIFECYCLE-021]") {
+    std::error_code invalid   = make_error_code(LifecycleErrc::invalid_transition);
+    std::error_code hw_cfg    = make_error_code(LifecycleErrc::hw_cfg_inconsistent);
+    std::error_code rcp_cfg   = make_error_code(LifecycleErrc::rcp_cfg_inconsistent);
+    std::error_code unauth    = make_error_code(LifecycleErrc::unauthorized);
+    std::error_code not_idle  = make_error_code(LifecycleErrc::eps_not_idle);
+
+    REQUIRE(invalid.category() == lifecycle_category());
+    REQUIRE(hw_cfg.category() == lifecycle_category());
+    REQUIRE(rcp_cfg.category() == lifecycle_category());
+    REQUIRE(unauth.category() == lifecycle_category());
+    REQUIRE(not_idle.category() == lifecycle_category());
+
+    REQUIRE_FALSE(invalid.message().empty());
+    REQUIRE_FALSE(hw_cfg.message().empty());
+    REQUIRE_FALSE(rcp_cfg.message().empty());
+    REQUIRE_FALSE(unauth.message().empty());
+    REQUIRE_FALSE(not_idle.message().empty());
+
+    // Every message is distinct from every other.
+    const std::vector<std::string> messages{invalid.message(), hw_cfg.message(), rcp_cfg.message(),
+                                             unauth.message(), not_idle.message()};
+    for (size_t i = 0; i < messages.size(); ++i)
+        for (size_t j = i + 1; j < messages.size(); ++j) REQUIRE(messages[i] != messages[j]);
+
+    // An unrecognized ordinal still returns a non-empty message (the
+    // category's own default: branch), not an empty/garbage string.
+    std::error_code unknown(99, lifecycle_category());
+    REQUIRE_FALSE(unknown.message().empty());
 }
