@@ -1415,6 +1415,186 @@
       "tc18": "§12.7.5 Table 20 (svr_ep_generic_cfg_ptr) + §13.2",
       "tc18_master_id": "TC18-12.7.5-001",
       "gap": "Genuine not-implemented gap, matching this file's own explicit scope-exclusion (2026-08-22, cpp-RCP Phase 6 batch 11 (RMAP/SRV)): regmap.hpp's own file-header comment states outright that c-RCP's single ~500-line EP0 address-routed dispatcher (rcp_regmap_ep0_decode_write_request()/_decode_read_request()/_encode_read_response(), a cross-cutting orchestrator combining every sub-table's own wire codec with lifecycle-state/writer authorization and SEQUENCER_config's own ownership-aware access control) is NOT ported in this batch. This id's own behavior is specific to that unported dispatcher; the individual sub-table wire codecs it would orchestrate (GeneralMap, hw_pin_map, ep_generic_cfg, request_stream_cfg, ep_id_map, response-queue config) are each independently implemented and tested under their own ids. Filed as a real gap, not force-fit as implemented -- out of this batch's own scope to build the dispatcher itself (a materially larger, separate feature)."
+    },
+    {
+      "id": "REQ-DISC-001",
+      "title": "rcp_discovery_should_drop() flags any non-NTSCF subtype",
+      "text": "should_drop_discovery() shall return true for any avtp_subtype value other than the NTSCF subtype, including the TSCF subtype, independent of lifecycle state or time-sync capability.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.6.1 Table 18 (\"subtype: NTSCF\"), TC18.txt L2747",
+      "tc18_master_id": "TC18-12.6.1-001",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, discovery module). The behavior itself is genuinely implemented and tested in include/rcp/discovery.hpp / tests/test_discovery.cpp. The blocker is that cpp-RCP's pre-existing REQ-DISC-001..009 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 9 entries were numbered independently, by the order features appeared in discovery.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-DISC-001..009 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-DISC-001 (\"Discovery request framing — byte_bus_id 0, register-map address 0\"). Genuinely implemented+tested: should_drop_discovery() (discovery.hpp:249-251) is a real, directly-testable constexpr function -- tests/test_discovery.cpp's three \"[REQ-DISC-001]\"-tagged TEST_CASEs (lines 141-151) exercise TSCF, NTSCF, and an unrecognized subtype byte."
+    },
+    {
+      "id": "REQ-DISC-002",
+      "title": "rcp_discovery_encode_request() builds an NTSCF-framed ACF_ABB read at the discovery bus",
+      "text": "encode_discovery_request() shall encode a full NTSCF-framed ACF_ABB message addressed to kDiscoveryByteBusId with op READ, carrying the given read_size and transaction_num and no payload.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.6.1 Table 18 (\"Discovery request\": subtype=NTSCF, acf_msg_type=ACF_ABB, Byte_bus_id=00000000000b, op=1b/read, byte_msg_payload=none), TC18.txt L2746-2758",
+      "tc18_master_id": "TC18-12.6.1-001",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, discovery module). The behavior itself is genuinely implemented and tested in include/rcp/discovery.hpp / tests/test_discovery.cpp. The blocker is that cpp-RCP's pre-existing REQ-DISC-001..009 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 9 entries were numbered independently, by the order features appeared in discovery.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-DISC-001..009 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-DISC-002 (\"Discovery is NTSCF-only; a TSCF-headed discovery request is dropped\"). Genuinely implemented+tested: make_discovery_request()/encode_discovery_request() (discovery.hpp:303-329) build exactly this frame -- tests/test_discovery.cpp's \"[REQ-DISC-002]\"-tagged TEST_CASEs (lines 155-193) exercise the header fields, register address, and the NTSCF-headed output."
+    },
+    {
+      "id": "REQ-DISC-003",
+      "title": "rcp_discovery_decode_request() recovers the requester, read_size, and transaction_num",
+      "text": "decode_discovery_request() shall, on success, populate out_hdr's stream_id as the requester and out_info's read_size_or_segment_num/transaction_num from the ACF header.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.6.1 Table 18 (\"Discovery request\": subtype=NTSCF, acf_msg_type=ACF_ABB, Byte_bus_id=00000000000b, op=1b/read, byte_msg_payload=none), TC18.txt L2746-2758",
+      "tc18_master_id": "TC18-12.6.1-001",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, discovery module). The behavior itself is genuinely implemented and tested in include/rcp/discovery.hpp / tests/test_discovery.cpp. The blocker is that cpp-RCP's pre-existing REQ-DISC-001..009 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 9 entries were numbered independently, by the order features appeared in discovery.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-DISC-001..009 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-DISC-003 (\"The first discovery request claims the discovery stream\"). Genuinely implemented+tested: decode_discovery_request() (discovery.hpp:341-346) recovers requester/read_size/transaction_num -- tests/test_discovery.cpp's \"decode_discovery_request round-trips an encoded discovery request\" TEST_CASE (line 172, tagged [REQ-DISC-002][REQ-DISC-003]) exercises exactly this."
+    },
+    {
+      "id": "REQ-DISC-004",
+      "title": "rcp_discovery_decode_request() drops a TSCF-headed frame",
+      "text": "decode_discovery_request() shall return DiscoveryErrc::tscf_headed_request_dropped when the frame's AVTP subtype is not NTSCF, before attempting any ACF-level parsing.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.6.1 (\"AVTPDUs having a TSCF header are dropped without further response, as well as requests in ACF_GBB format.\"), TC18.txt L2743",
+      "tc18_master_id": "TC18-12.6.1-002",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, discovery module). The behavior itself is genuinely implemented and tested in include/rcp/discovery.hpp / tests/test_discovery.cpp. The blocker is that cpp-RCP's pre-existing REQ-DISC-001..009 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 9 entries were numbered independently, by the order features appeared in discovery.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-DISC-001..009 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-DISC-004 (\"The discovery claim lapses after Discovery_TimeOut\"). Genuinely implemented+tested: \"A TSCF-headed discovery request is dropped, not decoded\" TEST_CASE (test_discovery.cpp:197, tagged [REQ-DISC-004]) directly exercises decode_discovery_request()'s early NTSCF-only check (detail::decode_common_frame(), discovery.hpp:264-293)."
+    },
+    {
+      "id": "REQ-DISC-005",
+      "title": "rcp_discovery_decode_request() rejects a non-ACF_ABB message",
+      "text": "decode_discovery_request() shall return DiscoveryErrc::bad_msg_type when the NTSCF payload is not an ACF_ABB message.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.6.1 (\"...as well as requests in ACF_GBB format.\"), TC18.txt L2743; Table 18 (\"acf_msg_type: ACF_ABB\"), TC18.txt L2753",
+      "tc18_master_id": "TC18-12.6.1-002",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, discovery module). The behavior itself is genuinely implemented and tested in include/rcp/discovery.hpp / tests/test_discovery.cpp. The blocker is that cpp-RCP's pre-existing REQ-DISC-001..009 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 9 entries were numbered independently, by the order features appeared in discovery.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-DISC-001..009 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-DISC-005 (\"A claim does not block concurrent discovery reads from other clients\"). Genuinely implemented+tested: \"decode_discovery_request rejects a non-ACF_ABB message type\" TEST_CASE (test_discovery.cpp:212, tagged [REQ-DISC-005]) builds a raw ACF_GBB frame and confirms bad_msg_type."
+    },
+    {
+      "id": "REQ-DISC-006",
+      "title": "rcp_discovery_decode_request() rejects the wrong byte_bus_id",
+      "text": "decode_discovery_request() shall return DiscoveryErrc::wrong_bus when the ACF header's byte_bus_id is not kDiscoveryByteBusId.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.6.1 Table 18 (\"Byte_bus_id: 00000000000b\"), TC18.txt L2754",
+      "tc18_master_id": "TC18-12.6.1-001",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, discovery module). The behavior itself is genuinely implemented and tested in include/rcp/discovery.hpp / tests/test_discovery.cpp. The blocker is that cpp-RCP's pre-existing REQ-DISC-001..009 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 9 entries were numbered independently, by the order features appeared in discovery.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-DISC-001..009 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-DISC-006 (\"Only the active claim holder may issue a configuration request\"). Genuinely implemented+tested: \"decode_discovery_request rejects the wrong byte_bus_id\" TEST_CASE (test_discovery.cpp:226, tagged [REQ-DISC-006]) confirms wrong_bus for byte_bus_id 7."
+    },
+    {
+      "id": "REQ-DISC-007",
+      "title": "rcp_discovery_decode_request() rejects a non-read op",
+      "text": "decode_discovery_request() shall return DiscoveryErrc::wrong_op when the ACF header's op is not read.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.6.1 Table 18 (\"op: 1b (read request)\"), TC18.txt L2756",
+      "tc18_master_id": "TC18-12.6.1-001",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, discovery module). The behavior itself is genuinely implemented and tested in include/rcp/discovery.hpp / tests/test_discovery.cpp. The blocker is that cpp-RCP's pre-existing REQ-DISC-001..009 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 9 entries were numbered independently, by the order features appeared in discovery.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-DISC-001..009 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-DISC-007 (\"Discovery-stream claiming is scoped to HW_UNCONFIGURED/HW_CONFIGURED\"). Genuinely implemented+tested: \"decode_discovery_request rejects a write op\" TEST_CASE (test_discovery.cpp:240, tagged [REQ-DISC-007]) confirms wrong_op for op=true (write)."
+    },
+    {
+      "id": "REQ-DISC-008",
+      "title": "rcp_discovery_decode_request() rejects a short or empty buffer",
+      "text": "decode_discovery_request() shall return DiscoveryErrc::short_frame when the input buffer is empty or shorter than the frame's declared header-plus-payload length.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.6.1 (\"A discovery request is a read request. The discovery request format equals the format shown in Table 18.\"), TC18.txt L2741-2742",
+      "tc18_master_id": "TC18-12.6.1-001",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, discovery module). The behavior itself is genuinely implemented and tested in include/rcp/discovery.hpp / tests/test_discovery.cpp. The blocker is that cpp-RCP's pre-existing REQ-DISC-001..009 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 9 entries were numbered independently, by the order features appeared in discovery.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-DISC-001..009 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-DISC-008 (\"DiscoveryErrc is a distinct error category with non-empty messages\"). Genuinely implemented+tested: \"decode_discovery_request rejects a short frame\" / \"...rejects an empty buffer\" TEST_CASEs (test_discovery.cpp:254,264, tagged [REQ-DISC-008]) confirm short_frame for a 2-byte buffer and a null/zero-length one."
+    },
+    {
+      "id": "REQ-DISC-009",
+      "title": "rcp_discovery_encode_response() payload length always equals the requested read_size",
+      "text": "encode_discovery_response() shall encode a response whose ACF payload length equals read_size exactly, regardless of how many octets of the general register slice are actually defined.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.6.2 (\"The RC Server will respond with the part of the RC Server's register map as starting from 0x0000 and its length being determined by the read_size in the discovery request.\"), TC18.txt L2778-2779",
+      "tc18_master_id": "TC18-12.6.2-001",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, discovery module). The behavior itself is genuinely implemented and tested in include/rcp/discovery.hpp / tests/test_discovery.cpp. The blocker is that cpp-RCP's pre-existing REQ-DISC-001..009 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 9 entries were numbered independently, by the order features appeared in discovery.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-DISC-001..009 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-DISC-009 (\"A server answers discovery in every lifecycle state\"). Genuinely implemented+tested: \"A discovery response's payload always spans exactly read_size octets\" TEST_CASE (test_discovery.cpp:356, tagged [REQ-DISC-009]) confirms payload.size() == read_size for both a small (4) and large (40) read_size."
+    },
+    {
+      "id": "REQ-RELAY-001",
+      "title": "rcp_wallclock_ms() returns wall-clock epoch milliseconds",
+      "text": "rcp_wallclock_ms() shall return the number of milliseconds elapsed since the Unix epoch, per the host's wall-clock (calendar) time source.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, adapt/relay module). The behavior itself is genuinely implemented and tested elsewhere in this codebase. The blocker is that cpp-RCP's pre-existing REQ-RELAY-001..005 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 5 entries were numbered independently, by the order features appeared in adapt.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-RELAY-001..005 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-RELAY-001 (\"RELAY spec version constant is current (§19.4)\"). Genuinely implemented+tested: no direct cpp-RCP port of c-RCP's clock.c rcp_wallclock_ms() exists as a distinct named function -- response_to_message() (rcp/adapt.hpp) uses std::chrono::system_clock::now() inline for msg.timestamp rather than a wrapped, separately-testable wall-clock accessor. This is a genuine, narrower gap than the other 4 collision entries in this range (no dedicated function to cite as already-tested); noted honestly rather than force-citing an inline call site as equivalent coverage."
+    },
+    {
+      "id": "REQ-RELAY-002",
+      "title": "relay_protocol_string() returns a unique name per protocol",
+      "text": "relay::to_string(Protocol) shall return a unique, non-empty string for each defined relay::Protocol constant, matching the RELAY spec's protocol identifier names (e.g. \"RCP\").",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, adapt/relay module). The behavior itself is genuinely implemented and tested elsewhere in this codebase. The blocker is that cpp-RCP's pre-existing REQ-RELAY-001..005 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 5 entries were numbered independently, by the order features appeared in adapt.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-RELAY-001..005 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-RELAY-002 (\"RELAY Protocol enum and mandatory error sentinels (§3, §5.1)\"). Genuinely implemented+tested: relay::to_string(Protocol) (include/relay/relay.hpp) is a real function covering all six Protocol values -- tests/test_relay.cpp's \"to_string(Protocol) returns a unique, non-empty name per protocol\" TEST_CASE (added this pass) exercises it exhaustively."
+    },
+    {
+      "id": "REQ-RELAY-003",
+      "title": "relay_message_t lifecycle: init, free, set_id are safe and non-leaking",
+      "text": "relay::Message's construction/destruction/id-assignment shall be safely-freeable and non-leaking, and re-assigning id shall replace (not merely append to) any prior value.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, adapt/relay module). The behavior itself is genuinely implemented and tested elsewhere in this codebase. The blocker is that cpp-RCP's pre-existing REQ-RELAY-001..005 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 5 entries were numbered independently, by the order features appeared in adapt.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-RELAY-001..005 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-RELAY-003 (\"RCP-to-RELAY error equivalence mapping (§5.2)\"). Genuinely implemented+tested: architecture divergence, not a missing feature: relay::Message (include/relay/relay.hpp) is a plain struct of std::string/std::vector/std::map members with C++ RAII value semantics -- init()/free()/set_id() as distinct, separately-callable, separately-testable C functions do not exist because there is nothing for them to do beyond what every Message's constructor/destructor/assignment operator already guarantees for free via the standard library (no manual zero-init, no manual free-then-null, no manual deep-copy-on-set required or possible to get wrong). No dedicated test exists because there is no distinct behavior left to pin beyond ordinary C++ value semantics, which this codebase does not re-test per struct."
+    },
+    {
+      "id": "REQ-RELAY-004",
+      "title": "relay_message_t meta map: set upserts, get looks up, both deep-copy",
+      "text": "relay::Message::meta's key/value assignment shall upsert (replace any existing entry with the same key rather than appending a duplicate) and its lookup shall return the value for a given key or indicate absence.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, adapt/relay module). The behavior itself is genuinely implemented and tested elsewhere in this codebase. The blocker is that cpp-RCP's pre-existing REQ-RELAY-001..005 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 5 entries were numbered independently, by the order features appeared in adapt.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-RELAY-001..005 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-RELAY-004 (\"Adapt() wraps a Controller as a relay::Caller (§10.3)\"). Genuinely implemented+tested: architecture divergence, not a missing feature: relay::Message::meta is a plain std::map<std::string, std::string> (include/relay/relay.hpp) -- operator[]/find() already provide exactly the upsert/lookup-or-absent semantics c-RCP's relay_message_set_meta()/_get_meta() exist to hand-roll over a C map, with the same deep-copy-by-value guarantee std::string already provides. tests/test_adapt.cpp's/tests/test_relay.cpp's extensive use of msg.meta[\"...\"] = ...  followed by msg.meta.at(\"...\") lookups throughout both files exercises this pervasively, just never as a dedicated named TEST_CASE, since there is no cpp-RCP-specific behavior here beyond std::map's own."
+    },
+    {
+      "id": "REQ-RELAY-005",
+      "title": "rcp_message_to_request() maps a Message to a protocol-native request per §15.7.5",
+      "text": "rcp_message_to_request() shall pack a relay_message_t's payload and meta fields into a protocol-native request for the given rcp_adapt_op_t, per this module's own per-operation field table, addressed to the given byte_bus_id (or, for RCP_ADAPT_OP_DISCOVERY, framed as a full NTSCF AVTPDU addressed via requester_stream_id) and self-identified by the given transaction_num, reporting RCP_ADAPT_ERR_ENCODE on any packing failure.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 12, adapt/relay module). The behavior itself is genuinely implemented and tested elsewhere in this codebase. The blocker is that cpp-RCP's pre-existing REQ-RELAY-001..005 catalog range predates this rewrite's later convention of reusing c-RCP's exact ids: those 5 entries were numbered independently, by the order features appeared in adapt.hpp at the time, and this id is already taken in .fusa-reqs.json by a materially different, already-catalogued requirement. Adding a second, conflicting entry under the same id would corrupt the catalog's own id uniqueness and is not attempted here. Filed so a future renumbering-cleanup batch (out of this batch's own scope) can resolve the REQ-RELAY-001..005 collision zone and migrate this entry in. Already taken by: this catalog's own REQ-RELAY-005 (\"RELAY core bindings and RCP message mapping (§18.2, §14, §15.7.5)\"). Genuinely implemented+tested: message_to_request() (rcp/adapt.hpp) genuinely implements+tests the SHAPE of this claim -- packing relay::Message.payload/meta into an acf::AcfMessageInfo request, addressed via byte_bus_id decoded from Message.id -- but per a generic op/evt_op/read_size field set (this bridge's own simpler design, see rcp/adapt.hpp's own \"Phase 4 rewrite\" header-comment section), not c-RCP's richer per-rcp_adapt_op_t field table, and it has no RCP_ADAPT_ERR_ENCODE-equivalent packing-failure path of its own (message_to_request() only fails on an undecodable msg.id) -- see REQ-RELAY-006's own new catalog entry for the response-side half of this same architecture divergence, documented explicitly there rather than force-fit into this collision-blocked id."
+    },
+    {
+      "id": "REQ-RELAY-007",
+      "title": "rcp_adapt_op_kind()/_string()/_from_string() classify and round-trip every operation",
+      "text": "rcp_adapt_op_kind() shall report the endpoint-type family (rcp_adapt_ep_kind_t) each rcp_adapt_op_t value belongs to; rcp_adapt_op_string() shall return a unique, non-empty canonical name for each defined rcp_adapt_op_t value; rcp_adapt_op_from_string() shall parse that name back to the same value, and shall report false for any unrecognized or NULL name.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "gap": "Deliberate architecture divergence, not an oversight (confirmed 2026-08-22, cpp-RCP Phase 6 batch 12): rcp/adapt.hpp has no rcp_adapt_op_t-equivalent per-operation opcode enum at all, and therefore no rcp_adapt_op_kind()/_string()/_from_string() to test. This port's Adapt()/RcpCallerAdapter design routes purely by byte_bus_id (Message.id) plus a generic op/evt_op/read_size meta field set -- the same 'primitives, not a wrapped chokepoint' choice rcp/record.hpp's and rcp/observe.hpp's own RequestFn already make -- rather than binding one Caller to exactly one of 13 endpoint-type families the way c-RCP's rcp_adapt(transport, local_stream_id, byte_bus_id, kind) does. tests/test_adapt.cpp's own header comment (lines 45-52) explicitly documents this as a test case c-RCP's test_adapt.c has that this file deliberately does not port, 'because they exercise concepts with no cpp-RCP counterpart in this header's own simpler design'. Filed here rather than force-adding a hollow enum+two functions solely to satisfy this id -- a future batch may reconsider if a real per-op classification need emerges."
+    },
+    {
+      "id": "REQ-RELAY-011",
+      "title": "rcp_adapt_strerror() returns a unique human-readable message",
+      "text": "rcp_adapt_strerror() shall return a unique, non-empty message for each defined rcp_adapt_errc_t constant.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "gap": "Deliberate architecture divergence, not an oversight (confirmed 2026-08-22, cpp-RCP Phase 6 batch 12): rcp/adapt.hpp defines no rcp_adapt_errc_t-equivalent custom error category at all -- RcpCallerAdapter's own failure paths (message_to_request() decode failure, an empty RequestFn) report plain std::errc::invalid_argument/std::errc::not_connected/std::errc::function_not_supported directly, reusing the C++ standard library's own <system_error> category and its already-unique-per-code std::generic_category().message() rather than minting a parallel 'rcp.adapt' category with its own strerror-equivalent the way c-RCP's rcp_adapt_errc_t/rcp_adapt_strerror() do. There is therefore no adapt-specific message-uniqueness property left for a dedicated test to pin beyond what libstdc++/libc++'s own generic_category() already guarantees and this codebase does not re-test."
+    },
+    {
+      "id": "REQ-RELAY-013",
+      "title": "RCP_SPEC_VERSION aliases RELAY_SPEC_VERSION",
+      "text": "RCP_SPEC_VERSION shall be defined and shall equal RELAY_SPEC_VERSION, per the RELAY spec's required package-level SpecVersion export (§17 requirement 12, §19.4).",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A",
+      "gap": "Confirmed absent, arguably not applicable under this port's architecture (2026-08-22, cpp-RCP Phase 6 batch 12): grepped rcp/*.hpp and relay/*.hpp for a SpecVersion/kSpecVersion symbol in the rcp:: namespace -- none exists. c-RCP is a two-package C codebase (a standalone relay.h/.c RELAY binding library, and rcp.h/.c layered on top) where RCP_SPEC_VERSION genuinely needs to be its own definition asserted equal to RELAY's, so the two packages cannot silently drift. cpp-RCP is a single header-only library sharing one translation unit's worth of namespaces (rcp::/relay::) with only one spec-version constant defined anywhere -- relay::kRelaySpecVersion (include/relay/relay.hpp), already tested in tests/test_relay.cpp's \"kRelaySpecVersion is 2.0\" TEST_CASE -- so there is no second, rcp::-scoped constant to duplicate or drift from. Filed as a gap rather than silently assumed satisfied: if a future consumer needs an explicitly RCP-namespaced version symbol (e.g. for a CLI --version surface), one should be added and this id revisited."
+    },
+    {
+      "id": "REQ-RELAY-015",
+      "title": "Relay caller retain increments refcount and returns the same pointer",
+      "text": "rcp_relay_caller_retain() shall increment the caller's refcount and return the same pointer passed in, and shall be a no-op returning NULL when passed NULL.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "gap": "Deliberate architecture divergence, not an oversight (confirmed 2026-08-22, cpp-RCP Phase 6 batch 12): Adapt() returns std::unique_ptr<relay::Caller> (rcp/adapt.hpp), not a manually-refcounted rcp_relay_caller_t* -- C++ RAII ownership (move-only unique_ptr, or a caller wrapping it in shared_ptr if shared ownership is genuinely needed) supersedes c-RCP's own hand-rolled retain/release refcount protocol entirely; there is no retain() function and no refcount field to test. tests/test_adapt.cpp's own header comment (lines 69-75) explicitly documents this as a test case c-RCP's test_adapt.c has that this file deliberately does not port: 'std::unique_ptr already gives Adapt()'s return value RAII lifetime with no manual retain/release protocol to test.'"
     }
   ]
 }
