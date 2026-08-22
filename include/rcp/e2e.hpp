@@ -15,8 +15,14 @@
 // fusa:req REQ-E2E-021
 // fusa:req REQ-E2E-028
 // fusa:req REQ-E2E-029
+// fusa:req REQ-E2E-030
+// fusa:req REQ-E2E-032
 // fusa:req REQ-E2E-035
+// fusa:req REQ-E2E-036
+// fusa:req REQ-E2E-037
 // fusa:req REQ-E2E-038
+// fusa:req REQ-E2E-040
+// fusa:req REQ-E2E-042
 // fusa:req REQ-E2E-045
 // fusa:req REQ-E2E-046
 
