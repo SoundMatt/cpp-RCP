@@ -106,6 +106,7 @@
 #include <rcp/adc.hpp>
 #include <rcp/avtp.hpp>
 #include <rcp/can.hpp>
+#include <rcp/discovery.hpp>
 #include <rcp/endpoint.hpp>
 #include <rcp/gpio.hpp>
 #include <rcp/i2c.hpp>
@@ -121,6 +122,7 @@
 #include <rcp/uart.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -342,12 +344,78 @@ inline acf::AcfMessageInfo make_acknowledge_rejected_response(const acf::AcfMess
 // ep0_.check_read_access(), not by lifecycle state or admission at all),
 // matching c-RCP's own mock.c, which never registers EP0 as a
 // rcp_mock_endpoint_slot_t either.
+//
+// Phase 4/Phase 17 batch B (cpp-RCP issue #129) adds three more pieces on
+// top of batch A's admission wiring:
+//
+//  1. TC18 Table 24 response/ack routing suppression (REQ-RMAP-048/049)
+//     -- ported from c-RCP's suppress_response_per_stream_cfg()
+//     (src/mock.c:1716-1742) wrapping dispatch_plain() around
+//     dispatch_plain_inner() (src/mock.c:1743-1760). This mock's own ten
+//     typed dispatch_*() functions each already play
+//     dispatch_plain_inner()'s own role (the single-endpoint handler
+//     body, with every one of admit_and_classify()'s own early exits and
+//     the handler's own success/error exits) -- batch B applies the
+//     identical wrap, once per endpoint type: each public dispatch_*()
+//     entry point below is now a thin wrapper calling its own renamed
+//     dispatch_*_inner() (batch A's unchanged handler body) and then
+//     suppress_response_per_stream_cfg() (below) on whatever response it
+//     produced, before returning it to dispatch()'s own caller. Requires
+//     a stream_id at the call site to resolve into a
+//     regmap::RequestStreamConfig row -- dispatch()'s own signature grows
+//     a trailing, defaulted `avtp::StreamId stream_id` parameter for this
+//     (default avtp::StreamId{} -- to_u64() == 0 -- matches an
+//     unconfigured stream, which
+//     regmap::request_stream_cfg::resolve_index() already treats as "no
+//     match", so no existing dispatch() caller's behavior changes unless
+//     it opts in to a real stream_id AND has configured a matching
+//     request_streams[] row via set_request_stream_cfg() below).
+//     dispatch_ep0() is NOT wrapped, matching this same class's own
+//     established "EP0 is not one of this file's ten operational
+//     endpoints" exclusion directly above.
+//
+//  2. request_streams/ep_id_mapping storage -- regmap::RegisterMap already
+//     carries both tables as plain public members (regs_.request_streams,
+//     regs_.ep_id_mapping); set_request_stream_cfg()/request_stream_cfg()
+//     and set_ep_id_map()/ep_id_map() below add the same bounds-checked
+//     wholesale-replace + capacity-register-sync convention c-RCP's own
+//     rcp_mock_server_set_request_stream_cfg()/_set_ep_id_map() (mock.h)
+//     already establish (REQ-RMAP-034/037), so item 1's suppression logic
+//     above has a real, test-settable table to resolve a stream_id
+//     against instead of only ever seeing an empty one.
+//
+//  3. Discovery-stream claim storage (REQ-RMAP-066) -- a
+//     discovery::DiscoveryClaim member plus discovery_claim()/
+//     set_discovery_timeout_us(), mirroring c-RCP's own
+//     rcp_mock_server_discovery_claim()/_set_discovery_timeout_us()
+//     (mock.h:501-529, mock.c:663-687) exactly as thin as c-RCP's own
+//     mock.c keeps it: direct storage plus a timeout setter that keeps
+//     regs_.svr_ep_cfg.svr_discovery_timeout and the claim's own internal
+//     window in sync, and nothing more -- c-RCP's mock.c itself never
+//     calls into discovery.h's own claim/timeout logic from inside its
+//     dispatch path either (confirmed by direct source read), so this
+//     port does not invent a dispatch()-side discovery-request handler
+//     that c-RCP has no counterpart for.
 class Server final {
 public:
     Server()
         : lifecycle_(),
           regs_(make_initial_register_map()),
-          ep0_(regs_, lifecycle_) {}
+          ep0_(regs_, lifecycle_) {
+        // REQ-RMAP-066: route the power-on svr_discovery_timeout through
+        // the same setter every later change to it uses, rather than
+        // duplicating the sync here -- mirrors c-RCP's own
+        // rcp_mock_server_new() (src/mock.c:291-298), which does the
+        // identical single call for the identical reason ("srv->
+        // discovery_claim is never left holding a timeout_ms out of sync
+        // with svr_ep_cfg's own current value"). A no-op in terms of the
+        // actual numeric window right now -- discovery::DiscoveryClaim's
+        // own kDefaultTimeout (20 ms) already equals
+        // regmap::SvrEpCfg::svr_discovery_timeout's own default (20000
+        // us) -- but establishes the single source of truth for whenever
+        // either one changes.
+        set_discovery_timeout_us(regs_.svr_ep_cfg.svr_discovery_timeout);
+    }
 
     Server(const Server&)            = delete;
     Server& operator=(const Server&) = delete;
@@ -359,6 +427,66 @@ public:
     const regmap::RegisterMap& registers() const noexcept { return regs_; }
 
     regmap::Ep0& ep0() noexcept { return ep0_; }
+
+    // ── Table 24 request-stream config / EP-ID mapping storage (Phase 4/
+    // Phase 17 batch B) ──────────────────────────────────────────────────
+    // set_request_stream_cfg/set_ep_id_map wholesale-replace their own
+    // table (regs_.request_streams/regs_.ep_id_mapping, both already
+    // plain public RegisterMap members -- see this class's own header
+    // comment, item 2), bounds-checked against each table's own
+    // regmap.hpp-defined kMaxEntries and syncing the matching Table 20
+    // capacity register, mirroring c-RCP's own
+    // rcp_mock_server_set_request_stream_cfg() (mock.c:444-460,
+    // REQ-RMAP-034) and rcp_mock_server_set_ep_id_map() (mock.c:565-580,
+    // REQ-RMAP-037) exactly. Returns false (the table left unchanged) iff
+    // entries.size() exceeds that bound; true otherwise. The getters are
+    // a convenience mirroring registers().request_streams/.ep_id_mapping
+    // directly -- either spelling reaches the same storage.
+    bool set_request_stream_cfg(std::vector<regmap::RequestStreamConfig> entries) noexcept {
+        if (entries.size() > regmap::request_stream_cfg::kMaxEntries) return false;
+        regs_.general.svr_request_stream_cfg_capacity = static_cast<uint8_t>(entries.size());
+        regs_.request_streams = std::move(entries);
+        return true;
+    }
+    const std::vector<regmap::RequestStreamConfig>& request_stream_cfg() const noexcept {
+        return regs_.request_streams;
+    }
+
+    bool set_ep_id_map(std::vector<regmap::EpIdMappingEntry> entries) noexcept {
+        if (entries.size() > regmap::ep_id_map::kMaxEntries) return false;
+        regs_.general.svr_ep_bytebus_id_map_capacity = static_cast<uint8_t>(entries.size());
+        regs_.ep_id_mapping = std::move(entries);
+        return true;
+    }
+    const std::vector<regmap::EpIdMappingEntry>& ep_id_map() const noexcept {
+        return regs_.ep_id_mapping;
+    }
+
+    // ── Discovery-stream claim (REQ-RMAP-066, Phase 4/Phase 17 batch B) ───
+    // discovery_claim gives direct, mutable access to this Server's own
+    // discovery::DiscoveryClaim -- the same "caller may freely set/consult
+    // it directly" convention c-RCP's own rcp_mock_server_discovery_claim()
+    // (mock.h:501-529) establishes for its own plain-struct
+    // rcp_discovery_claim_t*. Never a null reference.
+    discovery::DiscoveryClaim& discovery_claim() noexcept { return discovery_claim_; }
+
+    // set_discovery_timeout_us sets regs_.svr_ep_cfg.svr_discovery_timeout
+    // (TC18's own wire register, microseconds) AND re-derives
+    // discovery_claim_'s own internal window from it (truncating
+    // microsecond division, matching every other us/ms boundary
+    // conversion in this codebase's own convention of never silently
+    // rounding up past a caller's own requested bound) -- mirrors c-RCP's
+    // rcp_mock_server_set_discovery_timeout_us() (mock.c:669-687) exactly,
+    // including its own explicit "does NOT reset held/claimant/deadline"
+    // guarantee: discovery::DiscoveryClaim::set_timeout() (discovery.hpp)
+    // only ever touches its own timeout_ field, never holder_/claimed_at_
+    // -- an in-flight claim's own current deadline is unaffected by a
+    // timeout-VALUE change mid-claim; only the window a FUTURE grant
+    // computes uses the new value.
+    void set_discovery_timeout_us(uint16_t timeout_us) noexcept {
+        regs_.svr_ep_cfg.svr_discovery_timeout = timeout_us;
+        discovery_claim_.set_timeout(std::chrono::milliseconds(timeout_us / 1000u));
+    }
 
     gpio::GpioEndpoint& gpio() noexcept { return gpio_; }
     spi::SpiEndpoint&   spi() noexcept { return spi_; }
@@ -655,22 +783,47 @@ public:
     // (rsp == false, never true of a genuine response this codec builds)
     // and out_resp_payload left empty: a caller MUST check the returned
     // std::error_code before assuming there is anything to send.
+    //
+    // Phase 4/Phase 17 batch B: `stream_id` (default avtp::StreamId{},
+    // to_u64() == 0) names which request stream this request arrived on —
+    // mirrors c-RCP's own rcp_mock_server_dispatch()'s own stream_id
+    // parameter (mock.h), reduced to just what Table 24 response
+    // suppression (REQ-RMAP-048/049) needs: each of the ten dispatch_*()
+    // calls below now threads it through to that endpoint type's own
+    // suppress_response_per_stream_cfg() tail call — see this class's own
+    // header comment, item 1, and suppress_response_per_stream_cfg()'s own
+    // doc comment for the full contract. The default leaves every existing
+    // caller's behavior unchanged: an unconfigured/default stream_id never
+    // resolves to a real regmap::request_streams[] row, so suppression is
+    // always a no-op unless a caller both passes a real stream_id AND has
+    // configured a matching row via set_request_stream_cfg() above.
     std::error_code dispatch(size_t client, const acf::AcfMessageInfo& req,
                               const std::vector<uint8_t>& req_payload,
                               acf::AcfMessageInfo& out_resp,
-                              std::vector<uint8_t>& out_resp_payload) noexcept {
+                              std::vector<uint8_t>& out_resp_payload,
+                              avtp::StreamId stream_id = avtp::StreamId{}) noexcept {
         out_resp_payload.clear();
         if (req.byte_bus_id == regmap::kEp0) return dispatch_ep0(client, req, out_resp, out_resp_payload);
-        if (req.byte_bus_id == kGpioByteBusId) return dispatch_gpio(req, req_payload, out_resp, out_resp_payload);
-        if (req.byte_bus_id == kSpiByteBusId) return dispatch_spi(req, req_payload, out_resp, out_resp_payload);
-        if (req.byte_bus_id == kI2cByteBusId) return dispatch_i2c(req, req_payload, out_resp, out_resp_payload);
-        if (req.byte_bus_id == kAdcByteBusId) return dispatch_adc(req, req_payload, out_resp, out_resp_payload);
-        if (req.byte_bus_id == kPwmInByteBusId) return dispatch_pwm_in(req, req_payload, out_resp, out_resp_payload);
-        if (req.byte_bus_id == kLinByteBusId) return dispatch_lin(req, req_payload, out_resp, out_resp_payload);
-        if (req.byte_bus_id == kCanByteBusId) return dispatch_can(req, req_payload, out_resp, out_resp_payload);
-        if (req.byte_bus_id == kUartByteBusId) return dispatch_uart(req, req_payload, out_resp, out_resp_payload);
-        if (req.byte_bus_id == kIseledByteBusId) return dispatch_iseled(req, req_payload, out_resp, out_resp_payload);
-        if (req.byte_bus_id == kMdioByteBusId) return dispatch_mdio(req, req_payload, out_resp, out_resp_payload);
+        if (req.byte_bus_id == kGpioByteBusId)
+            return dispatch_gpio(req, req_payload, out_resp, out_resp_payload, stream_id);
+        if (req.byte_bus_id == kSpiByteBusId)
+            return dispatch_spi(req, req_payload, out_resp, out_resp_payload, stream_id);
+        if (req.byte_bus_id == kI2cByteBusId)
+            return dispatch_i2c(req, req_payload, out_resp, out_resp_payload, stream_id);
+        if (req.byte_bus_id == kAdcByteBusId)
+            return dispatch_adc(req, req_payload, out_resp, out_resp_payload, stream_id);
+        if (req.byte_bus_id == kPwmInByteBusId)
+            return dispatch_pwm_in(req, req_payload, out_resp, out_resp_payload, stream_id);
+        if (req.byte_bus_id == kLinByteBusId)
+            return dispatch_lin(req, req_payload, out_resp, out_resp_payload, stream_id);
+        if (req.byte_bus_id == kCanByteBusId)
+            return dispatch_can(req, req_payload, out_resp, out_resp_payload, stream_id);
+        if (req.byte_bus_id == kUartByteBusId)
+            return dispatch_uart(req, req_payload, out_resp, out_resp_payload, stream_id);
+        if (req.byte_bus_id == kIseledByteBusId)
+            return dispatch_iseled(req, req_payload, out_resp, out_resp_payload, stream_id);
+        if (req.byte_bus_id == kMdioByteBusId)
+            return dispatch_mdio(req, req_payload, out_resp, out_resp_payload, stream_id);
 
         return set_error_response(req, make_error_code(regmap::RegMapErrc::invalid_parameter),
                                    out_resp, out_resp_payload);
@@ -844,6 +997,58 @@ private:
         }
     }
 
+    // suppress_response_per_stream_cfg — TC18 §12.7.7 Table 24
+    // (REQ-RMAP-048/049), ported from c-RCP's own identically-named
+    // function (src/mock.c:1716-1742). Table 24's own two per-request-
+    // stream routing pointers each carry a "0 means no X is to be sent"
+    // default — rx_ack_stream_index for an Acknowledge-classified response
+    // (acf::response_kind_of(out_resp) == ResponseKind::Acknowledge, which
+    // also covers the Acknowledge-REJECTED shape
+    // make_acknowledge_rejected_response() builds above, since evt[3:0]
+    // alone — not err — decides that classification, same as c-RCP's own
+    // rcp_acf_classify_response()), rx_resp_stream_index for every other
+    // response kind (Write/Read/Error). This mock owns no real
+    // multi-stream transport to actually DELIVER a response on a
+    // caller-chosen stream (the same "simulator, not a scheduler/
+    // transport" boundary this class's own tick()/drain_one() doc
+    // comments already establish) — but it CAN, and now does, honor the
+    // "0 means send nothing at all" half of that rule, which needs no
+    // transport concept whatsoever: out_resp/out_resp_payload are simply
+    // reset to the identical "nothing to send" shape DispatchErrc's own
+    // evt[3]-less outcomes already use (rsp == false, payload empty) —
+    // see admit_and_classify()'s own doc comment for that shape's own
+    // contract.
+    //
+    // An unresolvable stream_id (regmap::request_stream_cfg::
+    // resolve_index() returns 0 — no set_request_stream_cfg() entry names
+    // it) suppresses nothing, the same fail-toward-no-action disposition
+    // every resolve_index() call site in c-RCP's own mock.c already uses;
+    // a caller that never configured a request stream (including every
+    // dispatch() call site that leaves the new trailing stream_id
+    // parameter at its default) sees this mock's pre-existing, unaffected
+    // response behavior. `if (!out_resp.rsp) return;` mirrors c-RCP's own
+    // `if (out->data == NULL) return;` leading guard — nothing built,
+    // nothing to suppress.
+    static void suppress_response_per_stream_cfg(const regmap::RegisterMap& regs,
+                                                  avtp::StreamId stream_id,
+                                                  acf::AcfMessageInfo& out_resp,
+                                                  std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (!out_resp.rsp) return;
+
+        const uint8_t stream_index = regmap::request_stream_cfg::resolve_index(
+            regs.request_streams.data(), regs.request_streams.size(), stream_id.to_u64());
+        if (stream_index == 0) return;
+
+        const regmap::RequestStreamConfig& cfg = regs.request_streams[stream_index - 1];
+        const bool suppress = (acf::response_kind_of(out_resp) == acf::ResponseKind::Acknowledge)
+                                   ? (cfg.rx_ack_stream_index == 0)
+                                   : (cfg.rx_resp_stream_index == 0);
+        if (!suppress) return;
+
+        out_resp = acf::AcfMessageInfo{};
+        out_resp_payload.clear();
+    }
+
     static regmap::RegisterMap make_initial_register_map() {
         regmap::RegisterMap regs;
         regs.general.svr_ep_count = 10;
@@ -861,6 +1066,33 @@ private:
             {kIseledEndpointId, kIseledByteBusId},
             {kMdioEndpointId,   kMdioByteBusId},
         };
+        // Bug fix (Phase 4/Phase 17 batch B): every row above left its own
+        // trailing request_stream_index/crc_required fields at
+        // EpIdMappingEntry's own struct defaults (0/false) -- but 0 is
+        // REQ-RMAP-054's own defined END-OF-TABLE SENTINEL
+        // (regmap::ep_id_map::effective_count(), regmap.hpp), not "row 0's
+        // own request stream". Left uncorrected, effective_count() over
+        // this table would read the very first row's request_stream_index
+        // == 0 and report the WHOLE ten-row table as zero effective rows,
+        // even though every row here is a real, populated mapping. Set to
+        // 1 (the same power-on default regmap::ep_id_map::row_init_default()
+        // itself assigns, and the same value RequestStreamConfig::
+        // rx_resp_stream_index's own struct default already uses for "the
+        // one pre-existing stream a freshly reset server can answer
+        // through") so this table renders as ten real, associated rows
+        // rather than an apparently-empty one -- inert today (nothing in
+        // this file yet consults request_stream_index, see this class's
+        // own header comment on this batch's own scope), but a genuine
+        // correctness fix for whichever later batch's REQ-SEQ-013/
+        // REQ-E2E-029/030/045 logic (broadcast_safe_state and friends,
+        // c-RCP's own mock.c) is first to actually read it.
+        for (auto& entry : regs.ep_id_mapping) entry.request_stream_index = 1;
+        // REQ-RMAP-037: syncs the matching Table 20 capacity register to
+        // this table's own real length, the same convention
+        // set_ep_id_map() below establishes for a later wholesale
+        // replacement — previously left at GeneralMap's own zero default
+        // despite this constructor already populating ten real rows above.
+        regs.general.svr_ep_bytebus_id_map_capacity = 10;
         return regs;
     }
 
@@ -886,7 +1118,20 @@ private:
         return lifecycle_.state() == lifecycle::ServerState::RcpConfigured;
     }
 
+    // dispatch_gpio — Phase 4/Phase 17 batch B: thin wrapper applying TC18
+    // Table 24 response suppression (REQ-RMAP-048/049) around
+    // dispatch_gpio_inner()'s own unchanged (batch A) handler body — see
+    // suppress_response_per_stream_cfg()'s own doc comment and this
+    // class's own header comment, item 1.
     std::error_code dispatch_gpio(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                   acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload,
+                                   avtp::StreamId stream_id) noexcept {
+        std::error_code ec = dispatch_gpio_inner(req, payload, out_resp, out_resp_payload);
+        suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+        return ec;
+    }
+
+    std::error_code dispatch_gpio_inner(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                    acf::AcfMessageInfo& out_resp,
                                    std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
@@ -921,7 +1166,20 @@ private:
     // `payload` as the PICO-out bytes (empty for a pure read) and answers
     // with whatever POCI-in bytes set_spi_poci() last scripted for that
     // channel.
+    // dispatch_spi — Phase 4/Phase 17 batch B: thin wrapper applying TC18
+    // Table 24 response suppression (REQ-RMAP-048/049) around
+    // dispatch_spi_inner()'s own unchanged (batch A) handler body — see
+    // suppress_response_per_stream_cfg()'s own doc comment and this
+    // class's own header comment, item 1.
     std::error_code dispatch_spi(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                  acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload,
+                                  avtp::StreamId stream_id) noexcept {
+        std::error_code ec = dispatch_spi_inner(req, payload, out_resp, out_resp_payload);
+        suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+        return ec;
+    }
+
+    std::error_code dispatch_spi_inner(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                   acf::AcfMessageInfo& out_resp,
                                   std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
@@ -951,7 +1209,20 @@ private:
     // evt_row2_kind_of), which I2cEndpoint::handle_request checks before
     // ever touching `payload` as transfer data — see its own doc comment
     // for why a Reserved or ConfigWrite evt must never reach transfer().
+    // dispatch_i2c — Phase 4/Phase 17 batch B: thin wrapper applying TC18
+    // Table 24 response suppression (REQ-RMAP-048/049) around
+    // dispatch_i2c_inner()'s own unchanged (batch A) handler body — see
+    // suppress_response_per_stream_cfg()'s own doc comment and this
+    // class's own header comment, item 1.
     std::error_code dispatch_i2c(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                  acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload,
+                                  avtp::StreamId stream_id) noexcept {
+        std::error_code ec = dispatch_i2c_inner(req, payload, out_resp, out_resp_payload);
+        suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+        return ec;
+    }
+
+    std::error_code dispatch_i2c_inner(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                   acf::AcfMessageInfo& out_resp,
                                   std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
@@ -998,7 +1269,20 @@ private:
     // that as an AdcErrc::no_signal *error* response instead, preserving
     // this dispatch path's own pre-existing "queue underrun is an error"
     // contract for set_adc_response()'s own callers/tests.
+    // dispatch_adc — Phase 4/Phase 17 batch B: thin wrapper applying TC18
+    // Table 24 response suppression (REQ-RMAP-048/049) around
+    // dispatch_adc_inner()'s own unchanged (batch A) handler body — see
+    // suppress_response_per_stream_cfg()'s own doc comment and this
+    // class's own header comment, item 1.
     std::error_code dispatch_adc(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                  acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload,
+                                  avtp::StreamId stream_id) noexcept {
+        std::error_code ec = dispatch_adc_inner(req, payload, out_resp, out_resp_payload);
+        suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+        return ec;
+    }
+
+    std::error_code dispatch_adc_inner(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                   acf::AcfMessageInfo& out_resp,
                                   std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
@@ -1072,7 +1356,20 @@ private:
     // (wire error code PwmInNoSignal) if nothing has been recorded yet or
     // the signal was cleared. `payload` is unused: §13.7.6.3 states the
     // PWM_IN request itself carries no functional byte_msg_payload.
+    // dispatch_pwm_in — Phase 4/Phase 17 batch B: thin wrapper applying
+    // TC18 Table 24 response suppression (REQ-RMAP-048/049) around
+    // dispatch_pwm_in_inner()'s own unchanged (batch A) handler body —
+    // see suppress_response_per_stream_cfg()'s own doc comment and this
+    // class's own header comment, item 1.
     std::error_code dispatch_pwm_in(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                     acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload,
+                                     avtp::StreamId stream_id) noexcept {
+        std::error_code ec = dispatch_pwm_in_inner(req, payload, out_resp, out_resp_payload);
+        suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+        return ec;
+    }
+
+    std::error_code dispatch_pwm_in_inner(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                      acf::AcfMessageInfo& out_resp,
                                      std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
@@ -1106,7 +1403,20 @@ private:
     // evt_row2_kind_of), which LinEndpoint::handle_request checks before
     // ever touching `payload` as transfer data — see its own doc comment
     // for why a Reserved or ConfigWrite evt must never reach transfer().
+    // dispatch_lin — Phase 4/Phase 17 batch B: thin wrapper applying TC18
+    // Table 24 response suppression (REQ-RMAP-048/049) around
+    // dispatch_lin_inner()'s own unchanged (batch A) handler body — see
+    // suppress_response_per_stream_cfg()'s own doc comment and this
+    // class's own header comment, item 1.
     std::error_code dispatch_lin(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                  acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload,
+                                  avtp::StreamId stream_id) noexcept {
+        std::error_code ec = dispatch_lin_inner(req, payload, out_resp, out_resp_payload);
+        suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+        return ec;
+    }
+
+    std::error_code dispatch_lin_inner(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                   acf::AcfMessageInfo& out_resp,
                                   std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
@@ -1148,7 +1458,20 @@ private:
     // hook), so out_resp_payload stays empty and the response is a plain
     // Acknowledge/WriteResponse, mirroring dispatch_gpio's write-response
     // shape rather than dispatch_i2c/dispatch_lin's read-response shape.
+    // dispatch_can — Phase 4/Phase 17 batch B: thin wrapper applying TC18
+    // Table 24 response suppression (REQ-RMAP-048/049) around
+    // dispatch_can_inner()'s own unchanged (batch A) handler body — see
+    // suppress_response_per_stream_cfg()'s own doc comment and this
+    // class's own header comment, item 1.
     std::error_code dispatch_can(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                  acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload,
+                                  avtp::StreamId stream_id) noexcept {
+        std::error_code ec = dispatch_can_inner(req, payload, out_resp, out_resp_payload);
+        suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+        return ec;
+    }
+
+    std::error_code dispatch_can_inner(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                   acf::AcfMessageInfo& out_resp,
                                   std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
@@ -1204,7 +1527,20 @@ private:
     // not enforced here — deliberately out of scope for this evt[2:0]
     // classification pass, same as handle_request's own comment already
     // flags.
+    // dispatch_uart — Phase 4/Phase 17 batch B: thin wrapper applying TC18
+    // Table 24 response suppression (REQ-RMAP-048/049) around
+    // dispatch_uart_inner()'s own unchanged (batch A) handler body — see
+    // suppress_response_per_stream_cfg()'s own doc comment and this
+    // class's own header comment, item 1.
     std::error_code dispatch_uart(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                   acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload,
+                                   avtp::StreamId stream_id) noexcept {
+        std::error_code ec = dispatch_uart_inner(req, payload, out_resp, out_resp_payload);
+        suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+        return ec;
+    }
+
+    std::error_code dispatch_uart_inner(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                    acf::AcfMessageInfo& out_resp,
                                    std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
@@ -1253,7 +1589,20 @@ private:
     // hardware" pattern set_i2c_response/set_lin_response already establish
     // for their own bus-transfer models. Answered as a ReadResponse,
     // mirroring dispatch_i2c/dispatch_lin's read-response shape.
+    // dispatch_iseled — Phase 4/Phase 17 batch B: thin wrapper applying
+    // TC18 Table 24 response suppression (REQ-RMAP-048/049) around
+    // dispatch_iseled_inner()'s own unchanged (batch A) handler body —
+    // see suppress_response_per_stream_cfg()'s own doc comment and this
+    // class's own header comment, item 1.
     std::error_code dispatch_iseled(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                     acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload,
+                                     avtp::StreamId stream_id) noexcept {
+        std::error_code ec = dispatch_iseled_inner(req, payload, out_resp, out_resp_payload);
+        suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+        return ec;
+    }
+
+    std::error_code dispatch_iseled_inner(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                      acf::AcfMessageInfo& out_resp,
                                      std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
@@ -1306,7 +1655,20 @@ private:
     // doc comment for why a Reserved or ConfigWrite evt must never reach
     // it. No set_mdio_response() hook exists — see mdio()'s own comment
     // above for why MDIO's self-contained register model needs none.
+    // dispatch_mdio — Phase 4/Phase 17 batch B: thin wrapper applying TC18
+    // Table 24 response suppression (REQ-RMAP-048/049) around
+    // dispatch_mdio_inner()'s own unchanged (batch A) handler body — see
+    // suppress_response_per_stream_cfg()'s own doc comment and this
+    // class's own header comment, item 1.
     std::error_code dispatch_mdio(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
+                                   acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload,
+                                   avtp::StreamId stream_id) noexcept {
+        std::error_code ec = dispatch_mdio_inner(req, payload, out_resp, out_resp_payload);
+        suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+        return ec;
+    }
+
+    std::error_code dispatch_mdio_inner(const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload,
                                    acf::AcfMessageInfo& out_resp,
                                    std::vector<uint8_t>& out_resp_payload) noexcept {
         if (!operational_requests_allowed()) {
@@ -1374,6 +1736,16 @@ private:
     // 37's gPTP lock-established/lost trigger signals — see
     // notify_gptp_lock_state()'s own doc comment above.
     server::GptpTriggerState   gptp_trigger_state_{};
+    // REQ-RMAP-066 (Phase 4/Phase 17 batch B): this Server's own
+    // discovery-stream claim/timeout state -- see discovery_claim()'s and
+    // set_discovery_timeout_us()'s own doc comments above. Default-
+    // constructed to discovery::DiscoveryClaim::kDefaultTimeout (20 ms),
+    // then immediately re-synced from regs_.svr_ep_cfg.svr_discovery_
+    // timeout by the constructor body above -- the same two-step
+    // "zero-init default, then one real sync call" pattern this class's
+    // own gptp_trigger_state_ and every RegisterMap table above already
+    // use for their own power-on state.
+    discovery::DiscoveryClaim  discovery_claim_{};
     std::array<std::vector<uint8_t>, spi::kMaxChannels> spi_poci_{};
     std::vector<uint8_t>       i2c_response_{};
     bool                       i2c_acked_ = true;

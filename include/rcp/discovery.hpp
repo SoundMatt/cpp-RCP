@@ -755,6 +755,25 @@ public:
     // HW_UNCONFIGURED (lifecycle.hpp's own reset path).
     void release() noexcept { holder_.reset(); }
 
+    // set_timeout — Phase 4/Phase 17 batch B (cpp-RCP issue #129), added to
+    // close a gap this port's own constructor-only timeout left open:
+    // c-RCP's rcp_mock_server_set_discovery_timeout_us() (src/mock.c:
+    // 669-687) re-derives srv->discovery_claim.timeout_ms from a NEW
+    // svr_discovery_timeout register write at any time, explicitly WITHOUT
+    // resetting held/claimant/deadline state ("Does NOT reset
+    // srv->discovery_claim's own held/claimant/deadline_ms state -- an
+    // in-flight claim's own current deadline is unaffected by a
+    // timeout-VALUE change mid-claim; only the window a FUTURE grant
+    // computes uses the new value"). Before this method existed, this
+    // class's timeout_ was fixed for the object's whole lifetime (set once,
+    // at construction) -- there was no way for a caller (mock::Server's own
+    // set_discovery_timeout_us(), below) to honor that same "update the
+    // window, leave any live claim's own current deadline alone" contract
+    // without reconstructing (and thereby wrongly resetting) this whole
+    // object. Same reasoning applies here: only timeout_ changes; holder_/
+    // claimed_at_ are left exactly as they are.
+    void set_timeout(std::chrono::milliseconds timeout) noexcept { timeout_ = timeout; }
+
 private:
     bool lapsed(TimePoint now) const noexcept {
         return !holder_.has_value() || (now - claimed_at_) >= timeout_;

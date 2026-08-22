@@ -78,6 +78,19 @@ TEST_CASE("Server starts HW_UNCONFIGURED with a ten-endpoint register map",
     REQUIRE(server.registers().ep_id_mapping[8].byte_bus_id == mock::kIseledByteBusId);
     REQUIRE(server.registers().ep_id_mapping[9].ep_id == mock::kMdioEndpointId);
     REQUIRE(server.registers().ep_id_mapping[9].byte_bus_id == mock::kMdioByteBusId);
+
+    // Bug fix (Phase 4/Phase 17 batch B): every seeded row's own
+    // request_stream_index must be REQ-RMAP-054's power-on default (1),
+    // never left at EpIdMappingEntry's own struct default (0) -- 0 is the
+    // end-of-table sentinel regmap::ep_id_map::effective_count() reads,
+    // so leaving row 0 at 0 would report this whole ten-row table as
+    // zero effective rows.
+    for (const auto& entry : server.registers().ep_id_mapping) {
+        REQUIRE(entry.request_stream_index == 1);
+    }
+    REQUIRE(regmap::ep_id_map::effective_count(server.registers().ep_id_mapping.data(),
+                                                 server.registers().ep_id_mapping.size()) == 10);
+    REQUIRE(server.registers().general.svr_ep_bytebus_id_map_capacity == 10);
 }
 
 TEST_CASE("advance_to_rcp_configured drives the lifecycle straight to RCP_CONFIGURED",
@@ -1282,4 +1295,267 @@ TEST_CASE("tick() reports nothing due while gPTP time is unlocked, even past the
     std::vector<uint8_t> due_frame;
     REQUIRE_FALSE(server.tick(mock::kGpioByteBusId, ctx, due_frame));
     REQUIRE(server.pending_count(mock::kGpioByteBusId) == 1); // still stored
+}
+
+// ── Request-stream-cfg / EP-ID-map storage (Phase 4/Phase 17 batch B) ────────
+// set_request_stream_cfg()/set_ep_id_map() mirror c-RCP's own
+// rcp_mock_server_set_request_stream_cfg()/_set_ep_id_map() (mock.c:
+// 444-460/565-580) bounds-checked wholesale-replace + capacity-register-sync
+// convention.
+
+TEST_CASE("set_request_stream_cfg replaces the table wholesale and syncs "
+          "svr_request_stream_cfg_capacity, bounded by kMaxEntries",
+          "[mock][REQ-RMAP-034][REQ-RMAP-047]") {
+    mock::Server server;
+    REQUIRE(server.request_stream_cfg().empty());
+    REQUIRE(server.registers().general.svr_request_stream_cfg_capacity == 0);
+
+    std::vector<regmap::RequestStreamConfig> cfg(2);
+    cfg[0].stream_id = avtp::StreamId::from_u64(0x1111);
+    cfg[1].stream_id = avtp::StreamId::from_u64(0x2222);
+    REQUIRE(server.set_request_stream_cfg(cfg));
+    REQUIRE(server.request_stream_cfg().size() == 2);
+    REQUIRE(server.request_stream_cfg()[1].stream_id.to_u64() == 0x2222);
+    REQUIRE(server.registers().general.svr_request_stream_cfg_capacity == 2);
+
+    // Over kMaxEntries: rejected, table left unchanged.
+    std::vector<regmap::RequestStreamConfig> too_many(regmap::request_stream_cfg::kMaxEntries + 1);
+    REQUIRE_FALSE(server.set_request_stream_cfg(too_many));
+    REQUIRE(server.request_stream_cfg().size() == 2);
+}
+
+TEST_CASE("set_ep_id_map replaces the table wholesale and syncs "
+          "svr_ep_bytebus_id_map_capacity, bounded by kMaxEntries",
+          "[mock][REQ-RMAP-037][REQ-RMAP-052]") {
+    mock::Server server;
+    REQUIRE(server.ep_id_map().size() == 10); // batch A's own power-on default
+
+    std::vector<regmap::EpIdMappingEntry> entries(1);
+    entries[0].ep_id               = 7;
+    entries[0].byte_bus_id         = 7;
+    entries[0].request_stream_index = 1;
+    REQUIRE(server.set_ep_id_map(entries));
+    REQUIRE(server.ep_id_map().size() == 1);
+    REQUIRE(server.registers().ep_id_mapping[0].ep_id == 7);
+    REQUIRE(server.registers().general.svr_ep_bytebus_id_map_capacity == 1);
+
+    std::vector<regmap::EpIdMappingEntry> too_many(regmap::ep_id_map::kMaxEntries + 1);
+    REQUIRE_FALSE(server.set_ep_id_map(too_many));
+    REQUIRE(server.ep_id_map().size() == 1); // unchanged
+}
+
+// ── Table 24 response/ack routing suppression (Phase 4/Phase 17 batch B,
+//    REQ-RMAP-048/049) ────────────────────────────────────────────────────────
+// Ported from c-RCP's tests/test_mock.c
+// test_response_suppressed_when_rx_resp_stream_index_is_zero() /
+// test_response_not_suppressed_when_rx_resp_stream_index_is_nonzero() /
+// test_response_not_suppressed_for_unresolvable_stream() /
+// test_acknowledge_suppressed_by_default_ack_stream_index() /
+// test_acknowledge_not_suppressed_when_rx_ack_stream_index_is_nonzero()
+// (tests/test_mock.c:1061-1204), reduced to real dispatch()-driven
+// Read/Write/Acknowledge responses this mock's own typed endpoints
+// already produce, rather than a synthetic handler double.
+
+namespace {
+constexpr uint64_t kSuppressionStreamRaw = 0x0102030405060708ULL;
+avtp::StreamId      kSuppressionStream() { return avtp::StreamId::from_u64(kSuppressionStreamRaw); }
+} // namespace
+
+TEST_CASE("A Read/WriteResponse is suppressed (no wire response at all) when the resolved "
+          "request stream's rx_resp_stream_index == 0",
+          "[mock][REQ-RMAP-049]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id            = kSuppressionStream();
+    cfg.rx_resp_stream_index = 0; // "no response is to be sent"
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/false);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload, kSuppressionStream());
+
+    // The handler still ran (GPIO's own read state is unaffected by
+    // suppression) -- only the wire response is withheld.
+    REQUIRE_FALSE(ec);
+    REQUIRE_FALSE(resp.rsp);
+    REQUIRE(resp_payload.empty());
+}
+
+TEST_CASE("A ReadResponse is NOT suppressed when the resolved request stream's "
+          "rx_resp_stream_index is nonzero (its own power-on default, 1)",
+          "[mock][REQ-RMAP-049]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    regmap::RequestStreamConfig cfg; // rx_resp_stream_index defaults to 1
+    cfg.stream_id = kSuppressionStream();
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/false);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload, kSuppressionStream());
+
+    REQUIRE_FALSE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
+}
+
+TEST_CASE("A response is NOT suppressed for a stream_id with no configured "
+          "request-stream-cfg entry at all (unresolvable stream suppresses nothing)",
+          "[mock][REQ-RMAP-049]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    // Deliberately no set_request_stream_cfg() call.
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/false);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload, kSuppressionStream());
+
+    REQUIRE_FALSE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
+}
+
+TEST_CASE("An Acknowledge is suppressed by rx_ack_stream_index's own default (0), "
+          "independent of rx_resp_stream_index",
+          "[mock][REQ-RMAP-048]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.admission(mock::kGpioByteBusId)->set_enable(false); // disabled -> queues + acks
+
+    regmap::RequestStreamConfig cfg; // rx_ack_stream_index defaults to 0
+    cfg.stream_id = kSuppressionStream();
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                 static_cast<uint8_t>(WriteSemantics::Or), /*evt_ack=*/true);
+    auto payload = gpio::encode_gpio_payload(0x0000'000F);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, payload, resp, resp_payload, kSuppressionStream());
+
+    // Without suppression this would be a genuine Acknowledge (REQ-SRV-016,
+    // covered above) -- rx_ack_stream_index == 0 withholds it instead, but
+    // the request is still genuinely queued.
+    REQUIRE_FALSE(ec);
+    REQUIRE_FALSE(resp.rsp);
+    REQUIRE(resp_payload.empty());
+    REQUIRE(server.admission(mock::kGpioByteBusId)->queue_len() == 1);
+}
+
+TEST_CASE("An Acknowledge is NOT suppressed when rx_ack_stream_index is nonzero, EVEN with "
+          "rx_resp_stream_index explicitly 0 on the same stream (field separation)",
+          "[mock][REQ-RMAP-048]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.admission(mock::kGpioByteBusId)->set_enable(false);
+
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id            = kSuppressionStream();
+    cfg.rx_ack_stream_index  = 1; // "send it"
+    cfg.rx_resp_stream_index = 0; // must NOT apply to an Acknowledge
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                 static_cast<uint8_t>(WriteSemantics::Or), /*evt_ack=*/true);
+    auto payload = gpio::encode_gpio_payload(0x0000'000F);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, payload, resp, resp_payload, kSuppressionStream());
+
+    REQUIRE_FALSE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::Acknowledge);
+}
+
+TEST_CASE("Every operational endpoint type's response is suppressible via Table 24 "
+          "(sweep of all ten dispatch_*() wrappers)",
+          "[mock][REQ-RMAP-049]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id            = kSuppressionStream();
+    cfg.rx_resp_stream_index = 0;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    for (avtp::ByteBusId bus_id : {mock::kGpioByteBusId, mock::kSpiByteBusId, mock::kI2cByteBusId,
+                                    mock::kAdcByteBusId, mock::kPwmInByteBusId, mock::kLinByteBusId,
+                                    mock::kCanByteBusId, mock::kUartByteBusId, mock::kIseledByteBusId,
+                                    mock::kMdioByteBusId}) {
+        auto req = standard_request(bus_id, /*write=*/true, /*evt_op=*/0);
+        acf::AcfMessageInfo resp;
+        std::vector<uint8_t> resp_payload;
+        // Every one of these ten byte_bus_ids' own Plain (evt[2:0]==000b)
+        // request succeeds unconditionally against this fixture's own
+        // defaults (empty payload is valid for all ten write paths tested
+        // above), so every response reaching suppression is a genuine one.
+        (void)server.dispatch(0, req, {}, resp, resp_payload, kSuppressionStream());
+        REQUIRE_FALSE(resp.rsp);
+        REQUIRE(resp_payload.empty());
+    }
+}
+
+// ── Discovery-stream claim (REQ-RMAP-066, Phase 4/Phase 17 batch B) ──────────
+// Ported from c-RCP's tests/test_mock.c
+// test_new_server_discovery_claim_starts_with_the_tc18_default_timeout() /
+// test_set_discovery_timeout_us_syncs_svr_ep_cfg_and_claim() /
+// test_discovery_claim_lifecycle_driven_by_configured_timeout()
+// (tests/test_mock.c:1917-1980), adapted to discovery::DiscoveryClaim's own
+// std::chrono::steady_clock::time_point-based API (discovery.hpp) rather than
+// c-RCP's raw timeout_ms/now_ms integers -- behaviorally equivalent, since
+// this class exposes no direct "current timeout" getter (matching c-RCP's own
+// "thin storage, nothing more" scope for this batch -- see mock.hpp's own
+// header comment).
+
+TEST_CASE("A new Server's discovery_claim starts unheld, with TC18's own default "
+          "svr_discovery_timeout (20000 us)",
+          "[mock][REQ-RMAP-066]") {
+    mock::Server server;
+    REQUIRE(server.registers().svr_ep_cfg.svr_discovery_timeout == 20000);
+
+    const auto now = discovery::DiscoveryClaim::Clock::now();
+    REQUIRE_FALSE(server.discovery_claim().has_active_claim(now));
+}
+
+TEST_CASE("set_discovery_timeout_us keeps svr_ep_cfg and discovery_claim's own window in sync",
+          "[mock][REQ-RMAP-066]") {
+    mock::Server server;
+    server.set_discovery_timeout_us(10000); // 10 ms, a short, test-friendly window
+    REQUIRE(server.registers().svr_ep_cfg.svr_discovery_timeout == 10000);
+
+    const auto base = discovery::DiscoveryClaim::Clock::now();
+    REQUIRE(server.discovery_claim().on_discovery_request(
+                /*client=*/1, lifecycle::ServerState::HwUnconfigured, base) ==
+            discovery::DiscoveryClaim::ClaimOutcome::Claimed);
+
+    // Well within the 10 ms window: still held.
+    REQUIRE(server.discovery_claim().has_active_claim(base + std::chrono::milliseconds(5)));
+    // The window has now lapsed: open again.
+    REQUIRE_FALSE(server.discovery_claim().has_active_claim(base + std::chrono::milliseconds(10)));
+}
+
+TEST_CASE("discovery_claim()'s own real claim lifecycle (open -> claimed -> a second "
+          "requester refused -> lapse -> re-grantable) is genuinely driven by "
+          "set_discovery_timeout_us()'s configured window",
+          "[mock][REQ-RMAP-066][REQ-DISC-029]") {
+    mock::Server server;
+    server.set_discovery_timeout_us(10000); // 10 ms
+
+    const auto base = discovery::DiscoveryClaim::Clock::now();
+    auto&      claim = server.discovery_claim();
+
+    REQUIRE(claim.on_discovery_request(/*client=*/1, lifecycle::ServerState::HwUnconfigured, base) ==
+            discovery::DiscoveryClaim::ClaimOutcome::Claimed);
+    // A second, different requester within the window is refused
+    // (REQ-DISC-029), not granted.
+    REQUIRE(claim.on_discovery_request(/*client=*/2, lifecycle::ServerState::HwUnconfigured,
+                                        base + std::chrono::milliseconds(5)) ==
+            discovery::DiscoveryClaim::ClaimOutcome::HeldByOther);
+    // Once the window has lapsed, the second requester is re-grantable.
+    REQUIRE(claim.on_discovery_request(/*client=*/2, lifecycle::ServerState::HwUnconfigured,
+                                        base + std::chrono::milliseconds(10)) ==
+            discovery::DiscoveryClaim::ClaimOutcome::Claimed);
 }
