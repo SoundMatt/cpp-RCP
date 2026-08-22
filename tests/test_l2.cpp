@@ -522,7 +522,7 @@ TEST_CASE("FrameHandler wired to mock::Server::dispatch_frame() dispatches every
     std::vector<uint8_t> raw(wire.begin() + static_cast<long>(hdr.acf_offset), wire.end());
 
     std::vector<FrameMemberResult> results;
-    size_t n = fh(/*client=*/0, hdr.stream_id, hdr.sequence_num, raw, results);
+    size_t n = fh(/*client=*/0, hdr.stream_id, static_cast<uint8_t>(hdr.sequence_num), raw, results);
     REQUIRE(n == 2);
     REQUIRE(results.size() == 2);
     REQUIRE(results[0].byte_bus_id == mock::kGpioByteBusId);
@@ -569,7 +569,7 @@ TEST_CASE("FrameHandler wired to mock::Server::dispatch_frame_e2e() is reachable
     std::vector<uint8_t> raw(wire.begin() + static_cast<long>(hdr.acf_offset), wire.end());
 
     std::vector<FrameMemberResult> results;
-    size_t n = fh(/*client=*/0, hdr.stream_id, hdr.sequence_num, raw, results);
+    size_t n = fh(/*client=*/0, hdr.stream_id, static_cast<uint8_t>(hdr.sequence_num), raw, results);
     REQUIRE(n == 1);
     REQUIRE(results.size() == 1);
     REQUIRE(results[0].response.rsp);
