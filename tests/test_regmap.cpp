@@ -1,18 +1,18 @@
-// fusa:test REQ-REGMAP-001
-// fusa:test REQ-REGMAP-002
-// fusa:test REQ-REGMAP-003
-// fusa:test REQ-REGMAP-004
-// fusa:test REQ-REGMAP-005
-// fusa:test REQ-REGMAP-006
-// fusa:test REQ-REGMAP-007
-// fusa:test REQ-REGMAP-008
-// fusa:test REQ-REGMAP-009
-// fusa:test REQ-REGMAP-010
-// fusa:test REQ-REGMAP-011
-// fusa:test REQ-REGMAP-012
-// fusa:test REQ-REGMAP-013
-// fusa:test REQ-REGMAP-014
-// fusa:test REQ-REGMAP-015
+// fusa:test REQ-RMAP-001
+// fusa:test REQ-RMAP-002
+// fusa:test REQ-RMAP-003
+// fusa:test REQ-RMAP-004
+// fusa:test REQ-RMAP-005
+// fusa:test REQ-RMAP-006
+// fusa:test REQ-RMAP-007
+// fusa:test REQ-RMAP-008
+// fusa:test REQ-RMAP-009
+// fusa:test REQ-RMAP-010
+// fusa:test REQ-RMAP-011
+// fusa:test REQ-RMAP-012
+// fusa:test REQ-RMAP-013
+// fusa:test REQ-RMAP-014
+// fusa:test REQ-RMAP-015
 //
 // c-RCP-derived test coverage added in this batch (Phase 17 / cpp-RCP issue
 // #129, "Phase 4 batch A"), ported from c-RCP's tests/test_regmap.c and the
@@ -37,6 +37,38 @@
 // fusa:test REQ-RMAP-081
 // fusa:test REQ-RMAP-086
 // fusa:test REQ-RMAP-087
+//
+// Batch 11 fixup: these TEST_CASEs already carried real bracket tags but
+// were missing the manifest //fusa:test line cpfusa's own trace tool
+// actually scans for (a whole-tree "grep for [REQ-ID]" check is NOT what
+// cpfusa checks -- it requires this comment form specifically, per the
+// batch-8 lesson). No new test content; genuine tested-coverage caught by
+// re-running the real pinned cpfusa binary before merge, not just an
+// approximating local check:
+// fusa:test REQ-RMAP-018
+// fusa:test REQ-RMAP-019
+// fusa:test REQ-RMAP-020
+// fusa:test REQ-RMAP-021
+// fusa:test REQ-RMAP-022
+// fusa:test REQ-RMAP-023
+// fusa:test REQ-RMAP-026
+// fusa:test REQ-RMAP-027
+// fusa:test REQ-RMAP-028
+// fusa:test REQ-RMAP-029
+// fusa:test REQ-RMAP-031
+// fusa:test REQ-RMAP-032
+// fusa:test REQ-RMAP-033
+// fusa:test REQ-RMAP-034
+// fusa:test REQ-RMAP-035
+// fusa:test REQ-RMAP-036
+// fusa:test REQ-RMAP-037
+// fusa:test REQ-RMAP-038
+// fusa:test REQ-RMAP-039
+// fusa:test REQ-RMAP-043
+// fusa:test REQ-RMAP-073
+// fusa:test REQ-RMAP-074
+// fusa:test REQ-RMAP-075
+// fusa:test REQ-RMAP-082
 
 // Tests for rcp/regmap.hpp — the RC Server register-map data model and EP0
 // pseudo-endpoint (ROADMAP.md milestone 45, "RC Server Lifecycle &
@@ -78,7 +110,7 @@ TEST_CASE("is_ep0 is true only for EP0's own index", "[regmap][REQ-RMAP-001]") {
 // ── Generic vs. functional config split ─────────────────────────────────────────
 
 TEST_CASE("EndpointGenericConfig and EndpointFunctionalConfig are distinct, independently settable types",
-          "[regmap][REQ-REGMAP-001]") {
+          "[regmap][REQ-RMAP-001]") {
     EndpointGenericConfig generic;
     generic.ep_type            = 0x03; // SPI, per c-RCP's Table 29/30 ep_type enum
     generic.ep_description      = 0x11223344;
@@ -93,7 +125,7 @@ TEST_CASE("EndpointGenericConfig and EndpointFunctionalConfig are distinct, inde
 
 // ── EP0 whole-map read ───────────────────────────────────────────────────────────
 
-TEST_CASE("Any client may read the whole register map through EP0", "[regmap][REQ-REGMAP-002]") {
+TEST_CASE("Any client may read the whole register map through EP0", "[regmap][REQ-RMAP-002]") {
     auto map = make_map(2);
     map.general.vendor_id = 0x1234;
     ServerLifecycle lc;
@@ -106,7 +138,7 @@ TEST_CASE("Any client may read the whole register map through EP0", "[regmap][RE
 
 // ── EP0 whole-map write is root-client-only ─────────────────────────────────────
 
-TEST_CASE("Only the root client may write the whole register map through EP0", "[regmap][REQ-REGMAP-003]") {
+TEST_CASE("Only the root client may write the whole register map through EP0", "[regmap][REQ-RMAP-003]") {
     auto map = make_map(1);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -132,7 +164,7 @@ TEST_CASE("Only the root client may write the whole register map through EP0", "
 // ── Root-client claim is exclusive ──────────────────────────────────────────────
 
 TEST_CASE("A second, distinct client cannot claim the root-client slot while it is held",
-          "[regmap][REQ-REGMAP-004]") {
+          "[regmap][REQ-RMAP-004]") {
     auto map = make_map(1);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -156,7 +188,7 @@ TEST_CASE("A second, distinct client cannot claim the root-client slot while it 
 // ── Per-endpoint write restriction ──────────────────────────────────────────────
 
 TEST_CASE("A non-root client may only write the functional config of the endpoint it owns",
-          "[regmap][REQ-REGMAP-005]") {
+          "[regmap][REQ-RMAP-005]") {
     auto map = make_map(2);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -189,7 +221,7 @@ TEST_CASE("A non-root client may only write the functional config of the endpoin
 // pin mapping, queue sizing, and E2E-CRC enable toggles — a privilege
 // escalation into data reserved to the root client.
 TEST_CASE("Owning an endpoint does not grant a non-root client write access to its generic config",
-          "[regmap][REQ-REGMAP-005]") {
+          "[regmap][REQ-RMAP-005]") {
     auto map = make_map(2);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -228,7 +260,7 @@ TEST_CASE("Owning an endpoint does not grant a non-root client write access to i
     REQUIRE(ep0.read_whole_map().generic_configs[1].ep_tx_buffer_size == 8);
 }
 
-TEST_CASE("Writing to an out-of-range endpoint id is rejected as INVALID_PARAMETER", "[regmap][REQ-REGMAP-005]") {
+TEST_CASE("Writing to an out-of-range endpoint id is rejected as INVALID_PARAMETER", "[regmap][REQ-RMAP-005]") {
     auto map = make_map(1);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -243,7 +275,7 @@ TEST_CASE("Writing to an out-of-range endpoint id is rejected as INVALID_PARAMET
 // ── Register-locking interacts with EP0 write access ────────────────────────────
 
 TEST_CASE("Generic config writes are refused once the lifecycle locks the generic block",
-          "[regmap][REQ-REGMAP-006]") {
+          "[regmap][REQ-RMAP-006]") {
     auto map = make_map(1);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -261,7 +293,7 @@ TEST_CASE("Generic config writes are refused once the lifecycle locks the generi
 }
 
 TEST_CASE("Functional config remains writable at HW_CONFIGURED but locks at RCP_CONFIGURED",
-          "[regmap][REQ-REGMAP-006]") {
+          "[regmap][REQ-RMAP-006]") {
     auto map = make_map(1);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -281,7 +313,9 @@ TEST_CASE("Functional config remains writable at HW_CONFIGURED but locks at RCP_
 // ── General bootstrap register fields (GeneralMap) ──────────────────────────────
 
 TEST_CASE("GeneralMap default-constructs zeroed, with the no-root-client sentinel",
-          "[regmap][REQ-RMAP-003]") {
+          "[regmap][REQ-RMAP-003][REQ-RMAP-026][REQ-RMAP-027][REQ-RMAP-028][REQ-RMAP-029]"
+          "[REQ-RMAP-031][REQ-RMAP-032][REQ-RMAP-033][REQ-RMAP-034][REQ-RMAP-035][REQ-RMAP-036]"
+          "[REQ-RMAP-037][REQ-RMAP-038]") {
     GeneralMap map;
 
     REQUIRE(map.magic == kRegisterMapMagic);
@@ -289,15 +323,18 @@ TEST_CASE("GeneralMap default-constructs zeroed, with the no-root-client sentine
     REQUIRE(map.vendor_id == 0);
     REQUIRE(map.device_id == 0);
     REQUIRE(map.svr_ep_count == 0);
-    REQUIRE(map.svr_req_stream_max == 0);
-    REQUIRE(map.svr_responder_streams_max == 0);
-    REQUIRE(map.svr_sequencers_max == 0);
-    REQUIRE(map.svr_configuration_lock == 0);
-    REQUIRE(map.svr_responder_mem_size == 0);
-    REQUIRE(map.svr_req_mem_size == 0);
+    REQUIRE(map.svr_req_stream_max == 0);           // REQ-RMAP-026
+    REQUIRE(map.svr_responder_streams_max == 0);     // REQ-RMAP-026
+    REQUIRE(map.svr_sequencers_max == 0);            // REQ-RMAP-028
+    REQUIRE(map.svr_configuration_lock == 0);        // REQ-RMAP-029
+    REQUIRE(map.svr_responder_mem_size == 0);        // REQ-RMAP-027
+    REQUIRE(map.svr_req_mem_size == 0);              // REQ-RMAP-027
     REQUIRE(map.svr_implemented_options == 0);
     REQUIRE(map.svr_root_client_index == kNoRootClient);
-    REQUIRE(map.svr_hw_cfg_ptr == 0);
+    REQUIRE(map.reserved_0x17 == 0);                 // REQ-RMAP-031
+    REQUIRE(map.svr_io_pin_count == 0);               // REQ-RMAP-032
+    REQUIRE(map.reserved_0x22 == 0);                 // REQ-RMAP-035
+    REQUIRE(map.svr_hw_cfg_ptr == 0);                // REQ-RMAP-033
     REQUIRE(map.svr_request_stream_cfg_capacity == 0);
     REQUIRE(map.svr_response_stream_cfg_capacity == 0);
     REQUIRE(map.svr_ep_generic_cfg_ptr == 0);
@@ -318,7 +355,7 @@ TEST_CASE("GeneralMap default-constructs zeroed, with the no-root-client sentine
     REQUIRE(map.svr_device_specific_cfg_capacity == 0);
 }
 
-TEST_CASE("RegisterMap bootstrap fields hold the values assigned to them", "[regmap][REQ-REGMAP-007]") {
+TEST_CASE("RegisterMap bootstrap fields hold the values assigned to them", "[regmap][REQ-RMAP-007]") {
     RegisterMap m;
     m.general.magic       = kRegisterMapMagic;
     m.general.svr_version = 0x00010000;
@@ -371,7 +408,8 @@ TEST_CASE("Each option bit is independently settable with no sibling requirement
 // ── GeneralMap Table 20 wire codec (REQ-RMAP-024/025) ────────────────────────────
 
 TEST_CASE("GeneralMap render() places each field at its own TC18-cited absolute address",
-          "[regmap][REQ-RMAP-024]") {
+          "[regmap][REQ-RMAP-024][REQ-RMAP-026][REQ-RMAP-027][REQ-RMAP-028][REQ-RMAP-029]"
+          "[REQ-RMAP-031][REQ-RMAP-032][REQ-RMAP-035]") {
     GeneralMap map;
     map.magic                    = 0x11223344;
     map.svr_version              = 0x00010203;
@@ -396,11 +434,20 @@ TEST_CASE("GeneralMap render() places each field at its own TC18-cited absolute 
     REQUIRE(image[0x000A] == 0xCC);
     REQUIRE(image[0x000C] == 0x00);
     REQUIRE(image[0x000D] == 0x05);
-    REQUIRE(image[0x000E] == 0x06);
-    REQUIRE(image[0x000F] == 0x07);
+    REQUIRE(image[0x000E] == 0x06); // REQ-RMAP-026
+    REQUIRE(image[0x000F] == 0x07); // REQ-RMAP-026
+    REQUIRE(image[0x0010] == 0x08); // REQ-RMAP-027
+    REQUIRE(image[0x0011] == 0x09); // REQ-RMAP-027
+    REQUIRE(image[0x0012] == 0x0A); // REQ-RMAP-027
+    REQUIRE(image[0x0013] == 0x0B); // REQ-RMAP-027
+    REQUIRE(image[0x0014] == 0x0C); // REQ-RMAP-028
+    REQUIRE(image[0x0015] == 0x00); // REQ-RMAP-029
     REQUIRE(image[0x0016] == kOptCompoundWait);
-    REQUIRE(image[0x0018] == 0x0D);
-    REQUIRE(image[0x0019] == 0x0E);
+    REQUIRE(image[0x0017] == 0x00); // REQ-RMAP-031: reserved, always 0x00
+    REQUIRE(image[0x0018] == 0x0D); // REQ-RMAP-032
+    REQUIRE(image[0x0019] == 0x0E); // REQ-RMAP-032
+    REQUIRE(image[0x0022] == 0x00); // REQ-RMAP-035: reserved, always 0x00
+    REQUIRE(image[0x0023] == 0x00); // REQ-RMAP-035: reserved, always 0x00
 }
 
 TEST_CASE("GeneralMap render() never places svr_lifecycle_state or svr_root_client_index on the wire",
@@ -517,7 +564,7 @@ TEST_CASE("writer_ctx denies via_root_client_ep0 when no root client is configur
 }
 
 TEST_CASE("writer_ctx grants via_owning_stream only for the matching stream index",
-          "[regmap][REQ-RMAP-010]") {
+          "[regmap][REQ-RMAP-010][REQ-RMAP-011][REQ-RMAP-012]") {
     GeneralMap map;
     EpClient   owner;
     owner.has_owning_stream   = true;
@@ -639,7 +686,7 @@ TEST_CASE("SvrEpCfg default-constructs with TC18's own stated discovery-timeout 
 // ── EndpointGenericConfig: per-endpoint E2E CRC safe-mode toggles (pre-existing) ─
 
 TEST_CASE("EndpointGenericConfig's ep_*_crc_enable toggles default false and are independently settable",
-          "[regmap][REQ-REGMAP-015]") {
+          "[regmap][REQ-RMAP-015]") {
     EndpointGenericConfig cfg;
     REQUIRE_FALSE(cfg.ep_req_crc_enable);
     REQUIRE_FALSE(cfg.ep_ack_crc_enable);
@@ -705,7 +752,7 @@ TEST_CASE("ep_req_storage_size_octets_to_words round-trips and rejects non-multi
 // ── ep_generic_cfg wire codec, READ side (REQ-RMAP-078/081) ──────────────────────
 
 TEST_CASE("ep_generic_cfg::render places each field at its own TC18-cited byte offset",
-          "[regmap][REQ-RMAP-078]") {
+          "[regmap][REQ-RMAP-078][REQ-RMAP-073][REQ-RMAP-074][REQ-RMAP-075]") {
     EndpointGenericConfig row;
     row.ep_type            = 0x03; // SPI
     row.ep_used             = true;
@@ -890,7 +937,7 @@ TEST_CASE("ep_generic_cfg::apply_reconfig rejects a zero-length write and an out
 // ── EP-ID / byte_bus_id mapping table ────────────────────────────────────────────
 
 TEST_CASE("EP-ID mapping table preserves client insertion order without re-sorting it",
-          "[regmap][REQ-REGMAP-010]") {
+          "[regmap][REQ-RMAP-010]") {
     RegisterMap m;
     m.ep_id_mapping.push_back({/*ep_id=*/3, /*byte_bus_id=*/9});
     m.ep_id_mapping.push_back({/*ep_id=*/1, /*byte_bus_id=*/7});
@@ -911,7 +958,7 @@ TEST_CASE("EP-ID mapping table preserves client insertion order without re-sorti
 
 // ── Response / ack queue config (TC18 §12.7.9 Table 27) ──────────────────────────
 
-TEST_CASE("ResponseQueueConfig fields exist and are settable", "[regmap][REQ-REGMAP-011]") {
+TEST_CASE("ResponseQueueConfig fields exist and are settable", "[regmap][REQ-RMAP-011]") {
     ResponseQueueConfig rqc;
     rqc.queue_size     = 6;
     rqc.flush_on_count = 6;
@@ -921,7 +968,7 @@ TEST_CASE("ResponseQueueConfig fields exist and are settable", "[regmap][REQ-REG
 
 // ── Sequencer-state persistence (batch B, pre-existing) ──────────────────────────
 
-TEST_CASE("Sequencer-state registers persist independent 8-bit values", "[regmap][REQ-REGMAP-012]") {
+TEST_CASE("Sequencer-state registers persist independent 8-bit values", "[regmap][REQ-RMAP-012]") {
     RegisterMap m;
     m.sequencer_states = {0, 0, 0};
     m.sequencer_states[1] = 42;
@@ -933,7 +980,7 @@ TEST_CASE("Sequencer-state registers persist independent 8-bit values", "[regmap
 
 // ── INVALID_PARAMETER ─────────────────────────────────────────────────────────────
 
-TEST_CASE("An out-of-range read target is rejected as INVALID_PARAMETER", "[regmap][REQ-REGMAP-013]") {
+TEST_CASE("An out-of-range read target is rejected as INVALID_PARAMETER", "[regmap][REQ-RMAP-013]") {
     auto map = make_map(1);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -943,7 +990,7 @@ TEST_CASE("An out-of-range read target is rejected as INVALID_PARAMETER", "[regm
     REQUIRE(ec == make_error_code(RegMapErrc::invalid_parameter));
 }
 
-TEST_CASE("Assigning an owner to EP0 itself is rejected as INVALID_PARAMETER", "[regmap][REQ-REGMAP-013]") {
+TEST_CASE("Assigning an owner to EP0 itself is rejected as INVALID_PARAMETER", "[regmap][REQ-RMAP-013]") {
     auto map = make_map(1);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -963,7 +1010,7 @@ TEST_CASE("Assigning an owner to EP0 itself is rejected as INVALID_PARAMETER", "
 // an out-of-bounds write.
 
 TEST_CASE("A RegisterMap whose config vectors disagree with svr_ep_count fails closed instead of allowing OOB access",
-          "[regmap][REQ-REGMAP-013]") {
+          "[regmap][REQ-RMAP-013]") {
     RegisterMap m;
     m.general.svr_ep_count = 4;
     // generic_configs / functional_configs deliberately left empty/default
@@ -1001,7 +1048,7 @@ TEST_CASE("A RegisterMap whose config vectors disagree with svr_ep_count fails c
 }
 
 TEST_CASE("A RegisterMap with a smaller mismatch (nonzero but undersized config vectors) also fails closed",
-          "[regmap][REQ-REGMAP-013]") {
+          "[regmap][REQ-RMAP-013]") {
     RegisterMap m;
     m.general.svr_ep_count = 4;
     m.generic_configs.resize(1);
@@ -1022,7 +1069,7 @@ TEST_CASE("A RegisterMap with a smaller mismatch (nonzero but undersized config 
 }
 
 TEST_CASE("write_whole_map rejects a replacement map whose config vectors disagree with its own svr_ep_count",
-          "[regmap][REQ-REGMAP-013]") {
+          "[regmap][REQ-RMAP-013]") {
     auto map = make_map(2);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -1043,7 +1090,7 @@ TEST_CASE("write_whole_map rejects a replacement map whose config vectors disagr
 }
 
 TEST_CASE("write_whole_map with a valid replacement map resizes endpoint_owner_ to match the new svr_ep_count",
-          "[regmap][REQ-REGMAP-005]") {
+          "[regmap][REQ-RMAP-005]") {
     auto map = make_map(2);
     ServerLifecycle lc;
     Ep0 ep0(map, lc);
@@ -1089,7 +1136,7 @@ TEST_CASE("write_whole_map with a valid replacement map resizes endpoint_owner_ 
 // ── Error taxonomies are distinct ────────────────────────────────────────────────
 
 TEST_CASE("The four mandatory register-map error codes are distinct values in their own category",
-          "[regmap][REQ-REGMAP-014]") {
+          "[regmap][REQ-RMAP-014]") {
     auto unauthorized = make_error_code(RegMapErrc::unauthorized_access);
     auto locked        = make_error_code(RegMapErrc::locked_mem_access);
     auto rejected       = make_error_code(RegMapErrc::request_rejected);
@@ -1197,7 +1244,7 @@ TEST_CASE("HwPinMapEntry defaults to all-zero and matches c-RCP's row shape", "[
 }
 
 TEST_CASE("hw_pin bit-layout constants are non-overlapping within their own sub-field",
-          "[regmap][REQ-RMAP-042]") {
+          "[regmap][REQ-RMAP-042][REQ-RMAP-013][REQ-RMAP-043]") {
     REQUIRE((hw_pin::kPullMask & hw_pin::kStageMask) == 0);
     REQUIRE((hw_pin::kStageMask & hw_pin::kDriveMask) == 0);
     REQUIRE((hw_pin::kDriveMask & hw_pin::kSchmittTrigger) == 0);
@@ -1260,19 +1307,21 @@ TEST_CASE("HwPinMapReconfigErrc values are distinct and carry non-empty messages
 // ── Per-endpoint-type named-signal index (TC18 §12.7.6 Table 23) ────────────
 
 TEST_CASE("named_signal_string never returns an empty string for a valid signal",
-          "[regmap][REQ-RMAP-044]") {
+          "[regmap][REQ-RMAP-044][REQ-RMAP-014]") {
     for (uint8_t i = 0; i < static_cast<uint8_t>(NamedSignal::Count); ++i) {
         auto sig = static_cast<NamedSignal>(i);
         REQUIRE_FALSE(std::string(named_signal_string(sig)).empty());
     }
 }
 
-TEST_CASE("named_signal_string returns \"unknown\" for an out-of-range value", "[regmap][REQ-RMAP-044]") {
+TEST_CASE("named_signal_string returns \"unknown\" for an out-of-range value",
+          "[regmap][REQ-RMAP-044][REQ-RMAP-082]") {
     REQUIRE(std::string(named_signal_string(NamedSignal::Count)) == "unknown");
     REQUIRE(std::string(named_signal_string(static_cast<NamedSignal>(0xFF))) == "unknown");
 }
 
-TEST_CASE("named_signal_string names are unique across the whole index", "[regmap][REQ-RMAP-044]") {
+TEST_CASE("named_signal_string names are unique across the whole index",
+          "[regmap][REQ-RMAP-044][REQ-RMAP-015]") {
     std::vector<std::string> names;
     for (uint8_t i = 0; i < static_cast<uint8_t>(NamedSignal::Count); ++i) {
         names.emplace_back(named_signal_string(static_cast<NamedSignal>(i)));
@@ -1317,7 +1366,7 @@ TEST_CASE("named_signal_ep_signal_nr returns 0 for Count or any other invalid va
 // ── Request-stream config: appended fields, boundary conversions ────────────
 
 TEST_CASE("RequestStreamConfig's batch-B-appended fields default per TC18's own power-on rule",
-          "[regmap][REQ-RMAP-047]") {
+          "[regmap][REQ-RMAP-047][REQ-RMAP-018]") {
     RequestStreamConfig cfg;
     REQUIRE(cfg.rx_secure_channel_index == 0);
     REQUIRE(cfg.rx_ack_stream_index == 0);
@@ -1551,7 +1600,8 @@ TEST_CASE("request_stream_cfg::resolve_index returns the 0 sentinel for no match
 
 // ── Response / ack queue config wire codec (TC18 §12.7.9 Table 27) ──────────
 
-TEST_CASE("ResponseQueueConfig matches c-RCP's real per-queue row shape", "[regmap][REQ-RMAP-059]") {
+TEST_CASE("ResponseQueueConfig matches c-RCP's real per-queue row shape",
+          "[regmap][REQ-RMAP-059][REQ-RMAP-019]") {
     ResponseQueueConfig cfg;
     REQUIRE(cfg.stream_uid == 0);
     REQUIRE(cfg.max_avtpdu_size == 0);
@@ -1645,15 +1695,20 @@ TEST_CASE("EpIdMappingEntry's appended fields default false/0", "[regmap][REQ-RM
 }
 
 TEST_CASE("ep_id_map::is_ascending is true for strictly increasing composite keys",
-          "[regmap][REQ-RMAP-056]") {
+          "[regmap][REQ-RMAP-056][REQ-RMAP-020]") {
     EpIdMappingEntry entries[3] = {{1, 10, 1, false}, {2, 20, 1, false}, {3, 5, 2, false}};
     // stream 1: bbid 10 < 20 (ascending); stream 2 > stream 1 (always ascending
     // regardless of its own bbid, even though 5 < 20).
     REQUIRE(ep_id_map::is_ascending(entries, 3));
+
+    // REQ-RMAP-020's own single-stream case: a strictly increasing byte_bus_id
+    // table within one stream is recognized as ascending.
+    EpIdMappingEntry single_stream[3] = {{1, 1, 1, false}, {2, 2, 1, false}, {3, 3, 1, false}};
+    REQUIRE(ep_id_map::is_ascending(single_stream, 3));
 }
 
 TEST_CASE("ep_id_map::is_ascending is false for an equal or descending byte_bus_id within one stream",
-          "[regmap][REQ-RMAP-056]") {
+          "[regmap][REQ-RMAP-056][REQ-RMAP-021]") {
     EpIdMappingEntry equal_adjacent[2] = {{1, 10, 1, false}, {2, 10, 1, false}};
     REQUIRE_FALSE(ep_id_map::is_ascending(equal_adjacent, 2));
 
@@ -1667,7 +1722,8 @@ TEST_CASE("ep_id_map::is_ascending is false for a decreasing request_stream_inde
     REQUIRE_FALSE(ep_id_map::is_ascending(entries, 2));
 }
 
-TEST_CASE("ep_id_map::is_ascending is vacuously true for zero or one entries", "[regmap][REQ-RMAP-056]") {
+TEST_CASE("ep_id_map::is_ascending is vacuously true for zero or one entries",
+          "[regmap][REQ-RMAP-056][REQ-RMAP-022]") {
     REQUIRE(ep_id_map::is_ascending(nullptr, 0));
     EpIdMappingEntry one[1] = {{1, 10, 1, false}};
     REQUIRE(ep_id_map::is_ascending(one, 1));

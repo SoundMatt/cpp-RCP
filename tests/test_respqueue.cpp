@@ -5,6 +5,13 @@
 // fusa:test REQ-RMAP-064
 // fusa:test REQ-RMAP-065
 // fusa:test REQ-RMAP-085
+//
+// Batch 11 fixup: REQ-SRV-017 (server.hpp) is cross-module -- its own
+// scope note says server.hpp's part is content-modeling/admission only,
+// so the real test target for its actual claim (a response queue with
+// nothing to transmit still emits a heartbeat once Flush_time elapses)
+// is here, dual-tagged onto REQ-RMAP-065's existing test:
+// fusa:test REQ-SRV-017
 
 // Tests for rcp/respqueue.hpp -- the outbound per-response/ack-stream
 // transmit queue (TC18 §12.7.9 Table 27, §12.9.4/§12.9.5), brand new to
@@ -441,13 +448,21 @@ TEST_CASE("should_flush_by_time fires at or past the configured interval",
     REQUIRE(RespQueue::should_flush_by_time(1001, 1000));
 }
 
-TEST_CASE("should_flush_by_time is independent of queue state", "[respqueue][REQ-RMAP-065]") {
+TEST_CASE("should_flush_by_time is independent of queue state",
+          "[respqueue][REQ-RMAP-065][REQ-SRV-017]") {
     RespQueue q;
     uint8_t frame[3] = {0};
 
     // REQ-RMAP-065: the Flush_time trigger must fire the same way whether
     // the queue is empty or not -- unlike should_flush(), the
     // flush_on_count trigger, which is false for an empty queue.
+    // REQ-SRV-017 (cross-module, batch 11): this is the exact "a response
+    // queue with nothing to transmit still emits a heartbeat once
+    // Flush_time elapses" claim -- the assertion below, on an empty q,
+    // before any push(), is that behavior. server.hpp's own scope for
+    // this id is content-modeling/admission only (its own catalog text),
+    // so the respqueue.hpp mechanism this test exercises is the real,
+    // and only, test target.
     REQUIRE(RespQueue::should_flush_by_time(2000, 1000));
     REQUIRE(q.plan_batch(100) == 0);
 

@@ -15,12 +15,30 @@
 // fusa:test REQ-SRV-015
 // fusa:test REQ-SRV-016
 // fusa:test REQ-SRV-018
+// fusa:test REQ-SRV-019
+// fusa:test REQ-SRV-020
 // fusa:test REQ-SRV-021
+// fusa:test REQ-SRV-022
 // fusa:test REQ-SRV-023
+// fusa:test REQ-SRV-024
+// fusa:test REQ-SRV-025
+// fusa:test REQ-SRV-026
+// fusa:test REQ-SRV-027
+// fusa:test REQ-SRV-028
+// fusa:test REQ-SRV-029
+// fusa:test REQ-SRV-030
+// fusa:test REQ-SRV-031
+// fusa:test REQ-SRV-032
+// fusa:test REQ-SRV-033
+// fusa:test REQ-SRV-034
 // fusa:test REQ-SRV-035
 // fusa:test REQ-SRV-036
+// fusa:test REQ-SRV-037
+// fusa:test REQ-SRV-038
+// fusa:test REQ-SRV-039
 // fusa:test REQ-SRV-040
 // fusa:test REQ-SRV-041
+// fusa:test REQ-SRV-042
 // fusa:test REQ-PWRMODE-028
 // fusa:test REQ-CANCEL-012
 // fusa:test REQ-ACF-021
@@ -267,7 +285,8 @@ TEST_CASE("admit rejects a frame whose rsp bit is set", "[server][REQ-ACF-021]")
 
 // ── admit(): standard requests are unaffected by conditional routing ────────
 
-TEST_CASE("standard NTSCF request executes immediately when enabled", "[server][REQ-SRV-004]") {
+TEST_CASE("standard NTSCF request executes immediately when enabled",
+          "[server][REQ-SRV-004][REQ-SRV-026]") {
     Endpoint ep(true);
     auto     frame = standard_abb(5, 1);
 
@@ -277,7 +296,8 @@ TEST_CASE("standard NTSCF request executes immediately when enabled", "[server][
     REQUIRE_FALSE(rt.has_value());
 }
 
-TEST_CASE("admit reports a cancellation with its opcode, unstored", "[server][REQ-SRV-004]") {
+TEST_CASE("admit reports a cancellation with its opcode, unstored",
+          "[server][REQ-SRV-004][REQ-SRV-024][REQ-SRV-026]") {
     Endpoint ep(true);
     auto     frame = request::encode_clear_all(5, 1);
 
@@ -311,7 +331,7 @@ TEST_CASE("a request store full of pending entries rejects a new conditional adm
 }
 
 TEST_CASE("CompoundWait admission rejects the reserved evt[2:0]=011b comparison mode",
-          "[server][REQ-CMP-029]") {
+          "[server][REQ-CMP-029][REQ-SRV-019][REQ-SRV-022]") {
     Endpoint             ep(true);
     request::CompoundStep step;
     auto frame = request::encode_compound_request(request::RequestTypeOpcode::CompoundWait, 5, step,
@@ -383,7 +403,7 @@ TEST_CASE("compound never becomes due without a sequencer table", "[server][REQ-
 }
 
 TEST_CASE("due requests execute in priority order regardless of arrival order",
-          "[server][REQ-SRV-007][REQ-SRV-008]") {
+          "[server][REQ-SRV-007][REQ-SRV-008][REQ-SRV-025]") {
     Endpoint ep(true);
     std::vector<regmap::SequencerState> states;
     request::SequencerTable              seqs(states);
@@ -461,6 +481,324 @@ TEST_CASE("equal-rank requests execute in arrival order", "[server][REQ-SCHED-00
     REQUIRE(ep.select_due(ctx, &due));
     REQUIRE(due == idx2);
     REQUIRE(ep.pending(due)->transaction_num == 62);
+}
+
+// ── Per-kind select_due() gating (REQ-SRV-027..032) ─────────────────────────
+
+TEST_CASE("select_due does not gate a compound-wait request on the endpoint being idle",
+          "[server][REQ-SRV-027]") {
+    Endpoint ep(true);
+    std::vector<regmap::SequencerState> states;
+    request::SequencerTable              seqs(states);
+    seqs.ensure_size(1);
+
+    request::CompoundStep step;
+    step.start_state = request::SequencerTable::kDefaultState;
+    auto frame = request::encode_compound_request(request::RequestTypeOpcode::CompoundWait, 1, step,
+                                                    /*evt_op=*/0x00, 1, /*payload=*/{0x01});
+
+    std::optional<request::RequestTypeOpcode> rt;
+    size_t                                     idx = 0;
+    REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+            AdmitOutcome::Pending);
+
+    uint8_t     status = 0x01;
+    TickContext ctx;
+    ctx.endpoint_idle      = false; // deliberately busy
+    ctx.sequencers          = &seqs;
+    ctx.current_status     = &status;
+    ctx.current_status_len = 1;
+
+    size_t due = 0;
+    REQUIRE(ep.select_due(ctx, &due));
+    REQUIRE(due == idx);
+}
+
+TEST_CASE("select_due gates a triggered request on the endpoint being idle",
+          "[server][REQ-SRV-028]") {
+    Endpoint                ep(true);
+    request::TriggeredStep  step;
+    auto frame = request::encode_triggered_request(request::RequestTypeOpcode::Triggered, 1, step, 1);
+
+    std::optional<request::RequestTypeOpcode> rt;
+    size_t                                     idx = 0;
+    REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+            AdmitOutcome::Pending);
+    REQUIRE(ep.notify_trigger(step.trigger_source_ep, step.trigger_signal_nr) == 1);
+
+    TickContext ctx;
+    ctx.endpoint_idle = false; // threshold reached, but endpoint busy
+    size_t due        = 0;
+    REQUIRE_FALSE(ep.select_due(ctx, &due));
+
+    ctx.endpoint_idle = true;
+    REQUIRE(ep.select_due(ctx, &due));
+    REQUIRE(due == idx);
+}
+
+TEST_CASE("select_due gates a timed request on a locked gPTP time base", "[server][REQ-SRV-029]") {
+    Endpoint ep(true);
+    auto     frame = *request::encode_timed_request(1, /*presentation_time=*/0, 1);
+
+    std::optional<request::RequestTypeOpcode> rt;
+    size_t                                     idx = 0;
+    REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+            AdmitOutcome::Pending);
+
+    TickContext ctx;
+    ctx.endpoint_idle = true;
+    ctx.gptp_locked   = false; // presentation instant already reached, but unlocked
+    ctx.gptp_now      = 0;
+    size_t due        = 0;
+    REQUIRE_FALSE(ep.select_due(ctx, &due));
+
+    ctx.gptp_locked = true;
+    REQUIRE(ep.select_due(ctx, &due));
+    REQUIRE(due == idx);
+}
+
+TEST_CASE("select_due gates a chained request on the endpoint being idle", "[server][REQ-SRV-030]") {
+    Endpoint ep(true);
+    auto     frame = request::encode_chained_member(1, /*chain_exec_delay=*/0, false, 1);
+
+    std::optional<request::RequestTypeOpcode> rt;
+    size_t                                     idx = 0;
+    REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+            AdmitOutcome::Pending);
+    REQUIRE(ep.chain_predecessor_done(idx, 0));
+
+    TickContext ctx;
+    ctx.endpoint_idle = false; // predecessor done, delay elapsed, but endpoint busy
+    size_t due        = 0;
+    REQUIRE_FALSE(ep.select_due(ctx, &due));
+
+    ctx.endpoint_idle = true;
+    REQUIRE(ep.select_due(ctx, &due));
+    REQUIRE(due == idx);
+}
+
+TEST_CASE("select_due reports nothing due when a stored request's own condition never holds",
+          "[server][REQ-SRV-031]") {
+    Endpoint                ep(true);
+    request::TriggeredStep  step; // trigger_threshold 0, never notified
+    auto frame = request::encode_triggered_request(request::RequestTypeOpcode::Triggered, 1, step, 1);
+
+    std::optional<request::RequestTypeOpcode> rt;
+    REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, nullptr, nullptr) ==
+            AdmitOutcome::Pending);
+
+    TickContext ctx;
+    ctx.endpoint_idle = true;
+    size_t due        = 0;
+    REQUIRE_FALSE(ep.select_due(ctx, &due)); // threshold never reached: nothing qualifies
+}
+
+TEST_CASE("select_due's due-ness for a non-safety-tagged request is unaffected by ctx.in_safe_state",
+          "[server][REQ-SRV-032]") {
+    Endpoint                ep(true);
+    request::TriggeredStep  step; // not a *Safety variant
+    auto frame = request::encode_triggered_request(request::RequestTypeOpcode::Triggered, 1, step, 1);
+
+    std::optional<request::RequestTypeOpcode> rt;
+    size_t                                     idx = 0;
+    REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+            AdmitOutcome::Pending);
+    REQUIRE(ep.notify_trigger(step.trigger_source_ep, step.trigger_signal_nr) == 1);
+
+    TickContext ctx;
+    ctx.endpoint_idle = true;
+    ctx.in_safe_state = false; // deliberately NOT in the safe state
+    size_t due        = 0;
+    REQUIRE(ep.select_due(ctx, &due)); // due anyway: the in_safe_state gate is safety-tagged-only
+    REQUIRE(due == idx);
+}
+
+// ── CompoundWait: independent per-request evt/payload evaluation and storage ─
+
+TEST_CASE("select_due evaluates each pending CompoundWait request's own evt/payload independently "
+          "against the caller-supplied current status",
+          "[server][REQ-SRV-020][REQ-SRV-042]") {
+    Endpoint ep(true);
+    std::vector<regmap::SequencerState> states;
+    request::SequencerTable              seqs(states);
+    seqs.ensure_size(2);
+
+    request::CompoundStep step_a;
+    step_a.start_state     = request::SequencerTable::kDefaultState;
+    step_a.sequencer_index = 0;
+    auto frame_a = request::encode_compound_request(request::RequestTypeOpcode::CompoundWait, 1, step_a,
+                                                      /*evt_op=*/0x00, 81, /*payload=*/{0x42});
+
+    request::CompoundStep step_b;
+    step_b.start_state     = request::SequencerTable::kDefaultState;
+    step_b.sequencer_index = 1;
+    auto frame_b = request::encode_compound_request(request::RequestTypeOpcode::CompoundWait, 1, step_b,
+                                                      /*evt_op=*/0x00, 82, /*payload=*/{0x99});
+
+    std::optional<request::RequestTypeOpcode> rt;
+    size_t                                     idx_a = 0, idx_b = 0;
+    REQUIRE(ep.admit(frame_a.data(), frame_a.size(), 0, false, 0, 0, rt, &idx_a, nullptr) ==
+            AdmitOutcome::Pending);
+    REQUIRE(ep.admit(frame_b.data(), frame_b.size(), 0, false, 0, 0, rt, &idx_b, nullptr) ==
+            AdmitOutcome::Pending);
+
+    uint8_t     status = 0x42;
+    TickContext ctx;
+    ctx.endpoint_idle      = true;
+    ctx.sequencers          = &seqs;
+    ctx.current_status     = &status;
+    ctx.current_status_len = 1;
+
+    // Only A's own stored payload (0x42) matches the current status; B's own
+    // (0x99), stored and evaluated entirely independently, does not.
+    size_t due = 0;
+    REQUIRE(ep.select_due(ctx, &due));
+    REQUIRE(due == idx_a);
+    REQUIRE_FALSE(ep.complete(due, ctx)); // repeat_count 0: removed
+
+    // B never becomes due against this same status, on its own account.
+    REQUIRE_FALSE(ep.select_due(ctx, &due));
+}
+
+TEST_CASE("complete() applies SequencerTable::wait_tick for a compound-wait request, advancing "
+          "its sequencer only once the condition genuinely matches",
+          "[server][REQ-SRV-033]") {
+    Endpoint ep(true);
+    std::vector<regmap::SequencerState> states;
+    request::SequencerTable              seqs(states);
+    seqs.ensure_size(1);
+
+    request::CompoundStep step;
+    step.start_state     = request::SequencerTable::kDefaultState; // 1
+    step.next_state       = 2;
+    step.sequencer_index  = 0;
+    step.repeat_count     = 1; // stays pending across the first (unmatched) completion
+    auto frame = request::encode_compound_request(request::RequestTypeOpcode::CompoundWait, 1, step,
+                                                    /*evt_op=*/0x00, 90, /*payload=*/{0x11});
+
+    std::optional<request::RequestTypeOpcode> rt;
+    size_t                                     idx = 0;
+    REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+            AdmitOutcome::Pending);
+
+    TickContext ctx;
+    ctx.endpoint_idle = true;
+    ctx.sequencers    = &seqs;
+
+    regmap::SequencerState before = 0;
+    seqs.state_of(0, before);
+    REQUIRE(before == request::SequencerTable::kDefaultState);
+
+    // A mismatched status: complete()'s own wait_tick() finds condition_met
+    // false and leaves the sequencer untouched, re-arming the request.
+    uint8_t mismatched         = 0x00;
+    ctx.current_status         = &mismatched;
+    ctx.current_status_len     = 1;
+    REQUIRE(ep.complete(idx, ctx));
+    regmap::SequencerState after_mismatch = 0;
+    seqs.state_of(0, after_mismatch);
+    REQUIRE(after_mismatch == request::SequencerTable::kDefaultState);
+
+    // A matching status: wait_tick() advances the sequencer to next_state,
+    // and repeat_count (now exhausted) removes the request.
+    uint8_t matched            = 0x11;
+    ctx.current_status         = &matched;
+    ctx.current_status_len     = 1;
+    REQUIRE_FALSE(ep.complete(idx, ctx));
+    regmap::SequencerState after_match = 0;
+    seqs.state_of(0, after_match);
+    REQUIRE(after_match == 2);
+}
+
+// ── complete(): no sequencer advance for Triggered/Timed/Chained; both of the
+//    latter are always removed (REQ-SRV-034, REQ-SRV-037) ───────────────────
+
+TEST_CASE("complete() advances no sequencer for a triggered, timed, or chained request, even when "
+          "one is present, and always removes the latter two",
+          "[server][REQ-SRV-034][REQ-SRV-037]") {
+    std::vector<regmap::SequencerState> states;
+    request::SequencerTable              seqs(states);
+    seqs.ensure_size(1);
+    REQUIRE_FALSE(seqs.set_state(0, 5)); // an arbitrary sentinel, distinct from kDefaultState
+
+    TickContext ctx;
+    ctx.sequencers    = &seqs;
+    ctx.endpoint_idle = true;
+    ctx.gptp_locked   = true;
+
+    {
+        Endpoint                ep(true);
+        request::TriggeredStep  step;
+        auto frame = request::encode_triggered_request(request::RequestTypeOpcode::Triggered, 1, step, 1);
+        std::optional<request::RequestTypeOpcode> rt;
+        size_t                                     idx = 0;
+        REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+                AdmitOutcome::Pending);
+        REQUIRE(ep.notify_trigger(step.trigger_source_ep, step.trigger_signal_nr) == 1);
+        size_t due = 0;
+        REQUIRE(ep.select_due(ctx, &due));
+        REQUIRE_FALSE(ep.complete(due, ctx)); // repeat_count 0: removed
+        regmap::SequencerState s = 0;
+        seqs.state_of(0, s);
+        REQUIRE(s == 5); // unchanged
+    }
+    {
+        Endpoint ep(true);
+        auto     frame = *request::encode_timed_request(1, /*presentation_time=*/0, 2);
+        std::optional<request::RequestTypeOpcode> rt;
+        size_t                                     idx = 0;
+        REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+                AdmitOutcome::Pending);
+        size_t due = 0;
+        REQUIRE(ep.select_due(ctx, &due));
+        REQUIRE_FALSE(ep.complete(due, ctx)); // REQ-SRV-037: always removed
+        regmap::SequencerState s = 0;
+        seqs.state_of(0, s);
+        REQUIRE(s == 5); // unchanged
+    }
+    {
+        Endpoint ep(true);
+        auto     frame = request::encode_chained_member(1, /*chain_exec_delay=*/0, false, 3);
+        std::optional<request::RequestTypeOpcode> rt;
+        size_t                                     idx = 0;
+        REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+                AdmitOutcome::Pending);
+        REQUIRE(ep.chain_predecessor_done(idx, 0));
+        size_t due = 0;
+        REQUIRE(ep.select_due(ctx, &due));
+        REQUIRE_FALSE(ep.complete(due, ctx)); // REQ-SRV-037: always removed
+        regmap::SequencerState s = 0;
+        seqs.state_of(0, s);
+        REQUIRE(s == 5); // unchanged
+    }
+}
+
+TEST_CASE("a chained request's delay timer is not restarted by a later select_due evaluation once "
+          "its predecessor has finalized",
+          "[server][REQ-SRV-038]") {
+    Endpoint ep(true);
+    auto     frame = request::encode_chained_member(1, /*chain_exec_delay=*/10, false, 1);
+
+    std::optional<request::RequestTypeOpcode> rt;
+    size_t                                     idx = 0;
+    REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+            AdmitOutcome::Pending);
+
+    TickContext ctx;
+    ctx.endpoint_idle = true;
+    ctx.now           = 50;
+    REQUIRE(ep.chain_predecessor_done(idx, 50)); // starts the delay timer at tick 50
+
+    ctx.now = 55; // 5 of 10 elapsed: not yet
+    size_t due = 0;
+    REQUIRE_FALSE(ep.select_due(ctx, &due));
+
+    ctx.now = 58; // still not due -- this evaluation must not restart the timer
+    REQUIRE_FALSE(ep.select_due(ctx, &due));
+
+    ctx.now = 60; // 10 elapsed from the ORIGINAL armed_at (50), not from 58
+    REQUIRE(ep.select_due(ctx, &due));
+    REQUIRE(due == idx);
 }
 
 // ── Repetitions ──────────────────────────────────────────────────────────────
@@ -712,12 +1050,13 @@ TEST_CASE("notify_trigger only matches a Triggered request's own selection",
 // ── Chained: predecessor-done bookkeeping ────────────────────────────────────
 
 TEST_CASE("chain_predecessor_done arms a chained request's exec_delay timer",
-          "[server][REQ-SRV-012]") {
+          "[server][REQ-SRV-012][REQ-SRV-025]") {
     Endpoint ep(true);
     auto     frame = request::encode_chained_member(1, 5, false, 1);
     std::optional<request::RequestTypeOpcode> rt;
     size_t                                     idx = 0;
-    ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr);
+    REQUIRE(ep.admit(frame.data(), frame.size(), 0, false, 0, 0, rt, &idx, nullptr) ==
+            AdmitOutcome::Pending);
 
     TickContext ctx;
     ctx.endpoint_idle = true;
@@ -735,7 +1074,7 @@ TEST_CASE("chain_predecessor_done arms a chained request's exec_delay timer",
 }
 
 TEST_CASE("chain_predecessor_done returns false for a non-chained or unused index",
-          "[server][REQ-SRV-012]") {
+          "[server][REQ-SRV-012][REQ-SRV-039]") {
     Endpoint ep(true);
     REQUIRE_FALSE(ep.chain_predecessor_done(0, 0));
 
