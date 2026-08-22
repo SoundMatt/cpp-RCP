@@ -24,6 +24,14 @@
 // fusa:test REQ-MOCK-024
 // fusa:test REQ-MOCK-025
 // fusa:test REQ-MOCK-026
+// fusa:test REQ-WDG-010
+// fusa:test REQ-E2E-033
+// fusa:test REQ-E2E-039
+// fusa:test REQ-E2E-041
+// fusa:test REQ-E2E-047
+// fusa:test REQ-MOCK-027
+// fusa:test REQ-MOCK-028
+// fusa:test REQ-MOCK-029
 
 // Tests for rcp/mock.hpp — the in-process RC Server simulator (ROADMAP.md
 // milestone 56, "Test & Simulation Harness Rebuild", v2.12.0). See

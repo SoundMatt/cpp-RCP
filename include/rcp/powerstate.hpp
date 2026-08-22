@@ -12,6 +12,24 @@
 // fusa:req REQ-PWR-012
 // fusa:req REQ-PWR-013
 // fusa:req REQ-PWR-014
+// fusa:req REQ-PWRMODE-001
+// fusa:req REQ-PWRMODE-002
+// fusa:req REQ-PWRMODE-003
+// fusa:req REQ-PWRMODE-005
+// fusa:req REQ-PWRMODE-006
+// fusa:req REQ-PWRMODE-007
+// fusa:req REQ-PWRMODE-008
+// fusa:req REQ-PWRMODE-009
+// fusa:req REQ-PWRMODE-010
+// fusa:req REQ-PWRMODE-011
+// fusa:req REQ-PWRMODE-013
+// fusa:req REQ-PWRMODE-014
+// fusa:req REQ-PWRMODE-015
+// fusa:req REQ-PWRMODE-016
+// fusa:req REQ-PWRMODE-018
+// fusa:req REQ-PWRMODE-020
+// fusa:req REQ-PWRMODE-024
+// fusa:req REQ-PWRMODE-025
 
 // Power management — the OPEN Alliance TC18 Remote Control Protocol
 // Specification v0.5.1_RC's actual power-mode model (`Normal`/`StandBy`/
@@ -58,6 +76,7 @@
 // disclaimer as every other endpoint/lifecycle header in this codebase.
 #pragma once
 
+#include <rcp/lifecycle.hpp>
 #include <rcp/wakeup.hpp>
 
 #include <cstdint>
@@ -119,6 +138,36 @@ constexpr StartKind start_kind_on_exit(PowerMode from) noexcept {
     return from == PowerMode::StandBy ? StartKind::Hot : StartKind::Cold;
 }
 
+// cold_start_lifecycle_target reports the lifecycle::ServerState a cold
+// start's own re-init sequence should target, given the caller's own
+// already-recovered fact of what state was persisted (e.g. read back from
+// NVM, or device defaults absent NVM) — REQ-PWRMODE-003/014 (TC18 §12.3,
+// §12.4.1): "After a cold start the RC Server will be in its configured
+// lifecycle state," recovered from NVM where present rather than always
+// reset to HwUnconfigured. This header owns no NVM access and no
+// default-configuration table of its own (the same "caller supplies
+// already-classified inputs" convention PowerManager::Hooks establishes)
+// -- recovered_state is the caller's own already-recovered fact, returned
+// unchanged when it is one of lifecycle::ServerState's three valid values.
+// Any other value (unrecognized or corrupt) is treated as "nothing
+// recovered," never as an unvalidated advanced state, and maps to
+// lifecycle::ServerState::HwUnconfigured, this function's own fail-safe
+// default. This header never itself calls
+// lifecycle::ServerLifecycle::advance() -- it only names the target state
+// for a caller's own re-init sequence to drive toward, mirroring
+// PowerManager's own "primitives, not a scheduler" scoping (see this
+// file's header comment).
+constexpr lifecycle::ServerState cold_start_lifecycle_target(lifecycle::ServerState recovered_state) noexcept {
+    switch (recovered_state) {
+    case lifecycle::ServerState::HwUnconfigured:
+    case lifecycle::ServerState::HwConfigured:
+    case lifecycle::ServerState::RcpConfigured:
+        return recovered_state;
+    default:
+        return lifecycle::ServerState::HwUnconfigured;
+    }
+}
+
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 enum class PowerErrc : int {
@@ -128,6 +177,9 @@ enum class PowerErrc : int {
     response_ack_queue_not_empty = 4, // entry refusal: caller's response_ack_queues_empty hook reported false
     not_asleep                   = 5, // wake-from-sleep handshake step requested while mode() != Sleep
     handshake_repeat_limit_exceeded = 6, // WakeUp message repeated cfg.wakeup_repeat_limit times with no echo
+    network_not_available        = 7, // REQ-PWRMODE-016: begin_wake_from_sleep() called with
+                                       // network_available=false -- a free, uncounted retry;
+                                       // wake_stage() is left at Idle, not HandshakeActive.
 };
 
 inline const std::error_category& power_category() noexcept {
@@ -147,6 +199,8 @@ inline const std::error_category& power_category() noexcept {
                 return "rcp/powerstate: wake-from-sleep handshake requested while not in Sleep";
             case PowerErrc::handshake_repeat_limit_exceeded:
                 return "rcp/powerstate: WakeUp message repeat limit exceeded without an echo";
+            case PowerErrc::network_not_available:
+                return "rcp/powerstate: network interface not yet available -- a free, uncounted retry";
             default:
                 return "rcp/powerstate: unknown error";
             }
@@ -258,9 +312,26 @@ public:
     // (extraction §3.3): step 1, network-interface re-enablement, runs
     // synchronously here via Hooks::reenable_network_interface. Requires
     // mode() == Sleep.
-    std::error_code begin_wake_from_sleep() noexcept {
+    //
+    // REQ-PWRMODE-016 (TC18 §12.4.1): network availability is checked
+    // BEFORE any WakeUp message is sent — network_available is the
+    // caller's own already-classified fact (e.g. "BEACONs detected by the
+    // PHY"; this header reads no hardware itself, matching every other
+    // Hooks-driven check in this class). Defaults to true so every
+    // pre-existing caller (and every REQ-PWR-*-tagged test) that never
+    // passed this argument keeps its exact prior behavior. When false,
+    // this is a cheap, retriable "not yet": wake_stage() is left at Idle
+    // (not HandshakeActive), reenable_network_interface() is NOT called,
+    // and wake_attempts_ is untouched — these retries are NOT counted
+    // against cfg_.wakeup_repeat_limit, which governs only the
+    // WakeUp-message repetition inside note_wakeup_attempt_sent() once
+    // this step has actually advanced. A caller polls this again once the
+    // network comes up.
+    std::error_code begin_wake_from_sleep(bool network_available = true) noexcept {
         if (mode_ != PowerMode::Sleep)
             return make_error_code(PowerErrc::not_asleep);
+        if (!network_available)
+            return make_error_code(PowerErrc::network_not_available);
         if (hooks_.reenable_network_interface) hooks_.reenable_network_interface();
         wake_attempts_ = 0;
         wake_stage_ = WakeStage::HandshakeActive;
