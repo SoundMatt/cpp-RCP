@@ -85,6 +85,39 @@ jobs:
           name: compile-commands
           path: build/compile_commands.json
 
+  # ── Version sources agree ────────────────────────────────────────────────────
+  # Ported from c-RCP's own version-sources-agree job, adapted for cpp-RCP's
+  # real version.hpp syntax: c-RCP's version.h uses a preprocessor
+  # `#define RCP_VERSION "X.Y.Z"`, while cpp-RCP's version.hpp (this being a
+  # C++17 header-only port) instead declares a
+  # `constexpr std::string_view kVersion = "X.Y.Z";`, so the grep pattern
+  # below matches that syntax rather than c-RCP's #define form.
+  version-sources-agree:
+    name: CMakeLists.txt / version.hpp / .fusa.json versions agree
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare the three version sources
+        run: |
+          cmake_version=$(grep -m1 -oE '^\s*VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | awk '{print $2}')
+          header_version=$(grep -m1 -oE 'kVersion[[:space:]]*=[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"' include/rcp/version.hpp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          fusa_version=$(grep -m1 -oE '"version": *"[0-9]+\.[0-9]+\.[0-9]+"' .fusa.json | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+
+          echo "CMakeLists.txt project() VERSION : ${cmake_version:-<not found>}"
+          echo "include/rcp/version.hpp kVersion  : ${header_version:-<not found>}"
+          echo ".fusa.json \"version\"             : ${fusa_version:-<not found>}"
+
+          fail=0
+          [ -n "$cmake_version" ]  || { echo "::error file=CMakeLists.txt::Could not parse project() VERSION"; fail=1; }
+          [ -n "$header_version" ] || { echo "::error file=include/rcp/version.hpp::Could not parse kVersion"; fail=1; }
+          [ -n "$fusa_version" ]   || { echo "::error file=.fusa.json::Could not parse \"version\""; fail=1; }
+          [ "$fail" -eq 0 ] || exit 1
+
+          if [ "$cmake_version" != "$header_version" ] || [ "$cmake_version" != "$fusa_version" ]; then
+            echo "::error::Version sources disagree -- CMakeLists.txt=$cmake_version, version.hpp=$header_version, .fusa.json=$fusa_version. Bump all three together (see version.hpp's header comment); a mismatch here silently mislabels every SBOM/provenance/compliance-report artifact release.yml generates from .fusa.json's stale value."
+            exit 1
+          fi
+
   # ── TLA+ formal verification (TLC model checking) ────────────────────────────
   # Independent of the C++ build (tla/*.tla model the safety-relevant state
   # machines rcp/lifecycle.hpp and rcp/e2e.hpp implement, not the C++ code
@@ -677,12 +710,61 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
+      # Real root cause of the `|| true` this replaces: `cpfusa analyze`
+      # (both its clang-tidy and cppcheck integrations) recursively scans
+      # whatever directory tree it is pointed at with no awareness of
+      # .fusa.json's excludePatterns. Left as `build/`, that tree contains
+      # Catch2's own vendored source (FetchContent-populated
+      # build/_deps/catch2-src/), including Catch2's own SelfTest suite —
+      # cppcheck chokes on that third-party test code's BDD macros
+      # (SECTION/GIVEN/CHECKED_IF/...) and reports them as first-party
+      # ERROR findings (e.g. "unknownMacro", intentional ODR violations in
+      # Catch2's own test fixtures), which is what was actually keeping this
+      # job red, not a real defect in cpp-RCP's own code. Separately,
+      # `cpfusa analyze` looks for compile_commands.json directly under the
+      # directory it scans (the repo root here) — since it was left inside
+      # build/ with no copy at the root, clang-tidy has never actually run
+      # in this job at all (silently falling back to its
+      # "compile_commands.json not found" info finding).
+      #
+      # Fixed by copying compile_commands.json to the root (so clang-tidy
+      # finally runs for real) and then deleting build/ (and the vendored
+      # sources inside it) before invoking analyze, so the scan only ever
+      # sees this project's own first-party sources. With both fixed,
+      # cpp-RCP's own code has 0 ERROR-severity findings, so this can be a
+      # real, ungated `|| true`-free hard gate.
+      - name: Isolate compile_commands.json from vendored build tree
+        run: |
+          cp build/compile_commands.json .
+          rm -rf build
+
       - name: Static analysis
-        run: /tmp/cpfusa/build/cpfusa analyze || true
+        run: /tmp/cpfusa/build/cpfusa analyze
 
   # ── cpp-FuSa: 20 CWE-mapped cybersecurity rules (ISO 21434) ─────────────────
+  # Job renamed from its previous "cpfusa cyber --strict" name, which never
+  # matched its `run:` line below (plain `cpfusa cyber`, no --strict). --strict
+  # is a real flag (`cpfusa cyber --help`: "Exit 1 on warnings too"), but
+  # cpp-RCP does not cleanly pass under it today: a real run surfaces 838
+  # WARNING-severity findings (613 CYBER009 "integer narrowing conversion",
+  # 189 CYBER017 "hardcoded IP address", plus smaller CYBER004/012/019
+  # counts), overwhelmingly the expected, reviewed shape of a wire-protocol
+  # library (masking/shifting a wider integer down to a byte for
+  # serialization, and loopback/RFC5737 test addresses in the test suite) —
+  # not defects, but also not sites that can be responsibly mass-remediated
+  # or blanket-waived in this batch. Critically, `.fusa-dispositions.json`
+  # cannot fix this either way: unlike gated_exit_code() (used by
+  # check/lint/analyze), the `cyber` subcommand's --strict check
+  # (`cyber_strict && warnings > 0`) never consults dispositions at all, so
+  # no waiver entry changes its outcome. Turning --strict on today would
+  # therefore require either fixing several hundred call sites sight-unseen
+  # or sprinkling `// fusa:suppress CYBERxxx` at each one purely to satisfy
+  # the flag — the "soften a gate to make CI pass" move this batch is
+  # explicitly not supposed to make. So the job keeps running plain `cyber`
+  # (a real gate on ERROR-severity findings, of which cpp-RCP has none) and
+  # is named to match.
   cpfusa-cyber:
-    name: cpfusa cyber --strict
+    name: cpfusa cyber
     runs-on: ubuntu-22.04
     needs: [build-and-test, cpfusa-build]
     steps:
