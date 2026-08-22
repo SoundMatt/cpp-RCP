@@ -4,6 +4,39 @@
 // fusa:req REQ-LINEP-004
 // fusa:req REQ-LINEP-005
 // fusa:req REQ-LINEP-006
+// fusa:req REQ-LINEP-007
+// fusa:req REQ-LINEP-008
+// fusa:req REQ-LINEP-009
+// fusa:req REQ-LINEP-010
+// fusa:req REQ-LINEP-011
+// fusa:req REQ-LINEP-012
+// fusa:req REQ-LINEP-013
+// fusa:req REQ-LINEP-014
+// fusa:req REQ-LINEP-015
+// fusa:req REQ-LINEP-016
+// fusa:req REQ-LINEP-017
+// fusa:req REQ-LINEP-018
+// fusa:req REQ-LINEP-019
+// fusa:req REQ-LINEP-020
+// fusa:req REQ-LINEP-021
+// fusa:req REQ-LINEP-022
+// fusa:req REQ-LINEP-024
+// fusa:req REQ-LINEP-025
+// fusa:req REQ-LINEP-027
+// fusa:req REQ-LINEP-028
+// fusa:req REQ-LINEP-029
+// fusa:req REQ-LINEP-030
+// fusa:req REQ-LINEP-031
+// fusa:req REQ-LINEP-032
+// fusa:req REQ-LINEP-033
+// fusa:req REQ-LINEP-034
+// fusa:req REQ-LINEP-035
+// fusa:req REQ-LINEP-036
+// fusa:req REQ-LINEP-037
+// fusa:req REQ-LINEP-038
+// fusa:req REQ-LINEP-039
+// REQ-LINEP-023 and REQ-LINEP-026 are retired in c-RCP (near-duplicate ids
+// consolidated into REQ-LINEP-030/REQ-LINEP-016 respectively) — not ported.
 
 // LIN commander endpoint (ep_type 0x06) — the OPEN Alliance TC18 Remote
 // Control Protocol Specification v0.5.1_RC's raw-byte-pusher model for LIN:
