@@ -317,6 +317,38 @@ enum class DispatchErrc : int {
                     // synchronously. Same "out_resp left zeroed" contract as every other non-wire
                     // outcome above — the real multi-frame response is sitting in that queue, not in
                     // out_resp/out_resp_payload; a caller drains it via RespQueue::pop().
+
+    // Phase 4/Phase 17 batch D2 (cpp-RCP issue #129): dispatch_frame()'s/
+    // dispatch_frame_e2e()'s own three additional outcomes — every one of
+    // them meaningful ONLY at frame-splitting granularity (a single-member
+    // dispatch()/dispatch_e2e()/dispatch_e2e_fragment() call never returns
+    // any of these), ported from c-RCP's own RCP_MOCK_DISPATCH_ERR_UNKNOWN_
+    // BUS/_CHAIN_ERROR/_CHAIN_ABORTED (include/rcp/mock.h:928/946/950).
+    unknown_bus   = 10, // a member did not decode as a well-formed ACF_ABB/ACF_GBB message at all (an
+                    // unrecognized acf_msg_type, or a declared length/pad inconsistent with the member's
+                    // own bytes) — mirrors RCP_MOCK_DISPATCH_ERR_UNKNOWN_BUS. Same "out_resp left
+                    // zeroed" contract as queued/pending/etc. above: nothing was routed or run.
+                    // DEFENSIVE-ONLY in this codebase today: split_frame_members() (this file's own
+                    // namespace-scope helper) already validates a member's own acf_msg_length against
+                    // the buffer before dispatch_frame_impl() ever calls acf::decode_acf_abb()/_gbb()
+                    // on it, and that pair's own decode is deliberately LENIENT (acf.hpp's own
+                    // TODO(phase1-followup) note) — unlike c-RCP's stricter rcp_acf_decode_abb()/
+                    // _decode_gbb(), it cannot actually fail for anything split_frame_members() has
+                    // already accepted. Kept for classifier completeness (mirrors admit_and_classify()'s
+                    // own Pending/Cancellation branches, "a real, correct outcome even when not exercised
+                    // by this file's own current call sites") and in case a future, stricter decode makes
+                    // it reachable — see tests/test_mock.cpp's own dedicated test pinning this exact,
+                    // disclaimed delta from c-RCP.
+    chain_error   = 11, // REQ-CANCEL-012 (TC18 §11.2.3): a Chained member is the very first member of
+                    // its own frame, so it has no predecessor to chain to at all — it, and this batch's
+                    // own chain_aborted latch means every member after it too, is ignored. Builds a
+                    // genuine WireErrorCode::ChainError ErrorResponse addressed to this member's own
+                    // byte_bus_id/transaction_num, mirroring RCP_MOCK_DISPATCH_CHAIN_ERROR.
+    chain_aborted = 12, // REQ-CANCEL-012: a Chained member's predecessor (within this same frame)
+                    // finished in error and this member's own cs bit selected abort-on-error
+                    // (request::should_execute_chained(), request.hpp), OR an earlier member in this
+                    // frame already aborted the chain. Builds a genuine WireErrorCode::ChainAborted
+                    // ErrorResponse, mirroring RCP_MOCK_DISPATCH_CHAIN_ABORTED.
 };
 
 inline const std::error_category& dispatch_category() noexcept {
@@ -333,6 +365,9 @@ inline const std::error_category& dispatch_category() noexcept {
             case DispatchErrc::fragment_pending: return "rcp/mock: intermediate fragment accepted, more expected";
             case DispatchErrc::fragment_rejected: return "rcp/mock: fragment reassembly rejected the request";
             case DispatchErrc::response_fragmented: return "rcp/mock: response queued as multiple fragments on a RespQueue";
+            case DispatchErrc::unknown_bus: return "rcp/mock: frame member did not decode as a well-formed ACF message";
+            case DispatchErrc::chain_error: return "rcp/mock: chained member has no predecessor within its own frame";
+            case DispatchErrc::chain_aborted: return "rcp/mock: chained member aborted per its predecessor's own outcome";
             default:                      return "rcp/mock: unknown dispatch outcome";
             }
         }
@@ -464,6 +499,109 @@ inline acf::AcfMessageInfo make_acknowledge_rejected_response(const acf::AcfMess
 //     dispatch path either (confirmed by direct source read), so this
 //     port does not invent a dispatch()-side discovery-request handler
 //     that c-RCP has no counterpart for.
+
+// ── AVTPDU frame-level multi-member dispatch (Phase 4/Phase 17 batch D2,
+// cpp-RCP issue #129) ───────────────────────────────────────────────────────
+// TC18 §12.9.1.1 lets one AVTPDU pack several ACF_ABB/ACF_GBB messages
+// back-to-back ("members"), each addressed to its own byte_bus_id. Every
+// dispatch_*() elsewhere in this file (and the public dispatch()/
+// dispatch_e2e()/dispatch_e2e_fragment()) only ever handles ONE
+// already-isolated member — nothing in this rewrite walks a whole frame's
+// own member boundaries; rcp/request.hpp's own file header calls this out
+// explicitly ("c-RCP's own multi-request-per-frame splitting... is
+// deliberately NOT re-implemented here"). c-RCP itself keeps that walk
+// mock.c/scheduler.c-local too (rcp_sched_split_frame_members(),
+// src/scheduler.c:63-106) — this is this rewrite's own first and only port
+// of it, scoped to this batch's own Server::dispatch_frame()/
+// _dispatch_frame_e2e() below.
+
+// kMaxFrameMembers mirrors c-RCP's own RCP_MOCK_MAX_FRAME_MEMBERS
+// (include/rcp/mock.h:1262) — the fixed number of ACF members
+// Server::dispatch_frame()/_dispatch_frame_e2e() below can enumerate from
+// one frame. A real frame's member count is bounded far below this by AVTP
+// payload limits (rcp/avtp.hpp) in practice.
+constexpr size_t kMaxFrameMembers = 32;
+
+// split_frame_members ported from c-RCP's rcp_sched_split_frame_members()
+// (src/scheduler.c:63-106) — walks frame[0..frame.size()) as a
+// concatenation of ACF_ABB/ACF_GBB members, recovering just enough of each
+// member's own Message Info header (acf_msg_type via octet0 bits 7:1,
+// acf_msg_length via the shared 9-bit quadlet-count field spanning octet0
+// bit 0 | octet1 — rcp/acf.hpp's own header comment) to find where the next
+// member starts, without decoding any member's own byte_bus_id/payload yet
+// — that is dispatch_frame()'s own job, once each member's own extent is
+// known.
+//
+// Writes up to out_offsets.size() starting octet offsets, in frame order,
+// and returns how many members frame actually contains — which may exceed
+// out_offsets.size() (mirroring rcp_sched_split_frame_members()'s own
+// out_offsets-truncated-but-return-value-is-the-real-count contract;
+// dispatch_frame() below is what actually stops at out_offsets.size()).
+// Returns 0 if frame does not parse as a well-formed concatenation of ACF
+// messages at all: too short to hold even acf_msg_type+acf_msg_length (2
+// octets), an unrecognized acf_msg_type, a header longer than what remains,
+// a declared acf_msg_length shorter than that message type's own fixed
+// header, or a declared length longer than what remains in the buffer.
+inline size_t split_frame_members(const std::vector<uint8_t>& frame,
+                                   std::array<size_t, kMaxFrameMembers>& out_offsets) noexcept {
+    const uint8_t* b   = frame.data();
+    const size_t   len = frame.size();
+    size_t         offset = 0;
+    size_t         found  = 0;
+
+    while (offset < len) {
+        // acf_msg_type occupies bits 7:1 of octet 0 — not the full octet —
+        // so at least 2 octets (type+length) must be present before either
+        // can be read.
+        if (len - offset < 2) return 0;
+
+        const uint8_t msg_type = static_cast<uint8_t>(b[offset] >> 1);
+        size_t        header_len;
+        if (msg_type == acf::kAcfMsgTypeAbb) {
+            header_len = acf::kAcfCommonHeaderLen;
+        } else if (msg_type == acf::kAcfMsgTypeGbb) {
+            header_len = acf::kAcfGbbMessageInfoLen;
+        } else {
+            return 0; // malformed: not a recognized acf_msg_type
+        }
+        if (len - offset < header_len) return 0; // malformed: header truncated
+
+        const uint16_t quadlets = static_cast<uint16_t>(((b[offset] & 0x01u) << 8) | b[offset + 1]);
+        const size_t   msg_len  = static_cast<size_t>(quadlets) * 4u;
+        if (msg_len < header_len) return 0;    // malformed: declared length shorter than header
+        if (len - offset < msg_len) return 0;  // malformed: payload truncated
+
+        if (found < out_offsets.size()) out_offsets[found] = offset;
+        ++found;
+        offset += msg_len;
+    }
+    return found;
+}
+
+// FrameMemberResult carries one AVTPDU member's own dispatch outcome, as
+// populated by Server::dispatch_frame()/_dispatch_frame_e2e() below —
+// mirrors c-RCP's own rcp_mock_frame_member_result_t
+// (include/rcp/mock.h:1264-1276), composed onto this file's own
+// std::error_code+AcfMessageInfo+payload dispatch contract (every
+// dispatch_*() in this file already returns that shape) instead of a
+// duplicate numbered-outcome enum. Response aggregation across a whole
+// frame stops here, matching c-RCP's own dispatch_frame()/
+// _dispatch_frame_e2e(), which return one rcp_mock_frame_member_result_t
+// PER MEMBER too, never a single frame concatenating every member's own
+// response back into one outgoing AVTPDU (confirmed by direct source read
+// of both functions and their own tests/test_mock.c coverage) — this mock
+// has no outer AVTP/NTSCF/TSCF framing ENCODE of its own either (the same
+// "no wire codec, protocol library only" disclaimer this file's own header
+// comment already carries for the decode direction), so assembling
+// out_results back into one wire frame is left to the caller, exactly as
+// it already is for every response this file ever builds.
+struct FrameMemberResult {
+    std::error_code       result;
+    avtp::ByteBusId        byte_bus_id = 0; // 0 when result could not even be determined
+    acf::AcfMessageInfo    response;         // default-constructed (rsp == false) unless a genuine wire response was built
+    std::vector<uint8_t>   response_payload;
+};
+
 class Server final {
 public:
     Server()
@@ -970,6 +1108,30 @@ public:
     std::error_code dispatch_e2e(size_t client, avtp::StreamId stream_id, uint8_t sequence_num,
                                   const std::vector<uint8_t>& frame, acf::AcfMessageInfo& out_resp,
                                   std::vector<uint8_t>& out_resp_payload) noexcept {
+        return dispatch_e2e_core(client, stream_id, sequence_num, frame, out_resp, out_resp_payload,
+                                  /*apply_seq_gate=*/true);
+    }
+
+    // dispatch_e2e_core — Phase 4/Phase 17 batch D2 (cpp-RCP issue #129):
+    // dispatch_e2e()'s own body, extracted so this batch's own
+    // dispatch_frame_e2e() below can reuse every one of its checks EXCEPT
+    // the sequence-number gate, which a multi-member frame must evaluate
+    // exactly ONCE per frame, not once per member — see dispatch_e2e()'s
+    // OWN pre-D2 doc comment, still accurate above, for why batch C put
+    // that gate here at single-member granularity in the first place
+    // ("batch D's own frame-level, multi-member dispatch_frame_e2e() will
+    // evaluate it once per FRAME instead... reusing this SAME
+    // seq_trackers_/RxSequenceGuard state rather than a second, parallel
+    // instance"). apply_seq_gate false skips exactly that one check
+    // (dispatch_frame_e2e() has already run frame_seq_gate_admits()'s own
+    // equivalent, seq_gate_admits(), once for the whole frame before
+    // calling this per member); every other check below runs unconditionally
+    // either way. dispatch_e2e()'s own public contract is unchanged: it
+    // always passes true, matching this function's pre-extraction behavior
+    // exactly.
+    std::error_code dispatch_e2e_core(size_t client, avtp::StreamId stream_id, uint8_t sequence_num,
+                                       const std::vector<uint8_t>& frame, acf::AcfMessageInfo& out_resp,
+                                       std::vector<uint8_t>& out_resp_payload, bool apply_seq_gate) noexcept {
         out_resp = acf::AcfMessageInfo{};
         out_resp_payload.clear();
 
@@ -1028,7 +1190,7 @@ public:
         // response at all (TC18 leaves the request unfiled, not merely
         // un-acknowledged), mirroring RCP_MOCK_DISPATCH_SEQ_ERROR's own
         // identical "response left zeroed" contract (src/mock.c:3106-3112).
-        if (!seq_gate_admits(stream_id, sequence_num)) {
+        if (apply_seq_gate && !seq_gate_admits(stream_id, sequence_num)) {
             return make_error_code(DispatchErrc::seq_error);
         }
 
@@ -1155,6 +1317,24 @@ public:
                                            const std::vector<uint8_t>& fragment,
                                            acf::AcfMessageInfo& out_resp,
                                            std::vector<uint8_t>& out_resp_payload) noexcept {
+        return dispatch_e2e_fragment_core(client, stream_id, /*sequence_num=*/0, fragment, out_resp,
+                                           out_resp_payload, /*apply_seq_gate=*/true);
+    }
+
+    // dispatch_e2e_fragment_core — Phase 4/Phase 17 batch D2 (cpp-RCP issue
+    // #129): dispatch_e2e_fragment()'s own body, extracted the same way
+    // dispatch_e2e_core() is above, so this batch's own
+    // dispatch_frame_e2e() can route a fragment-shaped member through it
+    // with the FRAME's own real sequence_num and apply_seq_gate=false
+    // (the once-per-frame gate already ran) instead of dispatch_e2e_
+    // fragment()'s own public hardcoded sequence_num=0/apply_seq_gate=true
+    // fallback-to-dispatch_e2e() behavior, which is UNCHANGED for every
+    // pre-existing direct caller of dispatch_e2e_fragment() itself.
+    std::error_code dispatch_e2e_fragment_core(size_t client, avtp::StreamId stream_id,
+                                                uint8_t sequence_num, const std::vector<uint8_t>& fragment,
+                                                acf::AcfMessageInfo& out_resp,
+                                                std::vector<uint8_t>& out_resp_payload,
+                                                bool apply_seq_gate) noexcept {
         out_resp = acf::AcfMessageInfo{};
         out_resp_payload.clear();
 
@@ -1188,7 +1368,8 @@ public:
         const uint8_t stream_index = regmap::request_stream_cfg::resolve_index(
             regs_.request_streams.data(), regs_.request_streams.size(), stream_id.to_u64());
         if (stream_index == 0) {
-            return dispatch_e2e(client, stream_id, /*sequence_num=*/0, fragment, out_resp, out_resp_payload);
+            return dispatch_e2e_core(client, stream_id, sequence_num, fragment, out_resp, out_resp_payload,
+                                      apply_seq_gate);
         }
         fragment::Reassembler& reasm         = frag_reassemblers_[stream_index - 1];
         std::vector<uint8_t>&  first_header  = frag_first_headers_[stream_index - 1];
@@ -1225,7 +1406,8 @@ public:
         if (!reasm.is_collecting()) {
             // Never actually fragmented — byte-identical to calling
             // dispatch_e2e() directly.
-            return dispatch_e2e(client, stream_id, /*sequence_num=*/0, fragment, out_resp, out_resp_payload);
+            return dispatch_e2e_core(client, stream_id, sequence_num, fragment, out_resp, out_resp_payload,
+                                      apply_seq_gate);
         }
 
         // Real multi-fragment message completing: this final fragment's own
@@ -1313,6 +1495,121 @@ public:
             if (frag_ec) return frag_ec;
         }
         return result_ec;
+    }
+
+    // dispatch_frame — Phase 4/Phase 17 batch D2 (cpp-RCP issue #129,
+    // Phase 4's fourth and FINAL batch): the AVTPDU frame-level
+    // multi-member counterpart to dispatch() above, ported from c-RCP's
+    // rcp_mock_server_dispatch_frame() (src/mock.c:3068-3237, REQ-MOCK-019/
+    // 020/029). Splits `frame` into its constituent ACF members
+    // (split_frame_members(), this file's own namespace-scope helper
+    // above) and routes each one — in frame order — through
+    // decode_and_dispatch() (dispatch()'s own raw-bytes entry point, now
+    // conditional/cancellation-opcode-aware too, see that method's own
+    // updated doc comment for this same batch's companion fix), applying
+    // REQ-CANCEL-012's chain-group/position bookkeeping (TC18 §11.2.3)
+    // along the way (dispatch_frame_impl(), private, below — shared with
+    // dispatch_frame_e2e()). Every admission/classification/suppression/E2E
+    // decision is made by decode_and_dispatch()/dispatch()/
+    // admit_and_classify() themselves, exactly as batches A/B/C/D1 already
+    // built them — this method's own job is purely the splitting/routing/
+    // chain-bookkeeping layer sitting on top, matching this batch's own
+    // scope.
+    //
+    // Writes one FrameMemberResult per dispatched member into out_results
+    // (cleared first), in frame order, and returns how many were
+    // dispatched (== out_results.size() afterward) — 0 if frame does not
+    // parse as a well-formed concatenation of ACF messages at all
+    // (split_frame_members() itself returned 0). If frame contains more
+    // than kMaxFrameMembers members, only the first kMaxFrameMembers are
+    // dispatched, mirroring split_frame_members()'s own out_offsets
+    // truncation (pass a frame with at most kMaxFrameMembers members to be
+    // certain none is dropped).
+    //
+    // client/stream_id are shared across every member — properties of the
+    // enclosing NTSCF/TSCF frame, not of any one ACF message packed inside
+    // it, same as c-RCP's own avtp_subtype/time_sync_supported/stream_id
+    // parameters (this mock's own dispatch()/dispatch_e2e() family already
+    // has no avtp_subtype/time_sync_supported concept of its own — see this
+    // file's own header comment — so only client/stream_id carry over
+    // here).
+    size_t dispatch_frame(size_t client, avtp::StreamId stream_id, const std::vector<uint8_t>& frame,
+                           std::vector<FrameMemberResult>& out_results) noexcept {
+        return dispatch_frame_impl(
+            frame, out_results,
+            [this, client, stream_id](const std::vector<uint8_t>& member, acf::AcfMessageInfo& resp,
+                                       std::vector<uint8_t>& resp_payload) {
+                return decode_and_dispatch(client, member, stream_id, resp, resp_payload);
+            });
+    }
+
+    // dispatch_frame_e2e — dispatch_frame()'s own E2E-aware counterpart,
+    // ported from c-RCP's rcp_mock_server_dispatch_frame_e2e() (src/mock.c:
+    // 3240-3382, REQ-E2E-033). The one real difference from dispatch_frame()
+    // above: each member is independently unwrapped-and-CRC-verified
+    // against its own addressed endpoint's own ep_req_crc_enable (TC18
+    // §13.6's "a separate CRC32... for each E2E-protected ACF message",
+    // REQ-E2E-033 — never one CRC across the whole frame), AND, per this
+    // batch's own item 2 ("route each member... based on E2E/fragmentation
+    // flags on that member"), reassembled if it turns out to be a fragment
+    // — both via dispatch_e2e_fragment_core() (dispatch_e2e_fragment()'s
+    // own extracted body, this batch's own addition alongside dispatch_e2e_
+    // core(), see that method's own doc comment). This is a deliberate,
+    // documented DELTA from c-RCP: c-RCP's own rcp_mock_server_dispatch_
+    // frame_e2e() calls only rcp_mock_server_dispatch_e2e() per member
+    // (src/mock.c:3349-3352) and has no frame-level fragment-aware
+    // counterpart at all (confirmed by direct source read — no
+    // rcp_mock_server_dispatch_frame_e2e_fragment symbol exists anywhere in
+    // c-RCP). dispatch_e2e_fragment_core() is a strict superset of
+    // dispatch_e2e_core() for a non-fragmented member (it falls back to
+    // calling dispatch_e2e_core() itself in both of its own "never actually
+    // fragmented" branches — see that method's own doc comment), so this
+    // costs nothing for the ordinary, non-fragmented case while adding
+    // correct handling for the fragmented one, closing a real gap c-RCP
+    // itself still has.
+    //
+    // `sequence_num` (the enclosing AVTPDU's own Sequence_Nr) is evaluated
+    // exactly ONCE here, via seq_gate_admits() (this file's own
+    // single-member-shaped REQ-E2E-028/029 gate — reused rather than
+    // duplicated, a legitimate frame-level use since it is stream-keyed
+    // state, not member-keyed), BEFORE any member is processed — mirrors
+    // c-RCP's own frame_seq_gate_admits() (src/mock.c:3038-3063): a
+    // legitimate 2nd+ member of a multi-member frame must never be
+    // spuriously rejected as a replay against the 1st member's own
+    // just-advanced tracker state. A rejected sequence number reports
+    // DispatchErrc::seq_error for every member, with no per-member wire
+    // response (mirrors RCP_MOCK_DISPATCH_SEQ_ERROR's own identical
+    // "response left zeroed" contract, src/mock.c:3106-3112), and no
+    // member is otherwise inspected at all. Every per-member call below
+    // passes apply_seq_gate=false — this frame-level check already covers
+    // it; see dispatch_e2e_core()'s own doc comment for why that parameter
+    // exists.
+    size_t dispatch_frame_e2e(size_t client, avtp::StreamId stream_id, uint8_t sequence_num,
+                               const std::vector<uint8_t>& frame,
+                               std::vector<FrameMemberResult>& out_results) noexcept {
+        out_results.clear();
+
+        std::array<size_t, kMaxFrameMembers> offsets{};
+        const size_t real_count = split_frame_members(frame, offsets);
+        if (real_count == 0) return 0;
+        const size_t stored_count = std::min(real_count, kMaxFrameMembers);
+
+        if (!seq_gate_admits(stream_id, sequence_num)) {
+            for (size_t i = 0; i < stored_count; ++i) {
+                out_results.push_back(FrameMemberResult{make_error_code(DispatchErrc::seq_error), 0,
+                                                          acf::AcfMessageInfo{}, {}});
+            }
+            return out_results.size();
+        }
+
+        return dispatch_frame_impl(
+            frame, out_results,
+            [this, client, stream_id, sequence_num](const std::vector<uint8_t>& member,
+                                                      acf::AcfMessageInfo& resp,
+                                                      std::vector<uint8_t>& resp_payload) {
+                return dispatch_e2e_fragment_core(client, stream_id, sequence_num, member, resp, resp_payload,
+                                                   /*apply_seq_gate=*/false);
+            });
     }
 
     // fragment_reassembler gives direct, mutable access to this Server's own
@@ -1463,13 +1760,62 @@ private:
         out_resp_payload = acf::encode_error_payload(code);
     }
 
-    // decode_and_dispatch is dispatch_e2e()'s own shared delegation tail —
-    // both its "plain command mode" branch (an endpoint with
-    // ep_req_crc_enable not set) and its "CRC validated" branch decode a
-    // raw ACF_ABB/ACF_GBB frame into a real AcfMessageInfo+payload pair and
-    // hand it to dispatch() unchanged, exactly as c-RCP's own
-    // rcp_mock_server_dispatch_e2e() delegates to dispatch_plain() at both
-    // of its own two identical call sites (src/mock.c:1949-1950/2034-2035).
+    // peek_conditional_request_type — Phase 4/Phase 17 batch D2 (cpp-RCP
+    // issue #129): decode_and_dispatch()'s own admission-routing peek,
+    // mirroring server::Endpoint's own private peek_request_type()
+    // (server.hpp) exactly (duplicated here rather than exposed, since
+    // that one 8-line helper is server::Endpoint's own private
+    // implementation detail, not part of its public admission surface) —
+    // if frame is long enough to hold the full ACF_GBB Message Info block
+    // (16 octets) and decodes as an untimed (mtv-clear) ACF_GBB whose
+    // repurposed opcode byte is one of rcp::request's defined
+    // RequestTypeOpcode values, returns it. Otherwise (ABB, a GBB with mtv
+    // set — a genuine timestamped Standard request — too short, or an
+    // unrecognized opcode byte) returns std::nullopt: every one of those is
+    // a Standard request, routed through the ordinary ABB-oriented
+    // dispatch() path below exactly as before this batch.
+    static std::optional<request::RequestTypeOpcode> peek_conditional_request_type(
+        const std::vector<uint8_t>& frame) noexcept {
+        if (frame.size() < acf::kAcfGbbMessageInfoLen) return std::nullopt;
+        acf::AcfMessageInfo hdr;
+        acf::decode_acf_message_info(frame.data(), hdr);
+        if (hdr.acf_msg_type != acf::kAcfMsgTypeGbb || hdr.mtv) return std::nullopt;
+        const uint8_t byte0 = frame[acf::kAcfCommonHeaderLen];
+        if (!request::is_valid_request_type(byte0)) return std::nullopt;
+        return static_cast<request::RequestTypeOpcode>(byte0);
+    }
+
+    // decode_and_dispatch is dispatch_e2e()/dispatch_e2e_fragment()'s own
+    // shared delegation tail — both dispatch_e2e()'s "plain command mode"
+    // branch (an endpoint with ep_req_crc_enable not set) and its "CRC
+    // validated" branch decode a raw ACF_ABB/ACF_GBB frame and dispatch it,
+    // exactly as c-RCP's own rcp_mock_server_dispatch_e2e() delegates to
+    // dispatch_plain() at both of its own two identical call sites
+    // (src/mock.c:1949-1950/2034-2035). This batch's own dispatch_frame()/
+    // dispatch_frame_e2e() below reuse it too, for every one of a frame's
+    // own isolated members — see their own doc comments.
+    //
+    // Phase 4/Phase 17 batch D2 (cpp-RCP issue #129): a genuine repurposed-
+    // timestamp ACF_GBB conditional/cancellation opcode
+    // (peek_conditional_request_type() above) is now routed DIRECTLY to
+    // its addressed endpoint's own admission queue (admit_and_classify(),
+    // below) on frame's own raw bytes, never through dispatch()'s own
+    // ABB-only path — closing the gap admit_and_classify()'s own doc
+    // comment names ("every request built here is always encoded
+    // ACF_ABB... meaning only ExecuteNow/Queued/Suspended/Rejected are
+    // ever reachable through this function") for every caller of THIS
+    // function, single-member or frame-level alike. Before this batch,
+    // such a member would have been decoded via acf::decode_acf_gbb() (its
+    // own message_timestamp silently discarded) and dispatched as an
+    // ordinary Standard request using req.op/evt_op — i.e. its
+    // repurposed-opcode meaning was lost entirely; this is what
+    // apply_cancellation()'s own former TODO(phase4-batch-d2) named as
+    // needing "a real multi-member frame to [reach this path from]". No
+    // existing single-member dispatch_e2e()/_dispatch_e2e_fragment() test
+    // exercises a genuine conditional/cancellation GBB frame (confirmed by
+    // source read of tests/test_mock.cpp), so this is a strict behavior
+    // *addition*, not a change, for every pre-existing caller.
+    //
     // A decode failure (too short, or an unrecognized acf_msg_type) leaves
     // out_resp/out_resp_payload at their default "nothing to send" shape,
     // matching every other malformed-input disposition in this file.
@@ -1479,6 +1825,38 @@ private:
         out_resp = acf::AcfMessageInfo{};
         out_resp_payload.clear();
         if (frame.empty()) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+
+        if (peek_conditional_request_type(frame)) {
+            // admit_with_ack() (inside admit_and_classify() below) re-peeks
+            // and fully decodes this same opcode itself — the check above
+            // exists only to choose which routing branch to take.
+            acf::AcfMessageInfo peek;
+            acf::decode_acf_message_info(frame.data(), peek);
+            server::Endpoint* ep = admission(peek.byte_bus_id);
+            if (!ep) {
+                return set_error_response(peek, make_error_code(regmap::RegMapErrc::invalid_parameter),
+                                           out_resp, out_resp_payload);
+            }
+            if (!operational_requests_allowed()) {
+                std::error_code ec = set_error_response(
+                    peek, make_error_code(regmap::RegMapErrc::request_rejected), out_resp, out_resp_payload);
+                suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+                return ec;
+            }
+            std::error_code admit_ec;
+            // A genuine conditional/cancellation opcode never reaches
+            // AdmitOutcome::ExecuteNow (admit_with_ack()'s own body:
+            // every recognized category other than Cancellation always
+            // stores and returns Pending; Cancellation never executes a
+            // handler at all) — the `true` return is defensively
+            // unreachable here, matching admit_and_classify()'s own
+            // "return true" ExecuteNow case leaving out_resp untouched by
+            // design (its normal callers own a handler body to run
+            // instead; this call site has none to offer).
+            (void)admit_and_classify(*ep, frame, peek, out_resp, out_resp_payload, admit_ec);
+            suppress_response_per_stream_cfg(regs_, stream_id, out_resp, out_resp_payload);
+            return admit_ec;
+        }
 
         acf::AcfMessageInfo   req;
         std::vector<uint8_t>  payload;
@@ -1725,29 +2103,36 @@ private:
 
     // apply_cancellation applies an already-classified AdmitOutcome::
     // Cancellation request against admission's own request store — ported
-    // from c-RCP's apply_cancellation() (src/mock.c:1180-1245), reduced to
-    // the two whole-store cancellation kinds (clear-all/clear-non-
-    // safestate) this batch actually needs a response shape for.
-    // clear-single's own REQ-CANCEL-012 chain-cascade needs its target
-    // transaction_num decoded out of the raw frame
-    // (request::decode_clear_single(), request.hpp) plus a genuine
-    // REQUEST_NOT_FOUND error response when no match exists — deliberately
-    // left as a stub here: AdmitOutcome::Cancellation is unreachable
-    // through this file's own dispatch_*() below in the first place (see
-    // admit_and_classify()'s own comment), so there is no dispatch()
-    // caller yet that can exercise it end-to-end; wiring a GBB-carrying
-    // frame in that actually reaches this path is AVTPDU frame-level
-    // dispatch_frame() territory — batch D2's own scope specifically (D1,
-    // this batch, is fragment reassembly only; D1's own dispatch_e2e_
-    // fragment() above still routes every request it admits through the
-    // SAME admit_and_classify(), so this remains just as unreachable
-    // through it as it was before D1 — see dispatch_e2e_fragment()'s own
-    // doc comment).
-    // TODO(phase4-batch-d2): decode clear-single's own target transaction_num
-    // and apply REQ-CANCEL-012's chain cascade once dispatch_frame() can
-    // reach this path with a real multi-member frame to derive
-    // chain_group/chain_position from.
+    // from c-RCP's apply_cancellation() (src/mock.c:1180-1245).
+    //
+    // Phase 4/Phase 17 batch D2 (cpp-RCP issue #129): fills in the
+    // ClearSingle case left as a TODO(phase4-batch-d2) stub since batch A —
+    // now that admit_and_classify() (above) hands this function the raw
+    // frame bytes directly (see that function's own updated doc comment),
+    // ClearSingle's own target clear_transaction_num can actually be
+    // decoded (request::decode_clear_single(), request.hpp) and REQ-
+    // CANCEL-012's chain cascade applied for real. `req` carries the
+    // CANCELLATION request's own byte_bus_id/transaction_num, used to
+    // address the one wire response this function ever builds (TC18
+    // §12.9.6's general "error response addressed to the request that
+    // caused it" rule — NOT the not-found target's own byte_bus_id/
+    // transaction_num, which this mock's own single-endpoint-per-
+    // byte_bus_id model guarantees is identical anyway, but is kept
+    // conceptually distinct here to match c-RCP's own doc comment,
+    // src/mock.c:1158-1167).
+    //
+    // Clear-all and clear-non-safestate cancel every request each removes
+    // with its own REQUEST_CANCELED error response (TC18 §11.2.3: one
+    // response per cancelled request, not one for the cancellation itself)
+    // — a multi-response fanout this function's single out_resp cannot
+    // represent, same gap c-RCP's own apply_cancellation() names and defers
+    // (github.com/SoundMatt/c-RCP/issues/163); a ClearSingle's own
+    // successful cascade below carries the identical fanout gap for the
+    // same reason. Not attempted here — out_resp/out_resp_payload are left
+    // at their default "nothing to send" shape for every branch except
+    // ClearSingle's own REQUEST_NOT_FOUND case.
     static void apply_cancellation(server::Endpoint& admission, request::RequestTypeOpcode request_type,
+                                    const std::vector<uint8_t>& frame, const acf::AcfMessageInfo& req,
                                     acf::AcfMessageInfo& out_resp,
                                     std::vector<uint8_t>& out_resp_payload) noexcept {
         out_resp         = acf::AcfMessageInfo{};
@@ -1759,8 +2144,62 @@ private:
         case request::RequestTypeOpcode::ClearNonSafestate:
             (void)admission.cancel_non_safestate();
             break;
+        case request::RequestTypeOpcode::ClearSingle: {
+            request::ClearSingleRequest csr;
+            if (request::decode_clear_single(frame.data(), frame.size(), csr)) {
+                break; // malformed despite admit_with_ack()'s own opcode-byte peek succeeding: no-op
+            }
+
+            // REQ-CANCEL-012: read chain_group/chain_position out BEFORE
+            // cancelling — cancel_single() below already frees and clears
+            // the target's own store slot, so its own chain bookkeeping
+            // has to be captured first. Left at their zero-valued
+            // defaults (chain_group 0, the "not part of a chain"
+            // sentinel) if no matching entry is found — the cascade call
+            // below is then a guaranteed no-op (server::Endpoint::
+            // cancel_chain_from()'s own doc comment), exactly matching a
+            // target that reports NotFound. Mirrors c-RCP's own
+            // apply_cancellation() (src/mock.c:1200-1216) using pending(),
+            // the same public accessor this file's own frame-splitting
+            // chain bookkeeping below already relies on for the identical
+            // reason.
+            uint32_t target_chain_group    = 0;
+            uint8_t  target_chain_position = 0;
+            for (size_t i = 0; i < server::kMaxPending; ++i) {
+                if (const server::PendingRequest* slot = admission.pending(i)) {
+                    if (slot->transaction_num == csr.clear_transaction_num) {
+                        target_chain_group    = slot->chain_group;
+                        target_chain_position = slot->chain_position;
+                        break;
+                    }
+                }
+            }
+
+            // Every request still sitting in the store is by definition
+            // queued rather than under execution — this mock runs a
+            // selected request to completion synchronously inside
+            // tick()/complete() (never leaving one observably
+            // mid-execution here), so CancelLifecycle::Queued is always
+            // the right lifecycle to attempt against.
+            const server::CancelResult result =
+                admission.cancel_single(csr.clear_transaction_num, server::CancelLifecycle::Queued);
+            if (result == server::CancelResult::NotFound) {
+                // TC18 §11.2.3.3: "...will create an error response with
+                // the error code = REQUEST_NOT_FOUND, when the
+                // clear_transaction_num was not found."
+                out_resp         = acf::make_response(req, acf::ResponseKind::ErrorResponse);
+                out_resp_payload = acf::encode_error_payload(acf::WireErrorCode::RequestNotFound);
+            } else if (result == server::CancelResult::Canceled) {
+                (void)admission.cancel_chain_from(target_chain_group, target_chain_position);
+            }
+            // NotCancellable: c-RCP's own apply_cancellation() builds no
+            // response for this outcome either (only NotFound does) —
+            // left at "nothing to send", matching every other branch's
+            // own default disposition above.
+            break;
+        }
         default:
-            break; // ClearSingle: see this function's own TODO above.
+            break;
         }
     }
 
@@ -1805,11 +2244,29 @@ private:
     // a genuine wire ErrorResponse/Acknowledge-rejected uses
     // regmap::RegMapErrc::request_rejected instead, mirroring
     // operational_requests_allowed()'s own existing "rejected" signal).
-    static bool admit_and_classify(server::Endpoint& admission, const acf::AcfMessageInfo& req,
-                                    const std::vector<uint8_t>& payload, acf::AcfMessageInfo& out_resp,
+    //
+    // Phase 4/Phase 17 batch D2 (cpp-RCP issue #129): `frame` is now taken
+    // directly from the caller rather than re-derived internally from
+    // `req`/`payload` via acf::encode_acf_abb() — every one of this file's
+    // own ten dispatch_<type>_inner() call sites still passes exactly that
+    // same ABB-re-encoded frame (behavior-unchanged for them: `req` was
+    // always decoded from an ACF_ABB request kind to begin with, per this
+    // file's own header comment on dispatch()'s Standard-only scope), but
+    // decode_and_dispatch()'s own new conditional/cancellation-opcode
+    // branch below now ALSO calls this function directly with a genuine,
+    // still-repurposed-timestamp ACF_GBB member's raw bytes preserved —
+    // closing the gap this function's own prior doc comment named ("every
+    // request built here is always encoded ACF_ABB... meaning only
+    // ExecuteNow/Queued/Suspended/Rejected are ever reachable through this
+    // function AS CALLED BELOW") for that one caller, without duplicating
+    // this switch's own outcome-handling logic a second time. `req` is
+    // still used for response-shape building only (byte_bus_id/
+    // transaction_num/evt_ack — decoded identically off ABB and GBB, since
+    // a GBB Message Info header is an ABB header's same fields plus the
+    // trailing message_timestamp slot).
+    static bool admit_and_classify(server::Endpoint& admission, const std::vector<uint8_t>& frame,
+                                    const acf::AcfMessageInfo& req, acf::AcfMessageInfo& out_resp,
                                     std::vector<uint8_t>& out_resp_payload, std::error_code& out_ec) {
-        const std::vector<uint8_t> frame = acf::encode_acf_abb(req, payload);
-
         std::optional<request::RequestTypeOpcode> request_type;
         std::optional<acf::WireErrorCode>          admit_error;
         std::vector<uint8_t>                       ack;
@@ -1843,7 +2300,7 @@ private:
             return false;
 
         case server::AdmitOutcome::Cancellation:
-            apply_cancellation(admission, *request_type, out_resp, out_resp_payload);
+            apply_cancellation(admission, *request_type, frame, req, out_resp, out_resp_payload);
             out_ec = make_error_code(DispatchErrc::cancelled);
             return false;
 
@@ -1881,6 +2338,229 @@ private:
             out_ec = make_error_code(regmap::RegMapErrc::request_rejected);
             return false;
         }
+    }
+
+    // last_pending_index — Phase 4/Phase 17 batch D2 (cpp-RCP issue #129):
+    // the store index of the most recently admitted request on ep — the
+    // one admit_and_classify()/admit_with_ack() just placed there,
+    // identified by its own highest `sequence` (server::PendingRequest's
+    // own arrival-order tie-break field, already exposed publicly via
+    // server::Endpoint::pending()). Ported from c-RCP's own
+    // last_pending_index() (src/mock.c:3011-3028), using this rewrite's own
+    // public pending()/kMaxPending accessors rather than reaching into
+    // server::Endpoint's own private storage the way c-RCP's helper reaches
+    // into rcp_server_endpoint_t's own public `pending[]` array directly —
+    // admit_and_classify() (above) deliberately never surfaces the index
+    // admit_with_ack() itself already computes (its own out_index parameter
+    // is always passed nullptr), so dispatch_frame_impl() below has to
+    // re-derive it exactly the way c-RCP's own dispatch_frame() does.
+    // Returns server::kMaxPending if ep's own store is empty.
+    static size_t last_pending_index(const server::Endpoint& ep) noexcept {
+        size_t   best     = server::kMaxPending;
+        uint64_t max_seq  = 0;
+        for (size_t i = 0; i < server::kMaxPending; ++i) {
+            const server::PendingRequest* slot = ep.pending(i);
+            if (!slot) continue;
+            if (best == server::kMaxPending || slot->sequence >= max_seq) {
+                max_seq = slot->sequence;
+                best    = i;
+            }
+        }
+        return best;
+    }
+
+    // dispatch_frame_impl is dispatch_frame()'s and dispatch_frame_e2e()'s
+    // own shared splitting/routing/chain-bookkeeping loop (Phase 4/Phase 17
+    // batch D2, cpp-RCP issue #129) — the two differ ONLY in which
+    // single-member entry point actually dispatches each already-isolated
+    // member (decode_and_dispatch() for dispatch_frame(); dispatch_e2e_
+    // fragment_core() for dispatch_frame_e2e(), see that method's own doc
+    // comment), so `dispatch_member` (a callable of shape
+    // std::error_code(const std::vector<uint8_t>& member,
+    // acf::AcfMessageInfo& resp, std::vector<uint8_t>& resp_payload)) is
+    // the one thing each caller supplies; every other step — splitting,
+    // per-member byte_bus_id/chain-opcode peeking, REQ-CANCEL-012 chain
+    // bookkeeping — is identical between them and lives here once, matching
+    // this batch's own "do not duplicate admission/classification/E2E
+    // logic" charter (the dispatch_member call IS that reused logic; this
+    // function never re-implements any of it).
+    //
+    // Ported from the shared shape of c-RCP's own rcp_mock_server_
+    // dispatch_frame()/_dispatch_frame_e2e() (src/mock.c:3068-3382) MINUS
+    // the once-per-frame sequence gate (each caller's own job — see
+    // dispatch_frame_e2e()'s own doc comment for why it cannot live here:
+    // dispatch_frame() itself has no sequence_num parameter and no gate to
+    // apply at all).
+    template <typename DispatchMemberFn>
+    size_t dispatch_frame_impl(const std::vector<uint8_t>& frame, std::vector<FrameMemberResult>& out_results,
+                                DispatchMemberFn&& dispatch_member) noexcept {
+        out_results.clear();
+
+        std::array<size_t, kMaxFrameMembers> offsets{};
+        const size_t real_count = split_frame_members(frame, offsets);
+        if (real_count == 0) return 0;
+        const size_t stored_count = std::min(real_count, kMaxFrameMembers);
+
+        // Chain sequencing state, carried across this frame's own members
+        // in order — mirrors c-RCP's own identical locals (src/mock.c:
+        // 3082-3098). chain_group == 0 is the "not part of a chain"
+        // sentinel; every member (chained or not) starts a fresh potential
+        // chain_group == i+1 (the +1 avoids colliding with the sentinel at
+        // i==0) unless it is itself chained, in which case it keeps its
+        // predecessor's own chain_group and advances chain_position by
+        // one.
+        bool     chain_aborted  = false;
+        bool     prev_errored   = false;
+        uint32_t chain_group    = 0;
+        uint8_t  chain_position = 0;
+
+        for (size_t i = 0; i < stored_count; ++i) {
+            const size_t member_off = offsets[i];
+            size_t       member_end;
+            if (i + 1 < stored_count) {
+                member_end = offsets[i + 1];
+            } else if (i + 1 == real_count) {
+                member_end = frame.size(); // i is genuinely the last member in the whole frame
+            } else {
+                break; // real_count exceeds kMaxFrameMembers and i is the last stored offset — see
+                       // split_frame_members()'s own doc comment for why there is no reliable end here
+            }
+            const std::vector<uint8_t> member(frame.begin() + static_cast<long>(member_off),
+                                               frame.begin() + static_cast<long>(member_end));
+
+            FrameMemberResult out;
+
+            // peek_member_byte_bus_id equivalent (c-RCP's own
+            // src/mock.c:2950-2980): a full ABB/GBB decode, not just a
+            // header peek, since a syntactically well-formed member (per
+            // split_frame_members()'s own quadlet-count check) can still
+            // fail to decode for other reasons (e.g. a declared pad
+            // exceeding its own body region) — this must surface as
+            // unknown_bus, not a crash or a bogus dispatch.
+            acf::AcfMessageInfo peek;
+            bool                decoded = false;
+            const uint8_t       msg_type = member.empty() ? 0 : acf::peek_acf_msg_type(member.data());
+            if (msg_type == acf::kAcfMsgTypeAbb) {
+                std::vector<uint8_t> ignored;
+                decoded = !acf::decode_acf_abb(member.data(), member.size(), peek, ignored);
+            } else if (msg_type == acf::kAcfMsgTypeGbb) {
+                uint64_t              ts = 0;
+                std::vector<uint8_t>  ignored;
+                decoded = !acf::decode_acf_gbb(member.data(), member.size(), peek, ts, ignored);
+            }
+            if (!decoded) {
+                out.result      = make_error_code(DispatchErrc::unknown_bus);
+                out.byte_bus_id = 0;
+                prev_errored    = true;
+                out_results.push_back(std::move(out));
+                continue;
+            }
+            out.byte_bus_id = peek.byte_bus_id;
+
+            // is_chained_member equivalent (c-RCP's own src/mock.c:
+            // 2982-3009): a chained member's execution condition is its
+            // *predecessor within this same frame* — a chain never spans
+            // AVTPDUs, and a member's position in the chain is its
+            // position in the frame, not a sub-field of its own — so this
+            // decision is made here, where frame order is known, rather
+            // than inside server::Endpoint's own store.
+            request::ChainedMember cm;
+            const bool chained_flag = !request::decode_chained_member(member.data(), member.size(), cm);
+
+            if (!chained_flag) {
+                chain_group    = static_cast<uint32_t>(i) + 1u;
+                chain_position = 0;
+            } else {
+                ++chain_position;
+            }
+
+            if (chained_flag) {
+                // rcp_chained_advance() equivalent (src/request.c:673-694),
+                // composed onto request::should_execute_chained()'s own
+                // pure per-successor predicate (request.hpp) rather than
+                // re-deriving its cs-polarity here — cpp-RCP issue #58's
+                // own fix stays the single source of truth for that logic.
+                if (i == 0) {
+                    // No predecessor at all within this frame: this
+                    // member, and (via the chain_aborted latch) every
+                    // member after it, is ignored.
+                    chain_aborted        = true;
+                    out.result           = make_error_code(DispatchErrc::chain_error);
+                    out.response         = acf::make_response(peek, acf::ResponseKind::ErrorResponse);
+                    out.response_payload = acf::encode_error_payload(acf::WireErrorCode::ChainError);
+                    prev_errored         = true;
+                    out_results.push_back(std::move(out));
+                    continue;
+                }
+                if (chain_aborted || !request::should_execute_chained(cm.cs, prev_errored)) {
+                    chain_aborted        = true;
+                    out.result           = make_error_code(DispatchErrc::chain_aborted);
+                    out.response         = acf::make_response(peek, acf::ResponseKind::ErrorResponse);
+                    out.response_payload = acf::encode_error_payload(acf::WireErrorCode::ChainAborted);
+                    prev_errored         = true;
+                    out_results.push_back(std::move(out));
+                    continue;
+                }
+            }
+
+            // pending_count() before/after (rather than testing out.result
+            // == DispatchErrc::pending below) is what actually detects a
+            // fresh AdmitOutcome::Pending admission: admit_and_classify()
+            // reports success ({}), not DispatchErrc::pending, when the
+            // member's own evt[3] requested an Acknowledge (REQ-SRV-016) —
+            // a genuine Pending admission either way. A Standard ABB
+            // member never changes pending_count() at all, so this check
+            // is a safe no-op for every non-conditional member too.
+            server::Endpoint* ep_for_bookkeeping = admission(peek.byte_bus_id);
+            const size_t pending_before = ep_for_bookkeeping ? ep_for_bookkeeping->pending_count() : 0;
+
+            out.result = dispatch_member(member, out.response, out.response_payload);
+
+            // What "the predecessor errored" means for the next member: a
+            // member that never reached its endpoint's own admission at
+            // all (unknown bus, rejected) counts as an error for chaining
+            // purposes; one that executed, queued, or was stored does not.
+            // Mirrors c-RCP's own identical rule (src/mock.c:3197-3203),
+            // reduced to this file's own reachable outcome set (this mock
+            // has no DROPPED-shaped outcome distinct from REJECTED — every
+            // lifecycle-gated rejection here already reports
+            // regmap::RegMapErrc::request_rejected, see
+            // operational_requests_allowed()'s own call sites).
+            prev_errored = (out.result == make_error_code(DispatchErrc::unknown_bus) ||
+                            out.result == make_error_code(regmap::RegMapErrc::request_rejected));
+
+            // REQ-CANCEL-012: a member admitted as AdmitOutcome::Pending
+            // has its predecessor already behind it (this same loop
+            // already dispatched every earlier member), so its
+            // chain_exec_delay timer starts now, AND this same PendingRequest
+            // slot records its own chain_group/chain_position —
+            // unconditionally, exactly like chain_predecessor_done()
+            // itself, which is a no-op for a non-Chained entry (see that
+            // method's own doc comment, server.hpp): a standalone
+            // (non-chained) member that lands here is its own chain's own
+            // anchor, tagged chain_position 0, ready to cascade to any
+            // real successors admitted after it. Mirrors c-RCP's own
+            // identical block (src/mock.c:3205-3231) MINUS its own
+            // find_slot_on_stream() stream-scoping: this rewrite's own
+            // Server hosts exactly one registered endpoint per
+            // byte_bus_id (no per-stream endpoint duplication concept
+            // exists here — see this class's own header comment), so
+            // admission(byte_bus_id) alone is already unambiguous.
+            if (ep_for_bookkeeping && ep_for_bookkeeping->pending_count() > pending_before) {
+                const size_t last = last_pending_index(*ep_for_bookkeeping);
+                if (last < server::kMaxPending) {
+                    (void)ep_for_bookkeeping->chain_predecessor_done(last, /*now=*/0);
+                    if (server::PendingRequest* slot = ep_for_bookkeeping->pending(last)) {
+                        slot->chain_group    = chain_group;
+                        slot->chain_position = chain_position;
+                    }
+                }
+            }
+
+            out_results.push_back(std::move(out));
+        }
+
+        return out_results.size();
     }
 
     // suppress_response_per_stream_cfg — TC18 §12.7.7 Table 24
@@ -2025,7 +2705,8 @@ private:
                                        out_resp, out_resp_payload);
         }
         std::error_code admit_ec;
-        if (!admit_and_classify(gpio_admission_, req, payload, out_resp, out_resp_payload, admit_ec)) {
+        const std::vector<uint8_t> admit_frame = acf::encode_acf_abb(req, payload);
+        if (!admit_and_classify(gpio_admission_, admit_frame, req, out_resp, out_resp_payload, admit_ec)) {
             return admit_ec;
         }
         if (!req.op) {
@@ -2073,7 +2754,8 @@ private:
                                        out_resp, out_resp_payload);
         }
         std::error_code admit_ec;
-        if (!admit_and_classify(spi_admission_, req, payload, out_resp, out_resp_payload, admit_ec)) {
+        const std::vector<uint8_t> admit_frame = acf::encode_acf_abb(req, payload);
+        if (!admit_and_classify(spi_admission_, admit_frame, req, out_resp, out_resp_payload, admit_ec)) {
             return admit_ec;
         }
         uint8_t channel = 0;
@@ -2116,7 +2798,8 @@ private:
                                        out_resp, out_resp_payload);
         }
         std::error_code admit_ec;
-        if (!admit_and_classify(i2c_admission_, req, payload, out_resp, out_resp_payload, admit_ec)) {
+        const std::vector<uint8_t> admit_frame = acf::encode_acf_abb(req, payload);
+        if (!admit_and_classify(i2c_admission_, admit_frame, req, out_resp, out_resp_payload, admit_ec)) {
             return admit_ec;
         }
         auto ec = i2c_.handle_request(req.evt_op, payload, i2c_response_, i2c_acked_);
@@ -2176,7 +2859,8 @@ private:
                                        out_resp, out_resp_payload);
         }
         std::error_code admit_ec;
-        if (!admit_and_classify(adc_admission_, req, payload, out_resp, out_resp_payload, admit_ec)) {
+        const std::vector<uint8_t> admit_frame = acf::encode_acf_abb(req, payload);
+        if (!admit_and_classify(adc_admission_, admit_frame, req, out_resp, out_resp_payload, admit_ec)) {
             return admit_ec;
         }
 
@@ -2263,7 +2947,8 @@ private:
                                        out_resp, out_resp_payload);
         }
         std::error_code admit_ec;
-        if (!admit_and_classify(pwm_in_admission_, req, payload, out_resp, out_resp_payload, admit_ec)) {
+        const std::vector<uint8_t> admit_frame = acf::encode_acf_abb(req, payload);
+        if (!admit_and_classify(pwm_in_admission_, admit_frame, req, out_resp, out_resp_payload, admit_ec)) {
             return admit_ec;
         }
         // `payload` remains otherwise unused below (§13.7.6.3 carries no
@@ -2310,7 +2995,8 @@ private:
                                        out_resp, out_resp_payload);
         }
         std::error_code admit_ec;
-        if (!admit_and_classify(lin_admission_, req, payload, out_resp, out_resp_payload, admit_ec)) {
+        const std::vector<uint8_t> admit_frame = acf::encode_acf_abb(req, payload);
+        if (!admit_and_classify(lin_admission_, admit_frame, req, out_resp, out_resp_payload, admit_ec)) {
             return admit_ec;
         }
         auto ec = lin_.handle_request(req.evt_op, payload, lin_response_, lin_responded_);
@@ -2365,7 +3051,8 @@ private:
                                        out_resp, out_resp_payload);
         }
         std::error_code admit_ec;
-        if (!admit_and_classify(can_admission_, req, payload, out_resp, out_resp_payload, admit_ec)) {
+        const std::vector<uint8_t> admit_frame = acf::encode_acf_abb(req, payload);
+        if (!admit_and_classify(can_admission_, admit_frame, req, out_resp, out_resp_payload, admit_ec)) {
             return admit_ec;
         }
         can::CanDataFrame frame;
@@ -2434,7 +3121,8 @@ private:
                                        out_resp, out_resp_payload);
         }
         std::error_code admit_ec;
-        if (!admit_and_classify(uart_admission_, req, payload, out_resp, out_resp_payload, admit_ec)) {
+        const std::vector<uint8_t> admit_frame = acf::encode_acf_abb(req, payload);
+        if (!admit_and_classify(uart_admission_, admit_frame, req, out_resp, out_resp_payload, admit_ec)) {
             return admit_ec;
         }
         std::vector<uint8_t> data;
@@ -2496,7 +3184,8 @@ private:
                                        out_resp, out_resp_payload);
         }
         std::error_code admit_ec;
-        if (!admit_and_classify(iseled_admission_, req, payload, out_resp, out_resp_payload, admit_ec)) {
+        const std::vector<uint8_t> admit_frame = acf::encode_acf_abb(req, payload);
+        if (!admit_and_classify(iseled_admission_, admit_frame, req, out_resp, out_resp_payload, admit_ec)) {
             return admit_ec;
         }
         auto ec = iseled_.handle_request(req.evt_op, payload);
@@ -2562,7 +3251,8 @@ private:
                                        out_resp, out_resp_payload);
         }
         std::error_code admit_ec;
-        if (!admit_and_classify(mdio_admission_, req, payload, out_resp, out_resp_payload, admit_ec)) {
+        const std::vector<uint8_t> admit_frame = acf::encode_acf_abb(req, payload);
+        if (!admit_and_classify(mdio_admission_, admit_frame, req, out_resp, out_resp_payload, admit_ec)) {
             return admit_ec;
         }
         mdio::MdioRequest request;

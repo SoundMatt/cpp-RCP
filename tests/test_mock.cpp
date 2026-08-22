@@ -2347,3 +2347,429 @@ TEST_CASE("fragment_reassembler()/resp_queue_for_stream() fail toward nullptr fo
     REQUIRE(server.fragment_reassembler(stream_id) == nullptr);
     REQUIRE(server.resp_queue_for_stream(stream_id) == nullptr);
 }
+
+// ── AVTPDU frame-level multi-member dispatch (Phase 4/Phase 17 batch D2,
+// cpp-RCP issue #129 — Phase 4's fourth and FINAL batch) ────────────────────
+// Ported from c-RCP's tests/test_mock.c coverage for rcp_mock_server_
+// dispatch_frame()/_dispatch_frame_e2e() (REQ-MOCK-019/020/029,
+// REQ-E2E-033, REQ-CANCEL-012), reduced to this mock's own dispatch_frame()/
+// dispatch_frame_e2e() entry point shapes — see their own doc comments.
+
+namespace {
+
+// wrap_write is wrap_gpio_write()'s own generic sibling: builds a real
+// E2E-CRC-protected NTSCF frame for an arbitrary standard write request —
+// used below where more than one endpoint type needs an E2E-wrapped member
+// within the same frame (wrap_gpio_write() itself stays GPIO-OR-write-only,
+// unchanged, for its own pre-existing call sites above).
+std::vector<uint8_t> wrap_write(avtp::StreamId stream_id, avtp::ByteBusId byte_bus_id, uint8_t evt_op,
+                                 uint8_t transaction_num, const std::vector<uint8_t>& payload) {
+    acf::AcfMessageInfo info;
+    info.byte_bus_id     = byte_bus_id;
+    info.transaction_num = transaction_num;
+    info.op               = true;
+    info.evt_op           = evt_op;
+    return e2e::wrap_framed(/*is_ntscf_framed=*/true, kE2eHeaderOctet1, /*tu=*/false, stream_id,
+                             /*avtp_timestamp=*/std::nullopt, info, /*message_timestamp=*/std::nullopt, payload);
+}
+
+} // namespace
+
+TEST_CASE("dispatch_frame dispatches each ACF member of a multi-member frame to its own endpoint",
+          "[mock][frame][REQ-MOCK-019]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.set_i2c_response({0xDE, 0xAD});
+
+    auto req1 = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                  static_cast<uint8_t>(WriteSemantics::Or));
+    auto frame1 = acf::encode_acf_abb(req1, gpio::encode_gpio_payload(0x0000'000F));
+
+    // A 4-byte (already quadlet-aligned) payload — split_frame_members()
+    // relies on each non-final member's own declared acf_msg_length*4
+    // matching its real encoded byte count exactly to find where the next
+    // member starts; acf::encode_acf_abb() itself does not auto-pad an
+    // unaligned payload to that boundary (acf.hpp's own header comment:
+    // "padding has always been a caller-owned concern in this codec"), so
+    // every member built for one of THIS section's own combined frames
+    // uses a payload whose own header+payload length is already a multiple
+    // of 4 octets, sidestepping that caller-owned padding step entirely.
+    auto req2 = standard_request(mock::kI2cByteBusId, /*write=*/true, /*evt_op=*/0);
+    auto frame2 = acf::encode_acf_abb(req2, std::vector<uint8_t>{0xA0, 0x00, 0x00, 0x00});
+
+    std::vector<uint8_t> combined = frame1;
+    combined.insert(combined.end(), frame2.begin(), frame2.end());
+
+    std::vector<mock::FrameMemberResult> results;
+    const size_t dispatched = server.dispatch_frame(0, avtp::StreamId{}, combined, results);
+
+    REQUIRE(dispatched == 2);
+    REQUIRE(results.size() == 2);
+    REQUIRE_FALSE(results[0].result);
+    REQUIRE(results[0].byte_bus_id == mock::kGpioByteBusId);
+    REQUIRE(acf::response_kind_of(results[0].response) == acf::ResponseKind::WriteResponse);
+    REQUIRE(server.gpio().read() == 0x0000'000F);
+
+    REQUIRE_FALSE(results[1].result);
+    REQUIRE(results[1].byte_bus_id == mock::kI2cByteBusId);
+    REQUIRE(acf::response_kind_of(results[1].response) == acf::ResponseKind::ReadResponse);
+    REQUIRE(results[1].response_payload == std::vector<uint8_t>{0xDE, 0xAD});
+}
+
+TEST_CASE("dispatch_frame on a single-member frame matches calling dispatch() directly",
+          "[mock][frame][REQ-MOCK-019]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.set_i2c_response({0x11, 0x22});
+
+    auto req   = standard_request(mock::kI2cByteBusId, /*write=*/true, /*evt_op=*/0);
+    const std::vector<uint8_t> payload{0x55, 0x00, 0x00, 0x00}; // quadlet-aligned — see this section's own note above
+    auto frame = acf::encode_acf_abb(req, payload);
+
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame(0, avtp::StreamId{}, frame, results) == 1);
+    REQUIRE_FALSE(results[0].result);
+    REQUIRE(results[0].byte_bus_id == mock::kI2cByteBusId);
+    REQUIRE(results[0].response_payload == std::vector<uint8_t>{0x11, 0x22});
+
+    mock::Server direct;
+    REQUIRE_FALSE(direct.advance_to_rcp_configured());
+    direct.set_i2c_response({0x11, 0x22});
+    acf::AcfMessageInfo   direct_resp;
+    std::vector<uint8_t>  direct_payload;
+    REQUIRE_FALSE(direct.dispatch(0, req, payload, direct_resp, direct_payload));
+    REQUIRE(direct_payload == results[0].response_payload);
+}
+
+TEST_CASE("dispatch_frame returns 0 for a frame that does not parse as a well-formed "
+          "concatenation of ACF messages",
+          "[mock][frame][REQ-MOCK-020]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    const std::vector<uint8_t> garbage{0xFF, 0xFF, 0xFF};
+
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame(0, avtp::StreamId{}, garbage, results) == 0);
+    REQUIRE(results.empty());
+}
+
+TEST_CASE("dispatch_frame's unknown_bus outcome is defensive-only in this codebase — a member "
+          "split_frame_members() already accepted always decodes, given acf::decode_acf_abb()'s "
+          "own deliberately lenient contract",
+          "[mock][frame][REQ-MOCK-020]") {
+    // c-RCP's own equivalent test (test_dispatch_frame_reports_unknown_bus_
+    // for_undecodable_member, tests/test_mock.c) uses a member whose own
+    // declared pad (1) exceeds its own 0-octet body region to force
+    // rcp_acf_decode_abb() — a STRICT decoder — to reject it. This
+    // codebase's own acf::decode_acf_abb()/_decode_gbb() are deliberately
+    // LENIENT instead (acf.hpp's own TODO(phase1-followup) note: they hand
+    // back "everything from the header to the end of the buffer given"
+    // without validating `pad` against the body region at all) — combined
+    // with split_frame_members() already having validated this member's
+    // own acf_msg_length against the buffer before ever handing it to
+    // decode_acf_abb()/_gbb(), decode_and_dispatch()'s own decode call
+    // cannot actually fail for anything split_frame_members() has already
+    // accepted. DispatchErrc::unknown_bus (and this loop's own `decoded`
+    // check) is therefore unreachable through this exact pairing today —
+    // kept for classifier completeness (the same "not exercised by this
+    // file's own call sites, but still a real, correct branch" precedent
+    // admit_and_classify()'s own Pending/Cancellation branches already
+    // establish) in case a future, stricter acf::decode_acf_abb()/_gbb()
+    // makes it reachable. This test pins the CURRENT, lenient, documented
+    // behavior instead: the identical stimulus c-RCP rejects with is
+    // accepted here (a genuine, disclaimed conformance delta, not a bug).
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    std::vector<uint8_t> raw(acf::kAcfCommonHeaderLen, 0);
+    raw[0] = static_cast<uint8_t>(acf::kAcfMsgTypeAbb << 1); // type=ABB, len MSB=0
+    raw[1] = static_cast<uint8_t>(acf::kAcfCommonHeaderLen / 4); // 2 quadlets: 0 body octets
+    raw[2] = 0x40; // pad[7:6] = 01 -> pad=1, but body_len computes to 0
+    raw[3] = static_cast<uint8_t>(mock::kGpioByteBusId); // byte_bus_id low octet
+
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame(0, avtp::StreamId{}, raw, results) == 1);
+    REQUIRE(results[0].result != mock::make_error_code(mock::DispatchErrc::unknown_bus));
+    REQUIRE(results[0].byte_bus_id == mock::kGpioByteBusId);
+}
+
+TEST_CASE("dispatch_frame assigns REQ-CANCEL-012 chain_group/chain_position to Chained members "
+          "in frame order, and marks each one's predecessor already done",
+          "[mock][frame][REQ-CANCEL-012]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    // member0: an ordinary Standard write — this frame's own chain anchor
+    // (chain_group 1, chain_position 0), executes immediately.
+    auto anchor_req   = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                          static_cast<uint8_t>(WriteSemantics::Or));
+    auto anchor_frame = acf::encode_acf_abb(anchor_req, gpio::encode_gpio_payload(0));
+    // member1/member2: two successive Chained (0x01) followers, both
+    // continue-on-error (cs=false), both addressed to GPIO.
+    auto chained1 = request::encode_chained_member(mock::kGpioByteBusId, /*chain_exec_delay=*/0,
+                                                     /*cs=*/false, /*transaction_num=*/101);
+    auto chained2 = request::encode_chained_member(mock::kGpioByteBusId, /*chain_exec_delay=*/0,
+                                                     /*cs=*/false, /*transaction_num=*/102);
+
+    std::vector<uint8_t> combined = anchor_frame;
+    combined.insert(combined.end(), chained1.begin(), chained1.end());
+    combined.insert(combined.end(), chained2.begin(), chained2.end());
+
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame(0, avtp::StreamId{}, combined, results) == 3);
+
+    REQUIRE_FALSE(results[0].result); // anchor executed
+    REQUIRE(results[1].result == mock::make_error_code(mock::DispatchErrc::pending));
+    REQUIRE(results[2].result == mock::make_error_code(mock::DispatchErrc::pending));
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 2);
+
+    server::Endpoint* ep = server.admission(mock::kGpioByteBusId);
+    REQUIRE(ep != nullptr);
+    const server::PendingRequest* slot1 = nullptr;
+    const server::PendingRequest* slot2 = nullptr;
+    for (size_t i = 0; i < server::kMaxPending; ++i) {
+        if (const server::PendingRequest* s = ep->pending(i)) {
+            if (s->transaction_num == 101) slot1 = s;
+            if (s->transaction_num == 102) slot2 = s;
+        }
+    }
+    REQUIRE(slot1 != nullptr);
+    REQUIRE(slot2 != nullptr);
+    REQUIRE(slot1->chain_group != 0);
+    REQUIRE(slot1->chain_group == slot2->chain_group);
+    REQUIRE(slot1->chain_position == 1);
+    REQUIRE(slot2->chain_position == 2);
+    // Frame-splitting dispatch runs strictly in order, so by the time each
+    // Chained member's own admission finishes, its predecessor (the
+    // previous loop iteration) has already fully run — predecessor_done is
+    // therefore already true, only chain_exec_delay itself still gates it.
+    REQUIRE(slot1->predecessor_done);
+    REQUIRE(slot2->predecessor_done);
+}
+
+TEST_CASE("A ClearSingle member routed through dispatch_frame() cancels its target AND cascades "
+          "REQ-CANCEL-012's chain cascade to every successor at or after its own position",
+          "[mock][frame][REQ-CANCEL-012]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto anchor_frame = acf::encode_acf_abb(
+        standard_request(mock::kGpioByteBusId, /*write=*/true, static_cast<uint8_t>(WriteSemantics::Or)),
+        gpio::encode_gpio_payload(0));
+    auto chained1 = request::encode_chained_member(mock::kGpioByteBusId, 0, /*cs=*/false, /*transaction_num=*/101);
+    auto chained2 = request::encode_chained_member(mock::kGpioByteBusId, 0, /*cs=*/false, /*transaction_num=*/102);
+
+    std::vector<uint8_t> combined = anchor_frame;
+    combined.insert(combined.end(), chained1.begin(), chained1.end());
+    combined.insert(combined.end(), chained2.begin(), chained2.end());
+
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame(0, avtp::StreamId{}, combined, results) == 3);
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 2);
+
+    // Cancel transaction_num 101 (chain_position 1) — REQ-CANCEL-012's own
+    // cascade rule must also remove transaction_num 102 (chain_position 2,
+    // >= 1), even though the ClearSingle itself only ever names 101.
+    auto clear_frame = request::encode_clear_single(mock::kGpioByteBusId, /*clear_transaction_num=*/101,
+                                                      /*transaction_num=*/200);
+    std::vector<mock::FrameMemberResult> clear_results;
+    REQUIRE(server.dispatch_frame(0, avtp::StreamId{}, clear_frame, clear_results) == 1);
+    REQUIRE(clear_results[0].result == mock::make_error_code(mock::DispatchErrc::cancelled));
+    REQUIRE_FALSE(clear_results[0].response.rsp); // Canceled: no wire response (only NotFound builds one)
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 0);
+}
+
+TEST_CASE("A ClearSingle member naming an untracked transaction_num reports a genuine "
+          "REQUEST_NOT_FOUND error response",
+          "[mock][frame][REQ-CANCEL-012]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto clear_frame = request::encode_clear_single(mock::kGpioByteBusId, /*clear_transaction_num=*/9,
+                                                      /*transaction_num=*/1);
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame(0, avtp::StreamId{}, clear_frame, results) == 1);
+    REQUIRE(results[0].result == mock::make_error_code(mock::DispatchErrc::cancelled));
+    REQUIRE(acf::response_kind_of(results[0].response) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(results[0].response_payload.size() == 1);
+    REQUIRE(results[0].response_payload[0] == static_cast<uint8_t>(acf::WireErrorCode::RequestNotFound));
+}
+
+TEST_CASE("dispatch_frame reports chain_error for a Chained member with no predecessor within "
+          "its own frame",
+          "[mock][frame][REQ-CANCEL-012]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto chained = request::encode_chained_member(mock::kGpioByteBusId, 0, /*cs=*/false, /*transaction_num=*/1);
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame(0, avtp::StreamId{}, chained, results) == 1);
+    REQUIRE(results[0].result == mock::make_error_code(mock::DispatchErrc::chain_error));
+    REQUIRE(acf::response_kind_of(results[0].response) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(results[0].response_payload[0] == static_cast<uint8_t>(acf::WireErrorCode::ChainError));
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 0);
+}
+
+TEST_CASE("dispatch_frame aborts a Chained member whose predecessor errored and whose own cs "
+          "selected abort-on-error, and latches the abort for every member after it",
+          "[mock][frame][REQ-CANCEL-012]") {
+    // Server deliberately left HW_UNCONFIGURED: member0 (a Standard GPIO
+    // write) is rejected outright by operational_requests_allowed(),
+    // giving this frame a genuinely errored first member for member1's own
+    // cs=true (abort-on-error) to react to.
+    mock::Server server;
+
+    auto anchor_frame = acf::encode_acf_abb(
+        standard_request(mock::kGpioByteBusId, /*write=*/true, static_cast<uint8_t>(WriteSemantics::Or)),
+        gpio::encode_gpio_payload(0));
+    auto chained1 = request::encode_chained_member(mock::kGpioByteBusId, 0, /*cs=*/true, /*transaction_num=*/11);
+    // member2's own cs is false — proves the chain_aborted LATCH, not just
+    // this member's own cs, is what drives the abort once it has fired.
+    auto chained2 = request::encode_chained_member(mock::kGpioByteBusId, 0, /*cs=*/false, /*transaction_num=*/12);
+
+    std::vector<uint8_t> combined = anchor_frame;
+    combined.insert(combined.end(), chained1.begin(), chained1.end());
+    combined.insert(combined.end(), chained2.begin(), chained2.end());
+
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame(0, avtp::StreamId{}, combined, results) == 3);
+
+    REQUIRE(results[0].result == make_error_code(regmap::RegMapErrc::request_rejected));
+    REQUIRE(results[1].result == mock::make_error_code(mock::DispatchErrc::chain_aborted));
+    REQUIRE(acf::response_kind_of(results[1].response) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(results[1].response_payload[0] == static_cast<uint8_t>(acf::WireErrorCode::ChainAborted));
+    REQUIRE(results[2].result == mock::make_error_code(mock::DispatchErrc::chain_aborted));
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 0); // neither chained member was ever admitted
+}
+
+TEST_CASE("dispatch_frame_e2e independently CRC-verifies each member against its own addressed "
+          "endpoint (REQ-E2E-033) — one member's CRC failure does not affect its sibling",
+          "[mock][frame][e2e][REQ-E2E-033]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kGpioEndpointId - 1].ep_req_crc_enable = true;
+    server.registers().generic_configs[mock::kSpiEndpointId - 1].ep_req_crc_enable  = true;
+    server.set_spi_poci(/*channel=*/0, {0xAB});
+
+    const auto stream_id = e2e_stream(0x8001);
+    auto good = wrap_write(stream_id, mock::kGpioByteBusId, static_cast<uint8_t>(WriteSemantics::Or),
+                            /*transaction_num=*/1, gpio::encode_gpio_payload(0x0000'00FF));
+    auto bad  = wrap_write(stream_id, mock::kSpiByteBusId, /*evt_op=*/0, /*transaction_num=*/2,
+                            std::vector<uint8_t>{0x01, 0x00, 0x00, 0x00}); // quadlet-aligned, see this section's own note
+    bad[bad.size() - 1] ^= 0xFF; // corrupt SPI member's own trailing CRC byte
+
+    std::vector<uint8_t> combined = good;
+    combined.insert(combined.end(), bad.begin(), bad.end());
+
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame_e2e(0, stream_id, /*sequence_num=*/0, combined, results) == 2);
+
+    REQUIRE_FALSE(results[0].result);
+    REQUIRE(results[0].byte_bus_id == mock::kGpioByteBusId);
+    REQUIRE(server.gpio().read() == 0x0000'00FF);
+
+    REQUIRE(results[1].result == e2e::make_error_code(e2e::E2eErrc::crc_error));
+    REQUIRE(results[1].byte_bus_id == mock::kSpiByteBusId);
+    REQUIRE(acf::response_kind_of(results[1].response) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(results[1].response_payload[0] == static_cast<uint8_t>(acf::WireErrorCode::PociFailure));
+}
+
+TEST_CASE("dispatch_frame_e2e evaluates its sequence gate exactly ONCE for the whole frame, "
+          "rejecting every member together on a replay",
+          "[mock][frame][e2e][REQ-E2E-028][REQ-E2E-029]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kGpioEndpointId - 1].ep_req_crc_enable = true;
+    server.registers().generic_configs[mock::kSpiEndpointId - 1].ep_req_crc_enable  = true;
+    server.set_spi_poci(/*channel=*/0, {0xCD});
+
+    const auto stream_id = e2e_stream(0x8002);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id      = stream_id;
+    cfg.rx_enforce_seq = true;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    auto m1 = wrap_write(stream_id, mock::kGpioByteBusId, static_cast<uint8_t>(WriteSemantics::Or),
+                          /*transaction_num=*/1, gpio::encode_gpio_payload(0x0000'000F));
+    auto m2 = wrap_write(stream_id, mock::kSpiByteBusId, /*evt_op=*/0, /*transaction_num=*/2,
+                          std::vector<uint8_t>{0x02, 0x00, 0x00, 0x00}); // quadlet-aligned
+    std::vector<uint8_t> combined = m1;
+    combined.insert(combined.end(), m2.begin(), m2.end());
+
+    std::vector<mock::FrameMemberResult> first;
+    REQUIRE(server.dispatch_frame_e2e(0, stream_id, /*sequence_num=*/7, combined, first) == 2);
+    REQUIRE_FALSE(first[0].result);
+    REQUIRE_FALSE(first[1].result);
+    REQUIRE(server.gpio().read() == 0x0000'000F);
+
+    // A second frame reusing the SAME sequence_num (fwd_distance 0) must
+    // reject BOTH members together, before either is even CRC-checked —
+    // proves the gate ran once per FRAME, not once per member (a per-member
+    // gate would spuriously reject only the 2nd+ member against the 1st
+    // member's own just-advanced tracker state).
+    auto m3 = wrap_write(stream_id, mock::kGpioByteBusId, static_cast<uint8_t>(WriteSemantics::Or),
+                          /*transaction_num=*/3, gpio::encode_gpio_payload(0xFFFF'FFFF));
+    auto m4 = wrap_write(stream_id, mock::kSpiByteBusId, /*evt_op=*/0, /*transaction_num=*/4,
+                          std::vector<uint8_t>{0x03, 0x00, 0x00, 0x00}); // quadlet-aligned
+    std::vector<uint8_t> combined2 = m3;
+    combined2.insert(combined2.end(), m4.begin(), m4.end());
+
+    std::vector<mock::FrameMemberResult> second;
+    REQUIRE(server.dispatch_frame_e2e(0, stream_id, /*sequence_num=*/7, combined2, second) == 2);
+    REQUIRE(second[0].result == mock::make_error_code(mock::DispatchErrc::seq_error));
+    REQUIRE(second[1].result == mock::make_error_code(mock::DispatchErrc::seq_error));
+    REQUIRE_FALSE(second[0].response.rsp);
+    REQUIRE_FALSE(second[1].response.rsp);
+    REQUIRE(server.gpio().read() == 0x0000'000F); // unchanged — never dispatched
+}
+
+TEST_CASE("dispatch_frame_e2e routes a member split across an intermediate and a final fragment "
+          "(REQ-E2E-038/039) — a strict superset of c-RCP's own dispatch_frame_e2e(), which has no "
+          "frame-level fragment-aware counterpart at all",
+          "[mock][frame][e2e][fragment][REQ-E2E-038][REQ-E2E-039]") {
+    // I2C rather than GPIO: build_fragments() itself does not pad each
+    // wire segment to a quadlet boundary (never needed before this batch —
+    // every pre-existing call site fed its own output to dispatch_e2e_
+    // fragment() as an ISOLATED buffer, never concatenated with a sibling
+    // member the way this test's own combined frame needs). GPIO's own
+    // payload is fixed at exactly 4 bytes (gpio.hpp's own §13.7.4.3 rule),
+    // too small to split into two nonzero, independently quadlet-aligned
+    // segments at all. I2C's own payload has no such fixed-width
+    // constraint (rcp/i2c.hpp — a raw byte stream, any length), so an
+    // 8-byte payload split into two 4-byte segments (max_fragment_payload
+    // == 4) keeps BOTH segments naturally quadlet-aligned (header(8) + 4 ==
+    // 12 octets for the intermediate fragment; header(8) + 4 + CRC(4) == 16
+    // octets for the final one) with no extra padding logic needed at all.
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kI2cEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = e2e_stream(0x8003);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id = stream_id;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    const std::vector<uint8_t> payload{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+    auto frames = build_fragments(stream_id, mock::kI2cByteBusId, /*transaction_num=*/5, /*write=*/true,
+                                   /*evt_op=*/0, /*final_read_size=*/0, payload, /*max_fragment_payload=*/4);
+    REQUIRE(frames.size() == 2);
+    std::vector<uint8_t> combined = frames[0];
+    combined.insert(combined.end(), frames[1].begin(), frames[1].end());
+
+    // Both fragments live in the SAME frame, so this one dispatch_frame_e2e()
+    // call already runs member1 (the completing final fragment) to
+    // completion by the time it returns — unlike dispatch_e2e_fragment()'s
+    // own two-SEPARATE-calls tests above, there is no "in between" state to
+    // observe mid-frame; only the two members' own final results are.
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame_e2e(0, stream_id, /*sequence_num=*/0, combined, results) == 2);
+
+    REQUIRE(results[0].result == mock::make_error_code(mock::DispatchErrc::fragment_pending));
+    REQUIRE_FALSE(results[0].response.rsp);
+
+    REQUIRE_FALSE(results[1].result);
+    REQUIRE(acf::response_kind_of(results[1].response) == acf::ResponseKind::ReadResponse);
+    REQUIRE(server.i2c().last_sent() == payload); // the reassembled 8-byte payload reached I2cEndpoint whole
+}
