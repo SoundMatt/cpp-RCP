@@ -73,11 +73,24 @@
 // endpoint set. dispatch() below is the single
 // request/response entry point a test drives, decoding the standard
 // request kind's evt[2:0]/op fields (rcp/acf.hpp, v2.0.0) the same way a
-// real request-dispatch loop would. Conditional request kinds (v2.5.0),
-// E2E CRC safe points (v2.6.0), and watchdog wiring (v2.10.0) are
-// deliberately layered on top by rcp/sim.hpp rather than folded in here —
-// this header's own scope is the server model and a representative
-// endpoint set, matching the roadmap's own split between the two files.
+// real request-dispatch loop would. Conditional request kinds (v2.5.0)
+// remain rcp/sim.hpp's own concern, layered on top rather than folded in
+// here.
+//
+// Phase 4/Phase 17 batch C (cpp-RCP issue #129) adds dispatch_e2e() below:
+// the single-member E2E CRC-aware counterpart to dispatch() above, finally
+// wiring rcp/e2e.hpp's RxSequenceGuard/StreamFaultTracker/RxWatchdog
+// primitives into a real dispatch path — the exact gap e2e.hpp's own file
+// header names ("wire RxSequenceGuard, StreamFaultTracker, or StreamStatus
+// into rcp/mock.hpp's dispatch ... is Phase 4 (server/dispatch) scope,
+// matching c-RCP's own mock.c wiring"). Ported from c-RCP's
+// rcp_mock_server_dispatch_e2e() (src/mock.c:1892-2038). See dispatch_e2e()'s
+// own doc comment for the full contract. rcp/sim.hpp's own watchdog::Manager
+// (v2.10.0) is a separate, RequestLedger-keyed driver for the PLAIN
+// dispatch() path's own watchdog needs and is untouched by this batch —
+// dispatch_e2e()'s own kick/overflow wiring below is a self-contained,
+// server::Endpoint-keyed primitive scoped to just the E2E dispatch surface
+// this batch adds (see dispatch_e2e()'s own doc comment for why).
 //
 // Whole-register-map wire serialization remains out of scope, per
 // rcp/regmap.hpp's own header comment — EP0's dispatch()-level read
@@ -107,6 +120,7 @@
 #include <rcp/avtp.hpp>
 #include <rcp/can.hpp>
 #include <rcp/discovery.hpp>
+#include <rcp/e2e.hpp>
 #include <rcp/endpoint.hpp>
 #include <rcp/gpio.hpp>
 #include <rcp/i2c.hpp>
@@ -254,6 +268,19 @@ enum class DispatchErrc : int {
     cancelled = 3, // a cancellation request was applied — likewise unreachable through dispatch_*()
                     // below, same reason as `pending` above.
     suspended = 4, // REQ-PWRMODE-028: admission_suspended() was set; the frame was never even inspected
+
+    // Phase 4/Phase 17 batch C (cpp-RCP issue #129): dispatch_e2e()'s own
+    // two additional non-{queued,pending,cancelled,suspended} outcomes.
+    seq_error = 5, // REQ-E2E-028/029: RxSequenceGuard rejected sequence_num before the request was even
+                    // inspected — mirrors c-RCP's RCP_MOCK_DISPATCH_SEQ_ERROR (src/mock.c:3106-3112).
+                    // Same "out_resp left zeroed" no-wire-response contract as queued/pending/
+                    // cancelled/suspended above.
+    stream_faulted = 6, // REQ-E2E-021: StreamFaultTracker already had stream_id latched faulted from an
+                    // earlier CRC error — mirrors c-RCP's RCP_MOCK_DISPATCH_STREAM_FAULTED
+                    // (src/mock.c:1926-1934). UNLIKE every other value in this enum, this ONE outcome
+                    // DOES build a genuine wire ErrorResponse (WireErrorCode::PociFailure) when the
+                    // frame was at least long enough to recover a transaction_num from — see
+                    // dispatch_e2e()'s own doc comment.
 };
 
 inline const std::error_category& dispatch_category() noexcept {
@@ -265,6 +292,8 @@ inline const std::error_category& dispatch_category() noexcept {
             case DispatchErrc::pending:   return "rcp/mock: request stored, awaiting its execution condition";
             case DispatchErrc::cancelled: return "rcp/mock: cancellation request applied";
             case DispatchErrc::suspended: return "rcp/mock: admission suspended";
+            case DispatchErrc::seq_error: return "rcp/mock: E2E sequence-number gate rejected the request";
+            case DispatchErrc::stream_faulted: return "rcp/mock: stream already latched faulted by an earlier E2E CRC error";
             default:                      return "rcp/mock: unknown dispatch outcome";
             }
         }
@@ -829,6 +858,252 @@ public:
                                    out_resp, out_resp_payload);
     }
 
+    // dispatch_e2e — Phase 4/Phase 17 batch C (cpp-RCP issue #129): the E2E
+    // CRC-aware counterpart to dispatch() above, ported from c-RCP's
+    // rcp_mock_server_dispatch_e2e() (src/mock.c:1892-2038). Finally wires
+    // rcp/e2e.hpp's RxSequenceGuard/StreamFaultTracker/RxWatchdog primitives
+    // into a real dispatch path — the exact deferral e2e.hpp's own file
+    // header names explicitly (see this class's own header comment above).
+    //
+    // Unlike dispatch() (which takes an already-decoded req+payload pair),
+    // this takes one raw, already-framed, potentially E2E-wrapped ACF
+    // member's own wire bytes (`frame`): the E2E CRC coverage buffer
+    // (e2e::coverage_buffer) is computed over the raw header bytes
+    // themselves, so this entry point cannot decode first and check second
+    // the way every dispatch_*() in this file does. byte_bus_id is
+    // recovered by peeking `frame`'s own Message Info header directly
+    // (always in the clear — the CRC trailer sits AFTER it, never inside
+    // it) rather than taking it as a separate caller-supplied parameter the
+    // way c-RCP's own dispatch_e2e() does — a caller of THIS entry point
+    // has not necessarily pre-decoded anything yet, unlike c-RCP's own
+    // dispatch_frame_e2e(), which already peeked every member's byte_bus_id
+    // for its own splitting pass before calling dispatch_e2e() per member.
+    //
+    // ONE public entry point, not ten dispatch_<type>_e2e() siblings: TC18's
+    // own ep_req_crc_enable (extraction §12.7.1, regmap::EndpointGenericConfig)
+    // is a per-ENDPOINT, not per-endpoint-TYPE, toggle — exactly the same
+    // "no type-specific branching needed" property dispatch() above already
+    // exploits for its own single-entry-point shape — and c-RCP's own
+    // mock.c has exactly ONE rcp_mock_server_dispatch_e2e(), not ten, for
+    // the identical reason (it takes byte_bus_id as a parameter rather than
+    // being duplicated per handler). EP0 gets no E2E variant at all:
+    // byte_bus_id 0 never has a regs_.generic_configs[] row (that table is
+    // sized to this mock's ten OPERATIONAL endpoints only, matching this
+    // class's own pre-existing "EP0 is not one of this file's ten
+    // operational endpoints" exclusion), so it always takes the "plain
+    // command mode" branch below and lands on dispatch()'s own existing
+    // dispatch_ep0() path unchanged — matching c-RCP's own mock.c, which
+    // never registers EP0 as an rcp_mock_endpoint_slot_t either.
+    //
+    // This mock has no outer AVTP/NTSCF/TSCF framing decode of its own
+    // (same disclaimer dispatch()'s own doc comment and every dispatch_*()
+    // in this file already carry) — every E2E CRC coverage computed below
+    // is implicitly NTSCF-framed (avtp_timestamp/tu forced to their
+    // documented NTSCF stand-ins via e2e::unwrap_framed,
+    // kE2eHeaderOctet1Placeholder standing in for the real sv|version|r
+    // octet), the same simplification c-RCP's own mock.c makes via its
+    // RCP_MOCK_E2E_HEADER_OCTET1_PLACEHOLDER/_TU_PLACEHOLDER constants
+    // (src/mock.c:36-37). A caller wanting wire-exact TSCF-framed E2E
+    // coverage calls e2e::unwrap()/wrap() directly with real values, the
+    // same escape hatch this file's other "no clock of its own"
+    // disclaimers already establish.
+    //
+    // `sequence_num` is the enclosing AVTPDU's own sequence_num field
+    // (already decoded by whatever caller demultiplexed this frame down to
+    // one ACF member). REQ-E2E-028/029's own admission gate
+    // (seq_gate_admits(), below) is evaluated once per call here, at the
+    // single-member granularity this file's own dispatch composition
+    // currently supports — batch D's own frame-level, multi-member
+    // dispatch_frame_e2e() will evaluate it once per FRAME instead
+    // (mirroring c-RCP's own frame_seq_gate_admits(), src/mock.c:3038-3063),
+    // reusing this SAME seq_trackers_/RxSequenceGuard state rather than a
+    // second, parallel instance — see seq_gate_admits()'s own doc comment.
+    //
+    // Returns the same std::error_code every failing/non-executing step
+    // below produces (DispatchErrc::seq_error/stream_faulted, or
+    // e2e::E2eErrc::crc_error/short_frame, joining dispatch()'s own
+    // existing outcome set) — out_resp/out_resp_payload follow the exact
+    // same "left default-constructed iff no outcome sends anything on the
+    // wire" contract dispatch()'s own doc comment already establishes,
+    // with DispatchErrc::stream_faulted as the one addition that DOES
+    // build a genuine ErrorResponse despite joining that same enum (see
+    // DispatchErrc::stream_faulted's own doc comment).
+    std::error_code dispatch_e2e(size_t client, avtp::StreamId stream_id, uint8_t sequence_num,
+                                  const std::vector<uint8_t>& frame, acf::AcfMessageInfo& out_resp,
+                                  std::vector<uint8_t>& out_resp_payload) noexcept {
+        out_resp = acf::AcfMessageInfo{};
+        out_resp_payload.clear();
+
+        // REQ-WDG-010: kicked unconditionally, before any check below —
+        // TC18 §12.7.7's own rule is about RECEIPT ("the watchdog is reset
+        // with each request received from this RC Client"), not successful
+        // validation or admission (c-RCP's rcp_mock_server_dispatch_e2e(),
+        // src/mock.c:1907-1914). This mock has no clock of its own (same
+        // disclaimer every dispatch_*() in this file already carries), so
+        // now_ms is always 0 — a caller that wants real elapsed-time
+        // overflow detection drives check_watchdog_overflow() below with a
+        // real now_ms itself.
+        rx_watchdog_kick(stream_id, /*now_ms=*/0);
+
+        // REQ-E2E-021 (TC18 §12.7.7 Table 24, rx_enforce_e2e's "stream is
+        // blocked until released" consequence): checked before
+        // plain-command-mode delegation, CRC validation, or admission — a
+        // whole-STREAM property, applying uniformly regardless of the
+        // addressed endpoint's own ep_req_crc_enable (c-RCP's
+        // rcp_mock_server_dispatch_e2e(), src/mock.c:1916-1934).
+        if (stream_fault_tracker_.is_faulted(stream_id.to_u64())) {
+            set_error_response_from_frame(frame, acf::WireErrorCode::PociFailure, out_resp, out_resp_payload);
+            return make_error_code(DispatchErrc::stream_faulted);
+        }
+
+        if (frame.size() < acf::kAcfCommonHeaderLen) {
+            // Too short to even recover byte_bus_id — nothing to route or
+            // build a diagnostic response against (mirrors this class's
+            // own set_error_response_from_frame()'s identical short-frame
+            // "leave it zeroed" disposition below).
+            return make_error_code(regmap::RegMapErrc::invalid_parameter);
+        }
+        acf::AcfMessageInfo peek;
+        acf::decode_acf_message_info(frame.data(), peek);
+
+        // "plain command mode" (TC18 §13.6): an endpoint with
+        // ep_req_crc_enable not set, or a byte_bus_id this mock hosts no
+        // operational endpoint at (including EP0 — see this method's own
+        // doc comment), is untouched by this function — delegate outright
+        // to dispatch()'s own existing byte_bus_id routing, unchanged
+        // (c-RCP's rcp_mock_server_dispatch_e2e(), src/mock.c:1936-1951).
+        const bool crc_enabled = (peek.byte_bus_id >= 1 &&
+                                   static_cast<size_t>(peek.byte_bus_id) <= regs_.generic_configs.size())
+                                      ? regs_.generic_configs[peek.byte_bus_id - 1].ep_req_crc_enable
+                                      : false;
+        if (!crc_enabled) {
+            return decode_and_dispatch(client, frame, stream_id, out_resp, out_resp_payload);
+        }
+
+        // REQ-E2E-028/029: the sequence-number admission gate, evaluated
+        // before CRC unwrap — matches c-RCP's own frame_seq_gate_admits()
+        // (src/mock.c:3038-3063), folded into this single-member entry
+        // point per this batch's own scope (see this method's own doc
+        // comment above for why a frame-level, multi-member version is
+        // batch D's job instead). A rejected sequence number gets NO wire
+        // response at all (TC18 leaves the request unfiled, not merely
+        // un-acknowledged), mirroring RCP_MOCK_DISPATCH_SEQ_ERROR's own
+        // identical "response left zeroed" contract (src/mock.c:3106-3112).
+        if (!seq_gate_admits(stream_id, sequence_num)) {
+            return make_error_code(DispatchErrc::seq_error);
+        }
+
+        const e2e::UnwrapResult uw =
+            e2e::unwrap_framed(/*is_ntscf_framed=*/true, kE2eHeaderOctet1Placeholder, /*tu=*/false,
+                                stream_id, /*avtp_timestamp=*/std::nullopt, frame);
+        if (uw.ec) {
+            // Not executed, not even admitted — TC18 §13.6. short_frame
+            // builds no response at all (its own e2e::wire_error_code() is
+            // std::nullopt); crc_error builds a POCI_FAILURE error
+            // response, mirroring c-RCP's rcp_e2e_wire_error()/
+            // rcp_acf_build_error_response() pairing (src/mock.c:1957-1968).
+            if (uw.ec == e2e::make_error_code(e2e::E2eErrc::crc_error)) {
+                out_resp         = acf::make_response(peek, acf::ResponseKind::ErrorResponse);
+                out_resp_payload = acf::encode_error_payload(acf::WireErrorCode::PociFailure);
+            }
+
+            // REQ-E2E-021/046: latch stream_fault_tracker_'s/
+            // stream_status_'s own CRC causes — resolved against
+            // regs_.request_streams[]'s own REAL rx_enforce_e2e bit (not a
+            // test-only per-endpoint stand-in the way c-RCP's own
+            // slot->rx_enforce_e2e is — this mock already has the genuine
+            // register-map table wired, see this class's own header
+            // comment on batch B's request_stream_cfg storage).
+            const uint8_t stream_index = regmap::request_stream_cfg::resolve_index(
+                regs_.request_streams.data(), regs_.request_streams.size(), stream_id.to_u64());
+            const bool rx_enforce_e2e =
+                (stream_index != 0) ? regs_.request_streams[stream_index - 1].rx_enforce_e2e : false;
+            (void)stream_fault_tracker_.on_crc_error(stream_id.to_u64(), rx_enforce_e2e);
+            if (stream_index != 0) stream_status_[stream_index - 1].note_crc_error(rx_enforce_e2e);
+            // REQ-E2E-045: rx_enforce_e2e's own second, independent
+            // consequence ("Safe state will be entered") is intentionally
+            // not actuated here — this mock has no broadcast-safe-state
+            // actuator driving every endpoint bound to a stream through
+            // e2e::endpoint_in_configured_safe_state()'s own
+            // SequencerTable/ForceHighImpedance machinery (a materially
+            // separate feature outside this batch's own scope);
+            // e2e::crc_error_should_enter_safe_state() is available for a
+            // caller that wants to compute the verdict itself.
+
+            return uw.ec;
+        }
+
+        // CRC validated: dispatch the unwrapped header-and-payload region
+        // exactly as dispatch() would have dispatched it directly.
+        return decode_and_dispatch(client, uw.acf_frame, stream_id, out_resp, out_resp_payload);
+    }
+
+    // stream_fault_tracker gives direct, mutable access to this Server's
+    // own e2e::StreamFaultTracker (REQ-E2E-021) — the same "expose the real
+    // subsystem object, don't wrap every one of its methods" convention
+    // admission()/gpio()/etc. above already establish, so a test may
+    // directly pre-fault or reset() a stream_id without driving a real CRC
+    // failure through dispatch_e2e() first.
+    e2e::StreamFaultTracker& stream_fault_tracker() noexcept { return stream_fault_tracker_; }
+
+    // stream_rx_blocked is the REQ-E2E-046 rx_stream_status aggregate read
+    // for stream_id — mirrors c-RCP's rcp_mock_server_stream_status_rx_blocked()
+    // (src/mock.c:981-989). False, not an error, for an unresolvable
+    // stream_id (no set_request_stream_cfg() row names it).
+    bool stream_rx_blocked(avtp::StreamId stream_id) const noexcept {
+        const uint8_t stream_index = regmap::request_stream_cfg::resolve_index(
+            regs_.request_streams.data(), regs_.request_streams.size(), stream_id.to_u64());
+        return stream_index != 0 && stream_status_[stream_index - 1].rx_blocked();
+    }
+
+    // check_watchdog_overflow evaluates stream_id's own e2e::RxWatchdog
+    // against regs_.request_streams[]'s own live rx_wd_enable/
+    // rx_wd_timeout_interval/rx_wd_safestate_enable and `now_ms` — mirrors
+    // c-RCP's rcp_mock_server_check_watchdog() (src/mock.c:991-1021) in
+    // purpose, adapted to this mock's own stateful e2e::RxWatchdog (kicked
+    // by dispatch_e2e() above) rather than c-RCP's caller-supplied
+    // elapsed_since_last_kick_ms. On a genuine newly-latching overflow
+    // (REQ-WDG-*, gated on cfg.rx_wd_safestate_enable, the same "a register
+    // existing does not mean the behavior it gates is on" rule every other
+    // *_safestate_enable check in this codebase already applies), purges
+    // every operational endpoint bound to this stream (regs_.ep_id_mapping's
+    // own request_stream_index — REQ-RMAP-052) via that endpoint's own
+    // server::Endpoint::watchdog_purge() (this class's own pre-existing
+    // watchdog_purge(byte_bus_id) above) — the "purge normal, retain
+    // safety" rule e2e::apply_watchdog_overflow expresses against a
+    // request::RequestLedger, applied per server::Endpoint instead, since
+    // this mock's own admission storage IS server::Endpoint, not
+    // request::RequestLedger (see this class's own header comment on why
+    // rcp/sim.hpp's own watchdog::Manager, which IS RequestLedger-keyed,
+    // is not reused here). Latches stream_status_[]'s own wd cause
+    // (REQ-E2E-046) every call, not just on overflow — same "checked every
+    // time" reasoning frame_seq_gate_admits()/seq_gate_admits() already
+    // apply to the sequence cause. Returns false, out_purged_count left at
+    // 0, for an unresolvable stream_id.
+    bool check_watchdog_overflow(avtp::StreamId stream_id, uint64_t now_ms, size_t& out_purged_count) noexcept {
+        out_purged_count = 0;
+        const uint8_t stream_index = regmap::request_stream_cfg::resolve_index(
+            regs_.request_streams.data(), regs_.request_streams.size(), stream_id.to_u64());
+        if (stream_index == 0) return false;
+
+        const regmap::RequestStreamConfig& cfg = regs_.request_streams[stream_index - 1];
+        e2e::RxWatchdog&                    wd  = rx_watchdogs_[stream_index - 1];
+        const bool overflowed_now = !wd.in_safe_state() && wd.overflowed(cfg, now_ms);
+        const bool enter_safe_state = overflowed_now && cfg.rx_wd_safestate_enable;
+
+        stream_status_[stream_index - 1].note_wd(enter_safe_state);
+
+        if (enter_safe_state) {
+            wd.enter_safe_state();
+            for (const auto& entry : regs_.ep_id_mapping) {
+                if (entry.request_stream_index == stream_index) {
+                    out_purged_count += watchdog_purge(entry.byte_bus_id);
+                }
+            }
+        }
+        return true;
+    }
+
 private:
     // set_error_response is the single place every dispatch_*() error path
     // below builds an ErrorResponse header AND its Table 27 error-code
@@ -840,6 +1115,118 @@ private:
         out_resp         = acf::make_response(req, acf::ResponseKind::ErrorResponse);
         out_resp_payload = acf::encode_error_payload(wire_error_code_for(ec));
         return ec;
+    }
+
+    // kE2eHeaderOctet1Placeholder mirrors c-RCP's own RCP_MOCK_E2E_HEADER_
+    // OCTET1_PLACEHOLDER (src/mock.c:36) — this mock has no outer NTSCF/
+    // TSCF header decode of its own (see dispatch()'s own doc comment on
+    // the identical "implicit NTSCF header, no clock of its own"
+    // simplification), so there is no real sv|version|r octet to thread
+    // through E2E's own CRC coverage here; 0x00 is a fixed, disclaimed
+    // stand-in, not a TC18-derived value. A caller wanting wire-exact CRC
+    // coverage against a genuine NTSCF/TSCF header calls e2e::unwrap()/
+    // wrap() directly with the real octet.
+    static constexpr uint8_t kE2eHeaderOctet1Placeholder = 0x00;
+
+    // set_error_response_from_frame is set_error_response()'s own
+    // Phase 4/Phase 17 batch C sibling for the E2E dispatch paths above,
+    // which reject a request before ever decoding it into a real
+    // AcfMessageInfo — mirrors c-RCP's own repeated
+    // `if (request_len >= 8 && rcp_acf_unpack_header(...) == RCP_ACF_OK)`
+    // guard (src/mock.c:1928-1932/1964-1967/2097-2101/2131-2135): peeks
+    // just enough of `frame`'s own Message Info header to recover
+    // byte_bus_id/transaction_num for a genuine ErrorResponse, or leaves
+    // out_resp/out_resp_payload at their default "nothing to send" shape
+    // if `frame` is too short to even contain that header.
+    static void set_error_response_from_frame(const std::vector<uint8_t>& frame, acf::WireErrorCode code,
+                                                acf::AcfMessageInfo& out_resp,
+                                                std::vector<uint8_t>& out_resp_payload) noexcept {
+        out_resp = acf::AcfMessageInfo{};
+        out_resp_payload.clear();
+        if (frame.size() < acf::kAcfCommonHeaderLen) return;
+        acf::AcfMessageInfo peek;
+        acf::decode_acf_message_info(frame.data(), peek);
+        out_resp         = acf::make_response(peek, acf::ResponseKind::ErrorResponse);
+        out_resp_payload = acf::encode_error_payload(code);
+    }
+
+    // decode_and_dispatch is dispatch_e2e()'s own shared delegation tail —
+    // both its "plain command mode" branch (an endpoint with
+    // ep_req_crc_enable not set) and its "CRC validated" branch decode a
+    // raw ACF_ABB/ACF_GBB frame into a real AcfMessageInfo+payload pair and
+    // hand it to dispatch() unchanged, exactly as c-RCP's own
+    // rcp_mock_server_dispatch_e2e() delegates to dispatch_plain() at both
+    // of its own two identical call sites (src/mock.c:1949-1950/2034-2035).
+    // A decode failure (too short, or an unrecognized acf_msg_type) leaves
+    // out_resp/out_resp_payload at their default "nothing to send" shape,
+    // matching every other malformed-input disposition in this file.
+    std::error_code decode_and_dispatch(size_t client, const std::vector<uint8_t>& frame,
+                                         avtp::StreamId stream_id, acf::AcfMessageInfo& out_resp,
+                                         std::vector<uint8_t>& out_resp_payload) noexcept {
+        out_resp = acf::AcfMessageInfo{};
+        out_resp_payload.clear();
+        if (frame.empty()) return avtp::make_error_code(avtp::AvtpErrc::short_buffer);
+
+        acf::AcfMessageInfo   req;
+        std::vector<uint8_t>  payload;
+        std::error_code       ec;
+        if (acf::peek_acf_msg_type(frame.data()) == acf::kAcfMsgTypeGbb) {
+            uint64_t message_timestamp = 0;
+            ec = acf::decode_acf_gbb(frame.data(), frame.size(), req, message_timestamp, payload);
+        } else {
+            ec = acf::decode_acf_abb(frame.data(), frame.size(), req, payload);
+        }
+        if (ec) return ec;
+
+        return dispatch(client, req, payload, out_resp, out_resp_payload, stream_id);
+    }
+
+    // seq_gate_admits is this file's own single-member counterpart to
+    // c-RCP's frame_seq_gate_admits() (src/mock.c:3038-3063,
+    // REQ-E2E-028/029) — see dispatch_e2e()'s own doc comment for why this
+    // batch folds the check into single-member dispatch rather than a
+    // frame-level pass (batch D's own job), and for the state
+    // (seq_trackers_/stream_status_) a later frame-level pass will reuse
+    // unchanged. Resolves stream_id against regs_.request_streams[], then
+    // evaluates e2e::RxSequenceGuard::evaluate() against the resolved
+    // row's own rx_enforce_seq/rx_seq_safestate_enable, latching
+    // stream_status_[]'s own seq cause (REQ-E2E-046) every call — same
+    // "checked every time, not just on rejection" reasoning c-RCP's own
+    // frame_seq_gate_admits() already applies. An unresolvable stream_id
+    // admits unconditionally (fails toward no action, the same disposition
+    // every other resolve_index() call site in this file already uses).
+    // REQ-E2E-029's own full "bring all endpoints to safety state" stream-
+    // wide broadcast on result.enter_safe_state is NOT actuated here — see
+    // this method's own call site in dispatch_e2e() for why (no
+    // broadcast-safe-state actuator exists in this file yet); the
+    // observable REQ-E2E-046 rx_stream_status latch above is this mock's
+    // own currently-implemented half of that consequence.
+    bool seq_gate_admits(avtp::StreamId stream_id, uint8_t sequence_num) noexcept {
+        const uint8_t stream_index = regmap::request_stream_cfg::resolve_index(
+            regs_.request_streams.data(), regs_.request_streams.size(), stream_id.to_u64());
+        if (stream_index == 0) return true;
+
+        const regmap::RequestStreamConfig& cfg    = regs_.request_streams[stream_index - 1];
+        const e2e::SeqResult                result = seq_trackers_[stream_index - 1].evaluate(cfg, sequence_num);
+        stream_status_[stream_index - 1].note_seq(result.enter_safe_state);
+        return result.accept;
+    }
+
+    // rx_watchdog_kick is REQ-WDG-010's own primitive: resets stream_id's
+    // own e2e::RxWatchdog last-kick clock, called unconditionally from
+    // dispatch_e2e() on every request received (see that method's own doc
+    // comment). A no-op for an unresolvable stream_id — this mock's own
+    // watchdog state is keyed off the SAME regs_.request_streams[] table
+    // seq_gate_admits()/check_watchdog_overflow() already resolve against,
+    // rather than a separately pre-registered stream set the way c-RCP's
+    // own rcp_watchdog_keeper_t (a fully separate, threaded module this
+    // codebase does not carry forward into mock.hpp — see this class's own
+    // header comment) requires.
+    void rx_watchdog_kick(avtp::StreamId stream_id, uint64_t now_ms) noexcept {
+        const uint8_t stream_index = regmap::request_stream_cfg::resolve_index(
+            regs_.request_streams.data(), regs_.request_streams.size(), stream_id.to_u64());
+        if (stream_index == 0) return;
+        rx_watchdogs_[stream_index - 1].kick(now_ms);
     }
 
     // apply_cancellation applies an already-classified AdmitOutcome::
@@ -1746,6 +2133,22 @@ private:
     // own gptp_trigger_state_ and every RegisterMap table above already
     // use for their own power-on state.
     discovery::DiscoveryClaim  discovery_claim_{};
+    // Phase 4/Phase 17 batch C (cpp-RCP issue #129): dispatch_e2e()'s own
+    // E2E state — one instance per resolved regs_.request_streams[] row
+    // (regmap::request_stream_cfg::kMaxEntries, mirroring c-RCP's own
+    // srv->seq_tracker[]/srv->stream_status[] arrays, both sized
+    // RCP_REGMAP_REQUEST_STREAM_CFG_MAX_ENTRIES, src/mock.c:132/247), plus
+    // one whole-stream-keyed fault latch — see dispatch_e2e()'s own doc
+    // comment for how each is wired in. Owned directly (not an externally
+    // injected pointer the way c-RCP's own srv->watchdog/srv->
+    // stream_fault_tracker are, mock.h) — matching every other subsystem
+    // this class already owns directly (discovery_claim_/
+    // gptp_trigger_state_ immediately above, ...) rather than requiring a
+    // separate setter call before dispatch_e2e() is usable.
+    e2e::StreamFaultTracker    stream_fault_tracker_{};
+    std::array<e2e::RxSequenceGuard, regmap::request_stream_cfg::kMaxEntries> seq_trackers_{};
+    std::array<e2e::RxWatchdog, regmap::request_stream_cfg::kMaxEntries>      rx_watchdogs_{};
+    std::array<e2e::StreamStatus, regmap::request_stream_cfg::kMaxEntries>    stream_status_{};
     std::array<std::vector<uint8_t>, spi::kMaxChannels> spi_poci_{};
     std::vector<uint8_t>       i2c_response_{};
     bool                       i2c_acked_ = true;

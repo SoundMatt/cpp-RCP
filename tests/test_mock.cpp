@@ -1559,3 +1559,274 @@ TEST_CASE("discovery_claim()'s own real claim lifecycle (open -> claimed -> a se
                                         base + std::chrono::milliseconds(10)) ==
             discovery::DiscoveryClaim::ClaimOutcome::Claimed);
 }
+
+// ── E2E dispatch (Phase 4/Phase 17 batch C, cpp-RCP issue #129) ─────────────────
+// Ported from c-RCP's tests/test_mock.c coverage for rcp_mock_server_
+// dispatch_e2e() (REQ-E2E-021/028/029/045/046, REQ-WDG-010), reduced to
+// this mock's own single public dispatch_e2e() entry point shape — see
+// that method's own doc comment for why this file has ONE, not ten
+// dispatch_<type>_e2e() siblings. See tests/test_e2e.cpp for
+// RxSequenceGuard/StreamFaultTracker/RxWatchdog/StreamStatus's own
+// already-covered unit-level behavior — this section is INTEGRATION
+// coverage (via dispatch_e2e()), not a re-test of those classes' own
+// internals.
+
+namespace {
+
+constexpr uint8_t kE2eHeaderOctet1 = 0x00; // mirrors Server's own private kE2eHeaderOctet1Placeholder
+
+avtp::StreamId e2e_stream(uint64_t raw) { return avtp::StreamId::from_u64(raw); }
+
+// configure_gpio_all_outputs sets every GPIO pin's own direction to output
+// (GpioState::directions defaults to all-input, TC18 §13.7.4.3 — a write to
+// an input pin is masked out and never reaches state.values, per
+// apply_gpio_write()'s own doc comment, gpio.hpp) so this section's own
+// OR-write assertions below actually observe a state change. A direct
+// GpioEndpoint::handle_write(Reconfigure, ...) fixture call, bypassing
+// dispatch entirely — the same "script the endpoint's own live state
+// directly" convention set_spi_poci()/set_i2c_response()/etc. already
+// establish for their own subsystems.
+void configure_gpio_all_outputs(mock::Server& server) {
+    gpio::PinMask ignored = 0;
+    (void)server.gpio().handle_write(WriteSemantics::Reconfigure, 0xFFFF'FFFFu, ignored);
+}
+
+// wrap_gpio_write builds a real E2E-CRC-protected NTSCF frame for a GPIO
+// OR-write request — the same e2e::wrap_framed() shape tests/test_e2e.cpp
+// already exercises directly, reused here as dispatch_e2e()'s own wire
+// input.
+std::vector<uint8_t> wrap_gpio_write(avtp::StreamId stream_id, uint8_t transaction_num,
+                                      gpio::PinMask operand) {
+    acf::AcfMessageInfo info;
+    info.byte_bus_id     = mock::kGpioByteBusId;
+    info.transaction_num = transaction_num;
+    info.op              = true;
+    info.evt_op           = static_cast<uint8_t>(WriteSemantics::Or);
+    auto payload = gpio::encode_gpio_payload(operand);
+    return e2e::wrap_framed(/*is_ntscf_framed=*/true, kE2eHeaderOctet1, /*tu=*/false, stream_id,
+                             /*avtp_timestamp=*/std::nullopt, info, /*message_timestamp=*/std::nullopt, payload);
+}
+
+} // namespace
+
+TEST_CASE("dispatch_e2e in plain command mode (ep_req_crc_enable unset) decodes and delegates "
+          "exactly like dispatch()",
+          "[mock][e2e][REQ-E2E-021]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    // ep_req_crc_enable left at its own struct default (false).
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                 static_cast<uint8_t>(WriteSemantics::Or));
+    auto payload = gpio::encode_gpio_payload(0x0000'000F);
+    auto frame   = acf::encode_acf_abb(req, payload); // NOT CRC-wrapped — plain command mode input
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = server.dispatch_e2e(0, e2e_stream(0x1111), /*sequence_num=*/0, frame, resp, resp_payload);
+
+    REQUIRE_FALSE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::WriteResponse);
+    REQUIRE(server.gpio().read() == 0x0000'000F);
+}
+
+TEST_CASE("dispatch_e2e validates a genuine E2E CRC and delivers the unwrapped request to the "
+          "same admission/handler path dispatch() itself uses",
+          "[mock][e2e][REQ-E2E-021]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kGpioEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = e2e_stream(0x2222);
+    auto frame = wrap_gpio_write(stream_id, /*transaction_num=*/7, 0x0000'00F0);
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = server.dispatch_e2e(0, stream_id, /*sequence_num=*/0, frame, resp, resp_payload);
+
+    REQUIRE_FALSE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::WriteResponse);
+    REQUIRE(server.gpio().read() == 0x0000'00F0);
+}
+
+TEST_CASE("dispatch_e2e reports crc_error with a POCI_FAILURE error response on CRC corruption, "
+          "and latches the stream faulted (REQ-E2E-021) when rx_enforce_e2e is set",
+          "[mock][e2e][REQ-E2E-021][REQ-E2E-046]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kGpioEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = e2e_stream(0x3333);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id       = stream_id;
+    cfg.rx_enforce_e2e  = true;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    auto frame = wrap_gpio_write(stream_id, /*transaction_num=*/9, 0x0000'00FF);
+    frame[frame.size() - 1] ^= 0xFF; // corrupt one CRC byte
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = server.dispatch_e2e(0, stream_id, /*sequence_num=*/0, frame, resp, resp_payload);
+
+    REQUIRE(ec == e2e::make_error_code(e2e::E2eErrc::crc_error));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload.size() == 1);
+    REQUIRE(resp_payload[0] == static_cast<uint8_t>(acf::WireErrorCode::PociFailure));
+    REQUIRE(server.gpio().read() == 0); // the write never reached the endpoint
+    REQUIRE(server.stream_rx_blocked(stream_id));
+
+    // The stream is now latched faulted — a SUBSEQUENT, genuinely valid CRC
+    // request on the SAME stream is rejected too, without even being
+    // unwrapped (REQ-E2E-021's own "stream is blocked until released").
+    auto good_frame = wrap_gpio_write(stream_id, /*transaction_num=*/10, 0x0000'00FF);
+    acf::AcfMessageInfo   resp2;
+    std::vector<uint8_t>  resp_payload2;
+    auto ec2 = server.dispatch_e2e(0, stream_id, /*sequence_num=*/1, good_frame, resp2, resp_payload2);
+    REQUIRE(ec2 == mock::make_error_code(mock::DispatchErrc::stream_faulted));
+    REQUIRE(acf::response_kind_of(resp2) == acf::ResponseKind::ErrorResponse);
+    REQUIRE(resp_payload2[0] == static_cast<uint8_t>(acf::WireErrorCode::PociFailure));
+    REQUIRE(server.gpio().read() == 0); // still never reached the endpoint
+
+    // Releasing the latch lets a genuinely valid request through again.
+    server.stream_fault_tracker().reset(stream_id.to_u64());
+    acf::AcfMessageInfo   resp3;
+    std::vector<uint8_t>  resp_payload3;
+    auto ec3 = server.dispatch_e2e(0, stream_id, /*sequence_num=*/2, good_frame, resp3, resp_payload3);
+    REQUIRE_FALSE(ec3);
+    REQUIRE(server.gpio().read() == 0x0000'00FF);
+}
+
+TEST_CASE("dispatch_e2e's sequence gate (REQ-E2E-028/029) rejects a non-increasing sequence_num "
+          "with no wire response at all, before the request is even CRC-checked",
+          "[mock][e2e][REQ-E2E-028][REQ-E2E-029]") {
+    mock::Server server;
+    configure_gpio_all_outputs(server);
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.registers().generic_configs[mock::kGpioEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = e2e_stream(0x4444);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id      = stream_id;
+    cfg.rx_enforce_seq = true;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    auto frame = wrap_gpio_write(stream_id, /*transaction_num=*/1, 0x0000'000F);
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    // First observed sequence number always bootstraps as accepted.
+    auto ec = server.dispatch_e2e(0, stream_id, /*sequence_num=*/5, frame, resp, resp_payload);
+    REQUIRE_FALSE(ec);
+    REQUIRE(server.gpio().read() == 0x0000'000F);
+
+    // A second request with the SAME sequence_num (fwd_distance 0, not a
+    // forward advance) is rejected before CRC unwrap, so the endpoint's
+    // own state is untouched and NO wire response is built at all.
+    auto frame2 = wrap_gpio_write(stream_id, /*transaction_num=*/2, 0xFFFF'FFFF);
+    acf::AcfMessageInfo   resp2;
+    std::vector<uint8_t>  resp_payload2;
+    auto ec2 = server.dispatch_e2e(0, stream_id, /*sequence_num=*/5, frame2, resp2, resp_payload2);
+    REQUIRE(ec2 == mock::make_error_code(mock::DispatchErrc::seq_error));
+    REQUIRE_FALSE(resp2.rsp);
+    REQUIRE(resp_payload2.empty());
+    REQUIRE(server.gpio().read() == 0x0000'000F); // unchanged — request never dispatched
+}
+
+TEST_CASE("dispatch_e2e kicks the per-stream RxWatchdog (REQ-WDG-010) on every call, and "
+          "check_watchdog_overflow() purges pending non-safety requests once overflow latches "
+          "with rx_wd_safestate_enable set",
+          "[mock][e2e][REQ-WDG-010][REQ-E2E-030][REQ-E2E-046]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    const auto stream_id = e2e_stream(0x5555);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id               = stream_id;
+    cfg.rx_wd_enable            = true;
+    cfg.rx_wd_timeout_interval  = 100; // ms
+    cfg.rx_wd_safestate_enable  = true;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+    // Power-on ep_id_mapping already binds every operational endpoint's own
+    // request_stream_index to 1 (this class's own constructor bug-fix
+    // comment) — the resolved index of the single row configured above —
+    // so GPIO is already "bound to this stream" with no further setup.
+
+    // check_watchdog_overflow()'s own purge targets server::Endpoint's
+    // CONDITIONAL/TSCF-gated pending-request store (purge_non_safety(),
+    // server.hpp) — a materially different store from the plain
+    // ep_enable-disabled FIFO queue (server.hpp's own queue_/queue_len_),
+    // which watchdog_purge() never touches (see this class's own
+    // watchdog_purge()'s own doc comment). A directly-admitted Triggered
+    // step (not one of TC18's three safety-tagged 0x8x opcodes) gives this
+    // test a genuine, purgeable pending record — same fixture pattern this
+    // file's own "pending_count()/watchdog_purge() report a
+    // directly-admitted Triggered request's own conditional-request store"
+    // test above already establishes.
+    request::TriggeredStep step;
+    step.trigger_source_ep = 1;
+    step.trigger_signal_nr = 0;
+    step.trigger_threshold = 0;
+    auto trig_frame = request::encode_triggered_request(request::RequestTypeOpcode::Triggered,
+                                                          mock::kGpioByteBusId, step, /*transaction_num=*/3);
+    std::optional<request::RequestTypeOpcode> request_type;
+    std::optional<acf::WireErrorCode>           admit_error;
+    auto outcome = server.admission(mock::kGpioByteBusId)
+                       ->admit(trig_frame.data(), trig_frame.size(), /*now=*/0, /*tv=*/false,
+                               /*avtp_timestamp=*/0, /*gptp_reference_now=*/0, request_type,
+                               /*out_index=*/nullptr, &admit_error);
+    REQUIRE(outcome == server::AdmitOutcome::Pending);
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 1);
+
+    // dispatch_e2e()'s own REQ-WDG-010 kick (a plain, non-CRC request is
+    // enough — the kick fires unconditionally at the very top, before the
+    // plain-command-mode/CRC branch is even decided).
+    auto req     = standard_request(mock::kGpioByteBusId, /*write=*/false);
+    auto frame   = acf::encode_acf_abb(req, {});
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = server.dispatch_e2e(0, stream_id, /*sequence_num=*/0, frame, resp, resp_payload);
+    REQUIRE_FALSE(ec);
+
+    // Before the timeout interval has elapsed, nothing overflows yet.
+    size_t purged = 123;
+    REQUIRE(server.check_watchdog_overflow(stream_id, /*now_ms=*/50, purged));
+    REQUIRE(purged == 0);
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 1);
+    REQUIRE_FALSE(server.stream_rx_blocked(stream_id));
+
+    // Past the timeout interval since dispatch_e2e()'s own kick (at
+    // now_ms=0): the watchdog overflows, latches safe state, purges the
+    // one pending non-safety request, and the REQ-E2E-046 aggregate latches.
+    REQUIRE(server.check_watchdog_overflow(stream_id, /*now_ms=*/150, purged));
+    REQUIRE(purged == 1);
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 0);
+    REQUIRE(server.stream_rx_blocked(stream_id));
+}
+
+TEST_CASE("check_watchdog_overflow()/stream_rx_blocked()/dispatch_e2e() all fail toward no "
+          "action for an unresolvable stream_id",
+          "[mock][e2e][REQ-E2E-046]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    // Deliberately no set_request_stream_cfg() call.
+
+    const auto stream_id = e2e_stream(0x6666);
+    size_t purged = 123;
+    REQUIRE_FALSE(server.check_watchdog_overflow(stream_id, /*now_ms=*/999999, purged));
+    REQUIRE(purged == 0);
+    REQUIRE_FALSE(server.stream_rx_blocked(stream_id));
+
+    // dispatch_e2e()'s own kick is a silent no-op too, and plain command
+    // mode (ep_req_crc_enable still unset) still dispatches normally.
+    auto req     = standard_request(mock::kGpioByteBusId, /*write=*/false);
+    auto frame   = acf::encode_acf_abb(req, {});
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = server.dispatch_e2e(0, stream_id, /*sequence_num=*/0, frame, resp, resp_payload);
+    REQUIRE_FALSE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ReadResponse);
+}
