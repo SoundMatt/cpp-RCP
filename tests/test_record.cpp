@@ -191,3 +191,88 @@ TEST_CASE("record: Playback::run_all replays every entry against the target",
     REQUIRE_FALSE(pb.run_all(Context{}));
     REQUIRE(replayed == 3);
 }
+
+// ── Test-gap closure (parity audit vs c-RCP's recorder.c/test_recorder.c) ─────
+
+TEST_CASE("record: write_binary returns io_error for an unopenable path", "[record][REQ-REC-003]") {
+    auto rec = std::make_shared<Record>();
+    auto rc  = new_recording_client(echo_request(), rec);
+    auto req = standard_request(1, 0);
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = rc->request(Context{}, req, {}, resp, resp_payload);
+    (void)ec;
+
+    // A path through a directory that does not exist can never be opened
+    // for writing — matches c-RCP's own
+    // test_write_binary_returns_busy_when_path_unopenable (test_recorder.c).
+    auto bad_path = (std::filesystem::temp_directory_path() /
+                      "rcp_test_record_no_such_dir" / "x" / "y.bin").string();
+    REQUIRE(rec->write_binary(bad_path) == std::make_error_code(std::errc::io_error));
+}
+
+TEST_CASE("record: read_binary returns io_error for a missing file", "[record][REQ-REC-003]") {
+    Record rec;
+    auto path = (std::filesystem::temp_directory_path() /
+                  "rcp_test_record_definitely_missing.bin").string();
+    std::filesystem::remove(path); // ensure it really doesn't exist
+    REQUIRE(rec.read_binary(path) == std::make_error_code(std::errc::io_error));
+    REQUIRE(rec.size() == 0);
+}
+
+TEST_CASE("record: stored entries are immune to caller mutation after request() returns",
+          "[record]") {
+    auto rec = std::make_shared<Record>();
+    auto rc  = new_recording_client(echo_request({0xAA}), rec);
+
+    auto req = standard_request(1, 0);
+    std::vector<uint8_t>  req_payload{0x01, 0x02};
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ec = rc->request(Context{}, req, req_payload, resp, resp_payload);
+    (void)ec;
+
+    // Mutate the caller's own copies after the call returns.
+    req.transaction_num = 0xFF;
+    req_payload.push_back(0xEE);
+    resp_payload.push_back(0xDD);
+
+    auto stored = rec->entries();
+    REQUIRE(stored[0].request.transaction_num == 0);
+    REQUIRE(stored[0].request_payload == std::vector<uint8_t>{0x01, 0x02});
+    REQUIRE(stored[0].response_payload == std::vector<uint8_t>{0xAA});
+}
+
+TEST_CASE("record: Playback::run_all actually sleeps to honor a positive inter-entry gap",
+          "[record][REQ-REC-004]") {
+    // Build two entries directly (bypassing wall-clock timing) with a
+    // controlled 5ms gap, well above run_all()'s own >1ms sleep threshold —
+    // exercises the `gap_ns > 0 && cfg_.speed_factor > 0.0` branch that the
+    // existing speed_factor=0.0 playback test above never takes.
+    Record rec;
+    Entry e0; e0.timestamp_ns = 0;             e0.request = standard_request(1, 0);
+    Entry e1; e1.timestamp_ns = 5'000'000;     e1.request = standard_request(1, 1); // +5ms
+    rec.append(e0);
+    rec.append(e1);
+
+    int replayed = 0;
+    RequestFn target = [&](const Context&, const acf::AcfMessageInfo&,
+                            const std::vector<uint8_t>&, acf::AcfMessageInfo&,
+                            std::vector<uint8_t>&) {
+        ++replayed;
+        return std::error_code{};
+    };
+
+    auto start = std::chrono::steady_clock::now();
+    Playback pb(target, rec, PlaybackConfig{/*speed_factor=*/1.0});
+    REQUIRE_FALSE(pb.run_all(Context{}));
+    auto elapsed = std::chrono::steady_clock::now() - start;
+
+    REQUIRE(replayed == 2);
+    REQUIRE(elapsed >= std::chrono::milliseconds(5));
+}
+
+TEST_CASE("record: PlaybackConfig{} defaults speed_factor to 1.0", "[record]") {
+    PlaybackConfig cfg;
+    REQUIRE(cfg.speed_factor == 1.0);
+}

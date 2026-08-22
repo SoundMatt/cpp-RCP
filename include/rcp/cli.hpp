@@ -92,6 +92,33 @@ inline std::string version_text() {
 
 // ── §12.2 capabilities document (always JSON) ────────────────────────────────
 // Field set is constrained by cli-capabilities.json (additionalProperties:false).
+//
+// "features" (parity-audit gap-closure vs c-RCP's cli.c): alongside the
+// existing physical-endpoint-type names, this now also reports the five
+// TC18 §12.7.5 Table 20 svr_implemented_options names (REQ-RMAP-030,
+// rcp/regmap.hpp's kOptCompoundWait/kOptTrigger/kOptChained/kOptTimeSync/
+// kOptEnhCancel) — matching c-RCP's own cli.c features_json()/
+// RCP_CLI_IMPLEMENTED_OPTIONS, which reports the identical five names from
+// the identical five bits. This is a static, build-time answer (this CLI
+// never connects to a live RC Server whose own runtime
+// svr_implemented_options could be read instead — same rationale as
+// c-RCP's own comment) reflecting that rcp/request.hpp implements
+// compound/compound-wait/triggered/chained/timed requests and both
+// clear-all/clear-single cancellation, and rcp/regmap.hpp defines the five
+// corresponding bits. Unlike c-RCP's cli.c, no per-feature wire-conformance
+// caveat is asserted here one way or the other — that would need a
+// dedicated audit of request.hpp/e2e.hpp against the spec, out of scope for
+// this pass. One known related gap, left alone here: request.hpp/e2e.hpp's
+// own conditional-request gating (implemented_options_bits()/
+// timed_feature_enabled()) still reads regmap.hpp's coarser legacy
+// kOptConditionalRequests bit rather than these five independent ones
+// directly (regmap.hpp's own "Legacy...retained ONLY because" comment) —
+// neither header is in this batch's scope to rewire.
+//
+// "transports" additionally reports "tsn" (rcp/tsn.hpp, REQ-TSN-001..006, a
+// real 802.1p PCP-tagging transport wrapper, not a stub) — c-RCP's own
+// cli.c advertises its structurally-equivalent tsn.c; cpp-RCP's cli.hpp
+// previously did not.
 
 inline std::string capabilities_json() {
     std::string spec(relay::kRelaySpecVersion);
@@ -103,9 +130,10 @@ inline std::string capabilities_json() {
         + "\"version\":\"" + std::string(kVersion) + "\","
         + "\"spec_version\":\"" + spec + "\","
         + "\"commands\":[\"version\",\"capabilities\",\"status\",\"send\"],"
-        + "\"transports\":[\"udp\",\"shmem\",\"mock\"],"
+        + "\"transports\":[\"udp\",\"shmem\",\"mock\",\"tsn\"],"
         + "\"features\":[\"gpio\",\"spi\",\"i2c\",\"uart\",\"adc\",\"pwm\",\"lin\",\"can\","
-          "\"iseled\",\"mdio\",\"wakeup\"],"
+          "\"iseled\",\"mdio\",\"wakeup\",\"time_sync\",\"enhanced_cancel\",\"trigger\","
+          "\"chained\",\"compound_bundles\"],"
         + "\"interfaces\":[\"Node\",\"Caller\"],"
         + "\"optional_interfaces\":[],"
         + "\"adapt\":true"
