@@ -24,6 +24,14 @@
 // fusa:req REQ-MOCK-024
 // fusa:req REQ-MOCK-025
 // fusa:req REQ-MOCK-026
+// fusa:req REQ-WDG-010
+// fusa:req REQ-E2E-033
+// fusa:req REQ-E2E-039
+// fusa:req REQ-E2E-041
+// fusa:req REQ-E2E-047
+// fusa:req REQ-MOCK-027
+// fusa:req REQ-MOCK-028
+// fusa:req REQ-MOCK-029
 
 // In-process RC Server simulator — a small, representative OPEN Alliance
 // TC18 Remote Control Protocol Specification v0.5.1_RC server built

@@ -32,6 +32,7 @@
 // fusa:test REQ-WAKEUP-034
 // fusa:test REQ-WAKEUP-035
 // fusa:test REQ-WAKEUP-036
+// fusa:test REQ-PWRMODE-023
 
 // Tests for rcp/wakeup.hpp — the WakeUp endpoint type, re-derived from
 // c-RCP's tests/test_ep_wakeup.c (ROADMAP.md Phase 17, cpp-RCP issue #129,

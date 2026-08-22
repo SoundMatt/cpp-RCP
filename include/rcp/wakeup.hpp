@@ -32,6 +32,7 @@
 // fusa:req REQ-WAKEUP-034
 // fusa:req REQ-WAKEUP-035
 // fusa:req REQ-WAKEUP-036
+// fusa:req REQ-PWRMODE-023
 
 // WakeUp endpoint (ep_type 0x01) — TC18's dedicated power-management
 // endpoint: the fixed-opcode SleepCMD request/response, the fixed-opcode

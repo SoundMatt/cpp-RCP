@@ -11831,6 +11831,295 @@
       "scope": "tc18",
       "status": "implemented",
       "tc18_master_id": "TC18-RELAY-5.2-001"
+    },
+    {
+      "id": "REQ-WDG-010",
+      "title": "The per-stream watchdog is kicked by every request received on that stream",
+      "text": "rcp::mock::Server's request-reception path shall call rx_watchdog_kick() (which forwards to rcp::watchdog::Manager::on_request_received()) for a request stream's stream_id on every request successfully received on that stream, so the per-stream watchdog measures the gap between consecutive requests from that RC Client (TC18 §12.7.7, \"the watchdog is reset with each request received from this RC Client\"). Server::dispatch_e2e_core() and Server::dispatch_frame_e2e()'s per-member loop both call rx_watchdog_kick(stream_id, ...) unconditionally, before any admission/validation check -- TC18's rule is about RECEIPT, not successful validation or execution, so a request this call goes on to reject still kicks. rcp::sim::Simulator independently wires the same rcp::watchdog::Manager hook for the simulation harness.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§12.7.7, TC18.txt L2936-L2938"
+    },
+    {
+      "id": "REQ-E2E-033",
+      "title": "Each ACF message in a multi-ACF AVTPDU carries and is verified against its own CRC32",
+      "text": "When an AVTPDU carries more than one ACF message, a separate CRC32 shall be computed, appended to, and verified for each E2E-protected ACF message individually -- never one CRC across the whole AVTPDU payload (TC18 §13.6). rcp::e2e::wrap()/unwrap() already work at this per-message granularity; Server::dispatch_frame_e2e() composes that across a real multi-member frame -- each member, split from the frame, is routed through Server::dispatch_e2e() independently, so a corrupted trailer on one member neither blocks nor is masked by another member's valid one.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.6, TC18.txt L3789-3791",
+      "tc18_master_id": "TC18-13.6-002"
+    },
+    {
+      "id": "REQ-E2E-039",
+      "title": "The ms bit decides whether a message carries a CRC32 trailer in its last quadlet",
+      "text": "A message whose ACF header ms bit is 0 shall carry the CRC32 in its last quadlet, and a message whose ms bit is 1 shall carry no CRC32 at all, the CRC appearing only on the final (ms=0) fragment of a multi-segment message (TC18 §13.6). Server::dispatch_e2e_fragment_core() reads the ms bit itself, via the decoded ACF header, to decide trailer handling: an ms=1 (intermediate) fragment is fed to the reassembler with no CRC trailer expected at all; an ms=0 (final) fragment is treated as carrying the CRC32 in its own trailing octets, verified via the same fragmented-CRC formula REQ-E2E-038 exercises.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.6, TC18.txt L3821-3823",
+      "tc18_master_id": "TC18-13.6-007"
+    },
+    {
+      "id": "REQ-E2E-041",
+      "title": "A CRC mismatch on a protected stream generates an error response as well as skipping execution",
+      "text": "When a request arrives on an E2E-protected stream and its CRC32 does not match, the RC Server shall not execute the request AND shall generate an error response carrying the CRC-mismatch wire error code (acf::WireErrorCode::PociFailure -- TC18 §12.9.6 Table 30 / §13.6). Server::dispatch_e2e_core() and Server::dispatch_e2e_fragment_core() both build a genuine ErrorResponse carrying acf::WireErrorCode::PociFailure on an e2e::E2eErrc::crc_error verdict, addressed to the request's own byte_bus_id/transaction_num, without ever routing the request further for execution.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.6, TC18.txt L3827-3828",
+      "tc18_master_id": "TC18-13.6-001"
+    },
+    {
+      "id": "REQ-E2E-047",
+      "title": "A reassembled fragmented request too large to re-encode as a single ACF frame is rejected with a genuine Table 27 error response, not silently dropped",
+      "text": "When a fragmented request's reassembled payload cannot be re-encoded as a single ACF_ABB/ACF_GBB frame because it exceeds that message type's own maximum payload (acf::kAcfAbbMaxPayload/kAcfGbbMaxPayload), the RC Server shall answer with a genuine regmap::RegMapErrc::request_rejected error response addressed to the request's own byte_bus_id/transaction_num, not silently drop the request (TC18 §13.7.11.3, \"...which requires segmentation, which is supported by the fields 'ms' and 'segment_num'.\"). Server::dispatch_e2e_fragment_core() checks the reassembled payload's size against these ceilings BEFORE attempting to re-encode it, and on overflow builds a real error response rather than returning silently, mirroring c-RCP issue #614/#616.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.7.11.3 (\"...which requires segmentation, which is supported by the fields 'ms' and 'segment_num'.\"), TC18.txt L5859-5860",
+      "tc18_master_id": "TC18-13.7.11.3-002"
+    },
+    {
+      "id": "REQ-MOCK-027",
+      "title": "rcp_mock_server_pending_count() reports an endpoint's conditional-request store occupancy, 0 if unknown",
+      "text": "Server::pending_count(byte_bus_id) shall return the number of conditional requests currently pending in the addressed endpoint's request store (server::Endpoint::pending_count()), or 0 if byte_bus_id names no operational endpoint.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-MOCK-028",
+      "title": "rcp_mock_server_dispatch() sends REQUEST_NOT_FOUND when a clear-single target is not found",
+      "text": "Server::dispatch(), when a decoded ClearSingle cancellation's target clear_transaction_num is not found in the addressed endpoint's request store (server::Endpoint::cancel_single() reports server::CancelResult::NotFound), shall populate out_response with a real TC18 §11.2.3.3 error response carrying acf::WireErrorCode::RequestNotFound.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-MOCK-029",
+      "title": "rcp_mock_server_dispatch_frame() sends a per-member CHAIN_ERROR/CHAIN_ABORTED error response",
+      "text": "Server::dispatch_frame() shall, for each frame member found chain_error (no predecessor within the frame) or chain_aborted (a prior member in the same chain errored and this member's own cs selected abort-on-error, or the abort has already latched), populate that member's own FrameMemberResult::response with a real TC18 error response carrying acf::WireErrorCode::ChainError/ChainAborted -- one independent response per affected member, not a single shared response for the whole broken chain.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-001",
+      "title": "rcp_pwrmode_string() returns a unique human-readable name",
+      "text": "to_string(PowerMode) shall return a unique, non-empty name for each of Normal/StandBy/Sleep/Unpowered (\"normal\"/\"standby\"/\"sleep\"/\"unpowered\"), and \"unknown\" for any other value.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-002",
+      "title": "rcp_pwrmode_strerror() returns a non-NULL message for every error code",
+      "text": "power_category()'s own std::error_category::message() shall return a non-empty message for each PowerErrc value, and a non-empty default message for any unrecognized value -- std::error_category::message() can never return a null string by construction, satisfying the 'never NULL' half of this requirement automatically.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-005",
+      "title": "rcp_pwrmode_hotstart_required() is required for every wake path, network included",
+      "text": "PowerManager models exactly one hot-start-from-Sleep handshake (begin_wake_from_sleep()/note_wakeup_attempt_sent()/acknowledge_wakeup()), with no per-wake-path branch of any kind -- there is no code path by which a network-triggered wake (or any other future wake-source classification) could bypass the handshake, satisfying this requirement by construction rather than via an explicit wake-path parameter.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-006",
+      "title": "rcp_pwrmode_handshake_init() sets the initial handshake state",
+      "text": "PowerManager's constructor (given a Config{wakeup_repeat_limit}) zero-initializes wake_attempts_ and wake_stage_ (WakeStage::Idle) as member defaults; begin_wake_from_sleep() additionally resets wake_attempts_ to 0 on each (re-)begin -- together giving every fresh or restarted handshake the same not-started/zero-attempts/configured-limit starting state c-RCP's own explicit init function establishes.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-007",
+      "title": "rcp_pwrmode_handshake_iface_reenabled() implements handshake step (a)",
+      "text": "PowerManager::begin_wake_from_sleep() requires mode() == Sleep, runs Hooks::reenable_network_interface() (step (a)), resets wake_attempts_, and advances wake_stage() to HandshakeActive; otherwise (mode() != Sleep) it leaves state unchanged and returns PowerErrc::not_asleep.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-008",
+      "title": "rcp_pwrmode_handshake_wakeup_attempt() implements handshake step (b)",
+      "text": "PowerManager::note_wakeup_attempt_sent() requires wake_stage() == HandshakeActive, increments a per-handshake attempt counter each call, and advances wake_stage() to Failed once that counter exceeds Config::wakeup_repeat_limit (this implementation's own bound -- not spec-derived, matching c-RCP's own note that TC18 itself defines no such limit); otherwise the handshake stays HandshakeActive, awaiting acknowledge_wakeup().",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-009",
+      "title": "rcp_pwrmode_handshake_resume_queues() implements handshake step (c)",
+      "text": "PowerManager::acknowledge_wakeup() requires wake_stage() == HandshakeActive, runs Hooks::reenable_response_ack_queues() (step (c)), and advances the manager directly to mode() == Normal / wake_stage() == Complete -- folding echo-recognition, step (c), and the mode transition into one call rather than three separate ones.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-010",
+      "title": "rcp_pwrmode_handshake_is_complete() reports handshake completion",
+      "text": "A caller compares PowerManager::wake_stage() directly against WakeStage::Complete -- an exposed enum accessor rather than a dedicated boolean predicate, the same C++ idiom this class uses throughout.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-011",
+      "title": "rcp_pwrmode_handshake_has_failed() reports handshake failure",
+      "text": "A caller compares PowerManager::wake_stage() directly against WakeStage::Failed, the same accessor REQ-PWRMODE-010 uses.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-013",
+      "title": "rcp_pwrmode_check_entry() gates StandBy/Sleep entry requests",
+      "text": "PowerManager::enter_standby()/enter_sleep() (via the shared enter_low_power()) refuse entry into StandBy/Sleep whenever WakeupEndpoint::wakeup_message_pending() is true (the unacknowledged-wake-up-event condition), or either of Hooks::endpoints_idle/Hooks::response_ack_queues_empty is set and reports false. An unset hook is treated as 'check passes' (mirroring rcp::lifecycle::PlausibilityCheck's own convention) -- a deliberate divergence from c-RCP's 'NULL gate is refused' fail-safe default, a pre-established codebase convention rather than a defect specific to this requirement.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-015",
+      "title": "Configuration data and wake sources survive StandBy",
+      "text": "PowerManager::resume_from_standby() returns directly to Normal without invoking any reinit/reenable hook -- proven by a dedicated test asserting the network-reenable hook is never called on this path, unlike the hot-start-from-Sleep handshake which always does.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-016",
+      "title": "Hot start checks network availability before sending a WakeUp",
+      "text": "PowerManager::begin_wake_from_sleep(bool network_available = true) checks network_available before running Hooks::reenable_network_interface() or advancing wake_stage() -- a false value is a free, uncounted retry (wake_stage() stays Idle, no hook fires, wake_attempts() untouched), matching TC18 §12.4.1's network-availability-gates-step-(a) ordering. Defaults to true, so every pre-existing caller's behavior is unchanged.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-018",
+      "title": "WakeUp repetition stops on any valid AVTPDU from the sleep-request client",
+      "text": "PowerManager::acknowledge_wakeup() carries no built-in notion of 'echo' at all -- a caller recognizing ANY valid frame from the sleep-request client, not only a literal WakeUp-message echo, can call it directly to complete the handshake, independent of note_wakeup_attempt_sent()'s own per-attempt tracking.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-020",
+      "title": "A network wake runs the same hot-start handshake a pin wake does, not a bypass",
+      "text": "Same reasoning as REQ-PWRMODE-005: PowerManager models exactly one handshake path with no pin/network distinction, so no code path could bypass it for a network-triggered wake specifically.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-023",
+      "title": "A sleep/standby request from an authorized client applies to the entire RC Server",
+      "text": "rcp::wakeup::sleepcmd_writable(writer) returns writer.via_root_client_ep0, gating SleepCMD write access to the root client via EP0 before any pwrmode admission logic runs. PowerManager itself also operates on a single server-wide mode_ member, never per-endpoint, satisfying this requirement's second half (a sleep/standby request from an authorized client necessarily applies to the entire RC Server, by construction).",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-024",
+      "title": "A wake-source event during sleep-request processing aborts the sleep entry",
+      "text": "PowerManager::enter_low_power() performs its wakeup_message_pending()/endpoints_idle/response_ack_queues_empty check and the mode_ = target commit in the same synchronous call -- there is no separate, earlier 'admit' step, so no window exists in which a wake-source event could be lost between check and commit. The check IS the commit, closing this race by construction rather than via an explicit two-phase re-validation (see REQ-PWRMODE-026's own pending entry for the tradeoff this same atomicity causes).",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-025",
+      "title": "The sleep/standby refusal conditions are evaluated server-wide, across every EP and every responder queue",
+      "text": "PowerManager::Hooks::endpoints_idle/response_ack_queues_empty are single, global, parameterless std::function hooks with no per-endpoint scoping possible in the API shape at all, forcing any caller to aggregate every endpoint/queue's own state server-wide before calling enter_standby()/enter_sleep() -- the same 'caller ANDs everything' convention c-RCP's own gate fields document.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-003",
+      "title": "rcp_pwrmode_cold_start_lifecycle_target() names the cold-start re-init target",
+      "text": "cold_start_lifecycle_target() names the lifecycle::ServerState a cold start's own re-init sequence targets. Superseded in substance by REQ-PWRMODE-014's own recovered_state-aware text -- cpp-RCP's single implementation directly realizes the corrected (014) behavior described there rather than an unconditional always-HwUnconfigured return; see REQ-PWRMODE-014's own text for the full behavior.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-014",
+      "title": "A cold start restores the configured lifecycle state, not always HW_UNCONFIGURED",
+      "text": "cold_start_lifecycle_target(lifecycle::ServerState recovered_state) shall return recovered_state unchanged when it is one of lifecycle::ServerState's three valid values (HwUnconfigured/HwConfigured/RcpConfigured), so a cold start's own re-init sequence can restore the RC Server's configured lifecycle state rather than always resetting to HwUnconfigured; an unrecognized/corrupt recovered_state is treated as 'nothing recovered' and maps to HwUnconfigured, this function's own fail-safe default. This header owns no NVM access or default-configuration table of its own -- recovered_state is the caller's own already-recovered fact, the same 'caller supplies already-classified inputs' convention Hooks establishes.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-PWRMODE-028",
+      "title": "Sleep-request processing order: stop admitting requests, drain, then acknowledge",
+      "text": "server::Endpoint::set_admission_suspended(true)/admission_suspended() (TC18 §13.7.2.3 step 1: 'on receipt of a sleep request the server shall stop entering incoming requests into endpoint queues') stops admit()/admit_with_ack() from queuing or executing new requests once suspended, without touching anything already queued or executing -- a caller drains remaining requests, then transmits the sleep/standby acknowledge response, implementing the 'stop admitting, drain, then acknowledge' order this requirement names. submit() (the lower-level queue primitive) deliberately does not itself consult admission_suspended_ -- a caller wanting this suspension semantics for standard requests must route them through admit()/admit_with_ack().",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented"
     }
   ]
 }
