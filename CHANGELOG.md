@@ -11,7 +11,12 @@ attempt to reconstruct the project's full pre-rewrite history — see git log
 for that. Entries below are one line per merged PR/batch, in the order
 merged.
 
-## [Unreleased] — v3.0.0 rewrite (`rewrite/v3-from-c-rcp`)
+## [3.0.0] — 2026-08-22 — v3.0.0 rewrite (`rewrite/v3-from-c-rcp`)
+
+First release where cpp-RCP *is* the OPEN Alliance TC18 Remote Control
+Protocol (ROADMAP.md Phase 17). Full ground-up rewrite, ported from
+c-RCP's current RC5-conformant, atomicity-audited, ASIL-D-hardened
+implementation. Merged to `main` via #172.
 
 ### Phase 7 — release hardening, formal verification, coverage
 
