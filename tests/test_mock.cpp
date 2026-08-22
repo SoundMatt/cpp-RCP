@@ -1004,3 +1004,282 @@ TEST_CASE("A GPIO write with a mis-sized payload is rejected with wire error cod
     REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::ErrorResponse);
     REQUIRE(resp_payload == std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::InvalidParameter)});
 }
+
+// ── Admission gating (Phase 4/Phase 17 batch A, cpp-RCP issue #129) ───────────
+// Every dispatch_*() above now routes through the addressed endpoint's own
+// rcp::server::Endpoint admission queue before invoking its handler body —
+// these cases cover that gate itself, ported from the relevant slice of
+// c-RCP's tests/test_mock.c (its own admission-related coverage) reduced to
+// what THIS mock's Standard-request-only dispatch() can reach (see
+// admit_and_classify()'s own doc comment, rcp/mock.hpp).
+
+TEST_CASE("A disabled endpoint queues a request instead of executing it, and reports "
+          "DispatchErrc::queued when no acknowledge was requested",
+          "[mock][admission][REQ-SRV-015]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.admission(mock::kGpioByteBusId)->set_enable(false);
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                 static_cast<uint8_t>(WriteSemantics::Or));
+    auto payload = gpio::encode_gpio_payload(0x0000'000F);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, payload, resp, resp_payload);
+
+    REQUIRE(ec == mock::make_error_code(mock::DispatchErrc::queued));
+    REQUIRE_FALSE(resp.rsp); // no wire response at all — evt[3] never asked for one
+    REQUIRE(resp_payload.empty());
+    // The handler itself must never have run.
+    REQUIRE(server.gpio().read() == 0);
+    REQUIRE(server.admission(mock::kGpioByteBusId)->queue_len() == 1);
+}
+
+TEST_CASE("A disabled endpoint's queued request produces a genuine Acknowledge when evt[3] "
+          "asked for one, and still does not execute the handler",
+          "[mock][admission][REQ-SRV-016]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.admission(mock::kGpioByteBusId)->set_enable(false);
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                 static_cast<uint8_t>(WriteSemantics::Or), /*evt_ack=*/true);
+    auto payload = gpio::encode_gpio_payload(0x0000'000F);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, payload, resp, resp_payload);
+
+    REQUIRE_FALSE(ec); // a real response WAS built — success, per dispatch()'s own contract
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::Acknowledge);
+    REQUIRE_FALSE(resp.err);
+    REQUIRE(server.gpio().read() == 0); // still not executed
+}
+
+TEST_CASE("A disabled endpoint's config-write (evt[2:0]==111b) request executes immediately, "
+          "bypassing the queue entirely (REQ-SRV-015)",
+          "[mock][admission][REQ-SRV-015]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.admission(mock::kAdcByteBusId)->set_enable(false);
+
+    // Address 0x0008 (adc_base_clk_divider) + one data octet — same
+    // well-formed config-write payload the plain (enabled-endpoint) ADC
+    // config-write test above uses.
+    std::vector<uint8_t> payload{0x00, 0x08, 0x09};
+    auto req = standard_request(mock::kAdcByteBusId, /*write=*/true, /*evt_op=*/7);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, payload, resp, resp_payload);
+
+    REQUIRE_FALSE(ec);
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::WriteResponse);
+    REQUIRE(server.admission(mock::kAdcByteBusId)->queue_len() == 0); // never queued
+}
+
+TEST_CASE("admission_suspended() rejects a request without inspecting it at all, and never "
+          "builds a wire response regardless of evt[3] (REQ-PWRMODE-028)",
+          "[mock][admission][REQ-PWRMODE-028]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+    server.admission(mock::kGpioByteBusId)->set_admission_suspended(true);
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/false, /*evt_op=*/0, /*evt_ack=*/true);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+
+    REQUIRE(ec == mock::make_error_code(mock::DispatchErrc::suspended));
+    REQUIRE_FALSE(resp.rsp);
+    REQUIRE(resp_payload.empty());
+    REQUIRE(server.admission(mock::kGpioByteBusId)->queue_len() == 0); // not even queued
+}
+
+TEST_CASE("A response frame (rsp=1) dispatched as a request is rejected per REQ-ACF-021, "
+          "Acknowledge-rejected shape when evt[3] was set",
+          "[mock][admission][REQ-ACF-021]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/false, /*evt_op=*/0, /*evt_ack=*/true);
+    req.rsp = true;
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+
+    REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::Acknowledge);
+    REQUIRE(resp.err);
+    REQUIRE(resp_payload == std::vector<uint8_t>{static_cast<uint8_t>(acf::WireErrorCode::InvalidParameter)});
+}
+
+TEST_CASE("A response frame (rsp=1) dispatched as a request without evt[3] set produces no "
+          "wire response at all",
+          "[mock][admission][REQ-ACF-021]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/false);
+    req.rsp = true;
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    auto ec = server.dispatch(0, req, {}, resp, resp_payload);
+
+    REQUIRE(ec == regmap::make_error_code(regmap::RegMapErrc::request_rejected));
+    REQUIRE_FALSE(resp.rsp);
+    REQUIRE(resp_payload.empty());
+}
+
+TEST_CASE("drain_one() dequeues a request queued while disabled once the endpoint is "
+          "re-enabled, and the caller can redispatch it to actually execute",
+          "[mock][admission][REQ-SRV-017]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    // Pins 0-1 must be configured as output before a write to them can take
+    // effect (REQ-GPIO-009) — done while still enabled, same precondition
+    // the plain GPIO write test above establishes.
+    auto reconfig_req = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                          static_cast<uint8_t>(WriteSemantics::Reconfigure));
+    auto reconfig_payload = gpio::encode_gpio_payload(0x0000'0003);
+    acf::AcfMessageInfo reconfig_resp;
+    std::vector<uint8_t> reconfig_resp_payload;
+    REQUIRE_FALSE(
+        server.dispatch(0, reconfig_req, reconfig_payload, reconfig_resp, reconfig_resp_payload));
+
+    server.admission(mock::kGpioByteBusId)->set_enable(false);
+
+    auto req = standard_request(mock::kGpioByteBusId, /*write=*/true,
+                                 static_cast<uint8_t>(WriteSemantics::Or));
+    auto payload = gpio::encode_gpio_payload(0x0000'0003);
+    acf::AcfMessageInfo resp;
+    std::vector<uint8_t> resp_payload;
+    REQUIRE(server.dispatch(0, req, payload, resp, resp_payload) ==
+            mock::make_error_code(mock::DispatchErrc::queued));
+
+    // Still disabled: drain_one() refuses to dequeue anything.
+    std::vector<uint8_t> drained;
+    REQUIRE_FALSE(server.drain_one(mock::kGpioByteBusId, drained));
+
+    server.admission(mock::kGpioByteBusId)->set_enable(true);
+    REQUIRE(server.drain_one(mock::kGpioByteBusId, drained));
+    REQUIRE_FALSE(drained.empty());
+
+    acf::AcfMessageInfo decoded_req;
+    std::vector<uint8_t> decoded_payload;
+    REQUIRE_FALSE(acf::decode_acf_abb(drained.data(), drained.size(), decoded_req, decoded_payload));
+
+    acf::AcfMessageInfo redispatch_resp;
+    std::vector<uint8_t> redispatch_resp_payload;
+    REQUIRE_FALSE(
+        server.dispatch(0, decoded_req, decoded_payload, redispatch_resp, redispatch_resp_payload));
+    REQUIRE(acf::response_kind_of(redispatch_resp) == acf::ResponseKind::WriteResponse);
+    REQUIRE(server.gpio().read() == 0x0000'0003);
+}
+
+TEST_CASE("pending_count()/watchdog_purge() report a directly-admitted Triggered request's own "
+          "conditional-request store, independent of dispatch()'s own Standard-only surface",
+          "[mock][admission][REQ-MOCK-027]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    request::TriggeredStep step;
+    step.trigger_source_ep = 1;
+    step.trigger_signal_nr = 0;
+    step.trigger_threshold = 0;
+    auto frame = request::encode_triggered_request(request::RequestTypeOpcode::Triggered,
+                                                     mock::kGpioByteBusId, step, /*transaction_num=*/7);
+
+    std::optional<request::RequestTypeOpcode> request_type;
+    std::optional<acf::WireErrorCode>           admit_error;
+    auto outcome = server.admission(mock::kGpioByteBusId)
+                       ->admit(frame.data(), frame.size(), /*now=*/0, /*tv=*/false,
+                               /*avtp_timestamp=*/0, /*gptp_reference_now=*/0, request_type,
+                               /*out_index=*/nullptr, &admit_error);
+    REQUIRE(outcome == server::AdmitOutcome::Pending);
+    REQUIRE(request_type == request::RequestTypeOpcode::Triggered);
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 1);
+
+    // Triggered is not one of TC18's three safety-tagged (0x8x) opcodes, so
+    // a watchdog purge removes it.
+    REQUIRE(server.watchdog_purge(mock::kGpioByteBusId) == 1);
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 0);
+}
+
+TEST_CASE("notify_trigger()/notify_gptp_lock_state() broadcast a trigger occurrence to a "
+          "directly-admitted Triggered request across this mock's own endpoint set",
+          "[mock][admission][REQ-SRV-018]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    // Watches Table 37 signal 1 (gPTP lock LOST) from source_ep 99 (this
+    // deployment's own arbitrary convention for "the RC Server itself").
+    request::TriggeredStep step;
+    step.trigger_source_ep = 99;
+    step.trigger_signal_nr = server::kGptpTriggerLost;
+    step.trigger_threshold = 0;
+    auto frame = request::encode_triggered_request(request::RequestTypeOpcode::Triggered,
+                                                     mock::kSpiByteBusId, step, /*transaction_num=*/3);
+    std::optional<request::RequestTypeOpcode> request_type;
+    REQUIRE(server.admission(mock::kSpiByteBusId)
+                ->admit(frame.data(), frame.size(), 0, false, 0, 0, request_type, nullptr, nullptr) ==
+            server::AdmitOutcome::Pending);
+
+    // The very first observation is never an edge, whatever value it is.
+    REQUIRE(server.notify_gptp_lock_state(/*locked=*/true, /*source_ep=*/99) == 0);
+    // Established -> Lost is a genuine edge, matching the stored request.
+    REQUIRE(server.notify_gptp_lock_state(/*locked=*/false, /*source_ep=*/99) == 1);
+    // Unchanged observation: no edge.
+    REQUIRE(server.notify_gptp_lock_state(/*locked=*/false, /*source_ep=*/99) == 0);
+
+    // A direct notify_trigger() call reaches the same stored request.
+    REQUIRE(server.notify_trigger(/*source_ep=*/99, server::kGptpTriggerLost) == 1);
+}
+
+TEST_CASE("tick() surfaces a Standard request stored under a TSCF presentation-time gate "
+          "once its gate opens (REQ-TIMED-012)",
+          "[mock][admission][REQ-TIMED-012]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req     = standard_request(mock::kGpioByteBusId, /*write=*/false);
+    auto frame   = acf::encode_acf_abb(req, {});
+    std::optional<request::RequestTypeOpcode> request_type;
+    size_t index = 0;
+    REQUIRE(server.admission(mock::kGpioByteBusId)
+                ->admit(frame.data(), frame.size(), /*now=*/0, /*tv=*/true, /*avtp_timestamp=*/1000,
+                        /*gptp_reference_now=*/1000, request_type, &index, nullptr) ==
+            server::AdmitOutcome::Pending);
+    REQUIRE_FALSE(request_type.has_value()); // Standard: no repurposed opcode
+
+    server::TickContext ctx;
+    ctx.now          = 0;
+    ctx.gptp_now     = 2000; // past the resolved 1000ns presentation gate
+    ctx.gptp_locked  = true;
+
+    std::vector<uint8_t> due_frame;
+    REQUIRE(server.tick(mock::kGpioByteBusId, ctx, due_frame));
+    REQUIRE(due_frame == frame);
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 0); // complete() released it
+}
+
+TEST_CASE("tick() reports nothing due while gPTP time is unlocked, even past the presentation "
+          "time (REQ-TIMED-012 fail-closed)",
+          "[mock][admission][REQ-TIMED-012]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    auto req   = standard_request(mock::kGpioByteBusId, /*write=*/false);
+    auto frame = acf::encode_acf_abb(req, {});
+    std::optional<request::RequestTypeOpcode> request_type;
+    REQUIRE(server.admission(mock::kGpioByteBusId)
+                ->admit(frame.data(), frame.size(), 0, true, 1000, 1000, request_type, nullptr,
+                        nullptr) == server::AdmitOutcome::Pending);
+
+    server::TickContext ctx;
+    ctx.gptp_now    = 2000;
+    ctx.gptp_locked = false; // never established
+
+    std::vector<uint8_t> due_frame;
+    REQUIRE_FALSE(server.tick(mock::kGpioByteBusId, ctx, due_frame));
+    REQUIRE(server.pending_count(mock::kGpioByteBusId) == 1); // still stored
+}
