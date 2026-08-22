@@ -76,6 +76,22 @@
 // so that call site can be exercised via fault injection. See rcp/
 // alloc.hpp's own header comment for why this is an opt-in, instance-owned
 // seam rather than a global allocator hook.
+//
+// ── Loan lifetime independent of BufferPool (audit fix) ─────────────────────
+// BufferPool's own free-list bookkeeping (the fixed-capacity array above,
+// its mutex, entries_len_, and the fault_injector_ seam) lives in a private
+// Impl struct held via std::shared_ptr, not directly as BufferPool data
+// members. loan()'s release closure captures that shared_ptr<Impl> *by
+// value*, not `this` (the BufferPool*): a Loan handed out by loan() may
+// therefore safely outlive the BufferPool object it was drawn from — e.g. a
+// Loan stored in an outer scope while the BufferPool that produced it goes
+// out of scope (and destructs) first. Impl's storage is only actually freed
+// once its last owner — the BufferPool wrapper itself, or the release
+// closure of the last still-outstanding Loan — releases its
+// shared_ptr<Impl>, never while any Loan drawn from this pool could still
+// reach it. This does not change close()'s own documented behavior (still
+// idempotent, still safe with outstanding Loans alive) — see close()'s own
+// doc comment below.
 #pragma once
 
 #include "alloc.hpp"
@@ -104,11 +120,25 @@ public:
     // nullptr so every pre-existing construction site (including
     // new_buffer_pool()) is unaffected; see this file's own header comment.
     // fault_injector is not owned by this pool and must outlive it.
-    explicit BufferPool(alloc::FaultInjector* fault_injector) : fault_injector_(fault_injector) {}
+    explicit BufferPool(alloc::FaultInjector* fault_injector)
+        : impl_(std::make_shared<Impl>(fault_injector)) {}
+
+    // Non-copyable: mirrors this class's shape before the shared_ptr<Impl>
+    // refactor below, where non-copyable members (std::mutex, std::atomic)
+    // made copying implicitly deleted. Also non-movable: the user-declared
+    // destructor below suppresses the implicit move members, exactly as it
+    // did before this refactor.
+    BufferPool(const BufferPool&) = delete;
+    BufferPool& operator=(const BufferPool&) = delete;
 
     ~BufferPool() {
+        // Marks the pool closed. Impl's own storage (the free list, its
+        // mutex, fault_injector_) is only actually torn down once the last
+        // owning std::shared_ptr<Impl> — this member's own impl_, or the
+        // release closure of any Loan drawn from this pool that is still
+        // alive — releases it. See this file's "Loan lifetime independent
+        // of BufferPool" header comment.
         close();
-        for (size_t i = 0; i < entries_len_; i++) delete entries_[i];
     }
 
     // loan returns a zeroed buffer of exactly size bytes, drawn from the
@@ -121,17 +151,17 @@ public:
     // free-list search below only removes an entry on a cache *hit*, which
     // never reaches the fault-injection check at all).
     std::error_code loan(int size, std::unique_ptr<rcp::Loan>& out) {
-        if (closed_.load(std::memory_order_acquire)) return ErrClosed;
+        if (impl_->closed_.load(std::memory_order_acquire)) return ErrClosed;
         if (size < 0) return std::make_error_code(std::errc::invalid_argument);
 
         std::vector<uint8_t>* raw = nullptr;
         {
-            std::lock_guard<std::mutex> lk(pool_mu_);
-            for (size_t i = 0; i < entries_len_; i++) {
-                if (entries_[i]->size() >= static_cast<size_t>(size)) {
-                    raw = entries_[i];
-                    entries_[i] = entries_[entries_len_ - 1];
-                    entries_len_--;
+            std::lock_guard<std::mutex> lk(impl_->pool_mu_);
+            for (size_t i = 0; i < impl_->entries_len_; i++) {
+                if (impl_->entries_[i]->size() >= static_cast<size_t>(size)) {
+                    raw = impl_->entries_[i];
+                    impl_->entries_[i] = impl_->entries_[impl_->entries_len_ - 1];
+                    impl_->entries_len_--;
                     break;
                 }
             }
@@ -140,18 +170,27 @@ public:
         if (raw) {
             raw->assign(static_cast<size_t>(size), 0); // re-zero: no stale data leaks across reuse
         } else {
-            if (fault_injector_ && fault_injector_->should_fail())
+            if (impl_->fault_injector_ && impl_->fault_injector_->should_fail())
                 return alloc::make_error_code(alloc::AllocErrc::simulated_allocation_failure);
             raw = new std::vector<uint8_t>(static_cast<size_t>(size), 0);
         }
 
+        // The release closure captures impl_ (the shared_ptr itself, by
+        // value) rather than `this`: a Loan may legitimately outlive the
+        // BufferPool object that handed it out (see this file's "Loan
+        // lifetime independent of BufferPool" header comment), and impl_'s
+        // refcount is what keeps the pool's free list / mutex /
+        // fault_injector_ alive for exactly as long as any outstanding
+        // Loan still needs them, even after this BufferPool wrapper itself
+        // has been destroyed.
+        auto impl = impl_;
         out = std::make_unique<rcp::Loan>(
             *raw, // Loan owns its own copy of the payload (rcp::Loan's own by-value contract)
-            [this, raw]() mutable {
-                std::lock_guard<std::mutex> lk(pool_mu_);
-                if (entries_len_ < kPoolMaxEntries) {
-                    entries_[entries_len_] = raw;
-                    entries_len_++;
+            [impl, raw]() mutable {
+                std::lock_guard<std::mutex> lk(impl->pool_mu_);
+                if (impl->entries_len_ < kPoolMaxEntries) {
+                    impl->entries_[impl->entries_len_] = raw;
+                    impl->entries_len_++;
                     return;
                 }
                 // Free list already at c-RCP's own RCP_LOAN_POOL_MAX_ENTRIES
@@ -166,31 +205,59 @@ public:
     // close is idempotent — safe to call more than once, including while
     // Loans obtained before the call are still alive (their eventual
     // release simply grows a pool nobody will draw from again, up to
-    // kPoolMaxEntries).
-    void close() { closed_.store(true, std::memory_order_release); }
+    // kPoolMaxEntries) — and it remains safe to call from this BufferPool's
+    // own destructor even with outstanding Loans alive, since it sets a
+    // flag on Impl (kept alive by shared_ptr refcounting), never
+    // dereferences a dangling `this`.
+    void close() { impl_->closed_.store(true, std::memory_order_release); }
 
-    bool ok() const noexcept { return !closed_.load(std::memory_order_acquire); }
+    bool ok() const noexcept { return !impl_->closed_.load(std::memory_order_acquire); }
 
     // pooled_count reports how many released buffers are currently held
     // for reuse — introspection for tests, not part of the loan/release
     // contract itself. Always <= kPoolMaxEntries, by construction.
     size_t pooled_count() const {
-        std::lock_guard<std::mutex> lk(pool_mu_);
-        return entries_len_;
+        std::lock_guard<std::mutex> lk(impl_->pool_mu_);
+        return impl_->entries_len_;
     }
 
 private:
-    std::atomic<bool> closed_{false};
-    mutable std::mutex pool_mu_;
-    // Fixed-capacity free list (ported from c-RCP's RCP_LOAN_POOL_MAX_ENTRIES
-    // — see this file's own header comment): entries_ is a plain
-    // std::array of raw pointers, not a realloc()/std::vector-grown
-    // container — the SLOTS are static, each individual buffer's own bytes
-    // are not (matching c-RCP's own design exactly).
-    std::array<std::vector<uint8_t>*, kPoolMaxEntries> entries_{};
-    size_t                                              entries_len_ = 0; // always <= kPoolMaxEntries
+    // Impl holds every piece of this pool's state that loan()'s release
+    // closure needs to reach after a successful loan() call: the fixed-
+    // capacity free list, its mutex, and the (non-owned) fault_injector_.
+    // BufferPool itself is now just a thin std::shared_ptr<Impl> wrapper;
+    // splitting the state out this way is what lets the release closure
+    // capture impl_ (the shared_ptr) *by value* instead of `this` (see
+    // loan()'s own comment above) — the closure's own copy of impl_ keeps
+    // this storage alive by refcount for as long as the Loan itself is
+    // alive, independent of whether the BufferPool wrapper that produced
+    // it still exists. See this file's "Loan lifetime independent of
+    // BufferPool" header comment.
+    struct Impl {
+        std::atomic<bool> closed_{false};
+        std::mutex pool_mu_;
+        // Fixed-capacity free list (ported from c-RCP's RCP_LOAN_POOL_MAX_ENTRIES
+        // — see this file's own header comment): entries_ is a plain
+        // std::array of raw pointers, not a realloc()/std::vector-grown
+        // container — the SLOTS are static, each individual buffer's own bytes
+        // are not (matching c-RCP's own design exactly).
+        std::array<std::vector<uint8_t>*, kPoolMaxEntries> entries_{};
+        size_t                                              entries_len_ = 0; // always <= kPoolMaxEntries
 
-    alloc::FaultInjector* fault_injector_ = nullptr; // not owned; see constructor doc comment
+        alloc::FaultInjector* fault_injector_ = nullptr; // not owned; see BufferPool's constructor doc comment
+
+        explicit Impl(alloc::FaultInjector* fault_injector) : fault_injector_(fault_injector) {}
+
+        // Frees whatever's still in the free list once the last owner of
+        // this Impl — this BufferPool's own impl_ member, or the release
+        // closure of the last still-outstanding Loan — releases its
+        // shared_ptr<Impl>.
+        ~Impl() {
+            for (size_t i = 0; i < entries_len_; i++) delete entries_[i];
+        }
+    };
+
+    std::shared_ptr<Impl> impl_ = std::make_shared<Impl>(nullptr);
 };
 
 inline std::unique_ptr<BufferPool> new_buffer_pool() {

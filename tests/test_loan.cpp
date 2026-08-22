@@ -107,6 +107,32 @@ TEST_CASE("loan::BufferPool::close is idempotent and safe with outstanding Loans
     loan_out.reset();
 }
 
+// ── Loan lifetime independent of BufferPool (audit fix, use-after-free) ────
+
+TEST_CASE("A Loan may safely outlive the BufferPool it was drawn from",
+          "[loan][REQ-LOAN-008][audit-fix]") {
+    // Literal repro from the audit finding: the BufferPool is destroyed
+    // while a Loan drawn from it is still alive in an outer scope, and
+    // only afterward is that Loan released. Before the fix, the Loan's
+    // release closure captured the BufferPool's `this` by raw pointer, so
+    // releasing it here would lock an already-destroyed std::mutex and
+    // write through a dangling pointer -- a heap-use-after-free that ASan
+    // must catch if this fix regresses. Now the pool's shared state
+    // outlives the BufferPool wrapper via std::shared_ptr, so this must
+    // simply work.
+    std::unique_ptr<Loan> loan_out;
+    {
+        loan::BufferPool pool;
+        REQUIRE_FALSE(pool.loan(64, loan_out));
+        REQUIRE(loan_out != nullptr);
+        REQUIRE(loan_out->payload.size() == 64);
+    } // pool destructs here; loan_out is still alive, drawn from it
+
+    // Releasing (or destroying) the Loan after its pool is gone must not
+    // crash or use freed/destroyed memory.
+    loan_out.reset();
+}
+
 // ── new_buffer_pool() ────────────────────────────────────────────────────────
 
 TEST_CASE("new_buffer_pool returns a valid, open, empty pool", "[loan][REQ-LOAN-009]") {
