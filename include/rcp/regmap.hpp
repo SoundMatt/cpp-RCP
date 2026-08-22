@@ -1,18 +1,18 @@
-// fusa:req REQ-REGMAP-001
-// fusa:req REQ-REGMAP-002
-// fusa:req REQ-REGMAP-003
-// fusa:req REQ-REGMAP-004
-// fusa:req REQ-REGMAP-005
-// fusa:req REQ-REGMAP-006
-// fusa:req REQ-REGMAP-007
-// fusa:req REQ-REGMAP-008
-// fusa:req REQ-REGMAP-009
-// fusa:req REQ-REGMAP-010
-// fusa:req REQ-REGMAP-011
-// fusa:req REQ-REGMAP-012
-// fusa:req REQ-REGMAP-013
-// fusa:req REQ-REGMAP-014
-// fusa:req REQ-REGMAP-015
+// fusa:req REQ-RMAP-001
+// fusa:req REQ-RMAP-002
+// fusa:req REQ-RMAP-003
+// fusa:req REQ-RMAP-004
+// fusa:req REQ-RMAP-005
+// fusa:req REQ-RMAP-006
+// fusa:req REQ-RMAP-007
+// fusa:req REQ-RMAP-008
+// fusa:req REQ-RMAP-009
+// fusa:req REQ-RMAP-010
+// fusa:req REQ-RMAP-011
+// fusa:req REQ-RMAP-012
+// fusa:req REQ-RMAP-013
+// fusa:req REQ-RMAP-014
+// fusa:req REQ-RMAP-015
 //
 // c-RCP-derived content ported in this batch (Phase 17 / cpp-RCP issue #129,
 // "Phase 4 batch A" — see this file's own "Phase 4 batch A" banner below):
@@ -51,12 +51,18 @@
 // fusa:req REQ-RMAP-078
 // fusa:req REQ-RMAP-079
 // fusa:req REQ-RMAP-081
+// fusa:req REQ-RMAP-082
 // fusa:req REQ-RMAP-086
 // fusa:req REQ-RMAP-087
 //
 // c-RCP-derived content ported in Phase 4 batch B (this same issue/roadmap
 // entry — see this file's own "Phase 4 batch B" banner below):
 // fusa:req REQ-RMAP-017
+// fusa:req REQ-RMAP-018
+// fusa:req REQ-RMAP-019
+// fusa:req REQ-RMAP-020
+// fusa:req REQ-RMAP-021
+// fusa:req REQ-RMAP-022
 // fusa:req REQ-RMAP-040
 // fusa:req REQ-RMAP-041
 // fusa:req REQ-RMAP-042
@@ -1389,7 +1395,11 @@ constexpr size_t kRowLen = 4;
 // own identical, not-spec-derived bound.
 constexpr size_t kMaxEntries = 64;
 
-// is_ascending — REQ-RMAP-056, ported from c-RCP's
+// is_ascending — REQ-RMAP-056 (composite-key fix), and REQ-RMAP-020/021/022
+// (this same function's earlier, single-stream-only strictly-ascending/
+// non-ascending/vacuous-count boundary facts, still true today: within one
+// unchanged request_stream_index run the comparison falls back to the exact
+// strict byte_bus_id check those three ids describe), ported from c-RCP's
 // rcp_regmap_ep_id_map_is_ascending(). Read-only diagnostic: true iff
 // entries[0..count) is strictly ascending in the COMPOSITE key
 // (request_stream_index, byte_bus_id) -- request_stream_index must never
@@ -1626,7 +1636,8 @@ inline bool is_valid_association(const EpIdMappingEntry* entries, size_t count,
 } // namespace ep_id_map
 
 // ── Response / ack queue config (extraction §3.10; TC18 §12.7.9 Table 27) ───
-// ResponseQueueConfig — REQ-RMAP-059..065, replaces this codebase's own
+// ResponseQueueConfig — REQ-RMAP-059..065, REQ-RMAP-019 (zero-initializes,
+// c-RCP's rcp_regmap_response_queue_cfg_init()), replaces this codebase's own
 // pre-rewrite v2.x placeholder shape (response_queue_size/ack_queue_size/
 // flush_time -- confirmed, before replacing them, that nothing outside
 // this file/its own tests reads or writes any of those three fields; the
