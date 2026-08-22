@@ -3,6 +3,25 @@
 // fusa:req REQ-RELAY-003
 // fusa:req REQ-RELAY-004
 // fusa:req REQ-RELAY-005
+// fusa:req REQ-RELAY-006
+// fusa:req REQ-RELAY-008
+// fusa:req REQ-RELAY-009
+// fusa:req REQ-RELAY-010
+// fusa:req REQ-RELAY-012
+//
+// REQ-RELAY-014/016/017 (Phase 6 batch 12): genuinely implemented, but in
+// include/relay/relay.hpp (relay::relay_category()/Channel::is_closed()) and
+// include/rcp/rcp.hpp (rcp::ErrClosed/ErrTimeout/ErrBusy/ErrNotFound/
+// ErrAlreadyExists's std::error_condition equivalence to relay::Errc) rather
+// than in this file -- tagged here anyway, matching this codebase's own
+// pre-existing convention of concentrating every REQ-RELAY-* //fusa:req tag
+// in this one header regardless of which file the behavior actually lives
+// in (see REQ-RELAY-001..005 above, whose own real implementations already
+// span clock.c/relay.c/rcp.c-equivalent territory in c-RCP terms). Tests
+// live in tests/test_relay.cpp, the file that actually exercises them.
+// fusa:req REQ-RELAY-014
+// fusa:req REQ-RELAY-016
+// fusa:req REQ-RELAY-017
 
 // RELAY application interface adapter for cpp-RCP (§10.3, §18.2).
 //

@@ -3,6 +3,14 @@
 // fusa:test REQ-RELAY-003
 // fusa:test REQ-RELAY-004
 // fusa:test REQ-RELAY-005
+// fusa:test REQ-RELAY-006
+// fusa:test REQ-RELAY-008
+// fusa:test REQ-RELAY-009
+// fusa:test REQ-RELAY-010
+// fusa:test REQ-RELAY-012
+// fusa:test REQ-RELAY-014
+// fusa:test REQ-RELAY-016
+// fusa:test REQ-RELAY-017
 
 // RELAY conformance tests (RELAY spec §18.2, §5.1, §5.2, §10.3, §14, §19.4).
 //
@@ -46,6 +54,24 @@ TEST_CASE("relay: Protocol enum values match spec §3", "[relay][conformance]") 
     REQUIRE(static_cast<int>(relay::Protocol::MQTT)   == 4);
     REQUIRE(static_cast<int>(relay::Protocol::RCP)    == 5);
     REQUIRE(static_cast<int>(relay::Protocol::SOMEIP) == 6);
+}
+
+// to_string(Protocol) — c-RCP's relay_protocol_string() equivalent: a
+// unique, non-empty name per defined protocol constant.
+TEST_CASE("relay: to_string(Protocol) returns a unique, non-empty name per protocol",
+          "[relay][conformance]") {
+    const relay::Protocol protos[] = {relay::Protocol::CAN,  relay::Protocol::DDS,
+                                       relay::Protocol::LIN,  relay::Protocol::MQTT,
+                                       relay::Protocol::RCP,  relay::Protocol::SOMEIP};
+    const size_t proto_count = sizeof(protos) / sizeof(protos[0]);
+    for (size_t i = 0; i < proto_count; ++i) {
+        auto name = relay::to_string(protos[i]);
+        REQUIRE_FALSE(name.empty());
+        for (size_t j = 0; j < i; ++j) {
+            REQUIRE(name != relay::to_string(protos[j]));
+        }
+    }
+    REQUIRE(relay::to_string(relay::Protocol::RCP) == "RCP");
 }
 
 // ── §5.1: Mandatory error sentinels ───────────────────────────────────────────
@@ -132,6 +158,16 @@ TEST_CASE("relay: Channel recv returns nullopt after close with empty queue", "[
     relay::Channel<int> ch(8);
     ch.close();
     REQUIRE_FALSE(ch.recv().has_value());
+}
+
+// is_closed() reports the channel's closed state (REQ-RELAY-016) — c-RCP's
+// relay_message_channel_is_closed() equivalent.
+TEST_CASE("relay: Channel is_closed reports false before close and true after",
+          "[relay][channel]") {
+    relay::Channel<int> ch(4);
+    REQUIRE_FALSE(ch.is_closed());
+    ch.close();
+    REQUIRE(ch.is_closed());
 }
 
 // ── §10.3: Adapt() wraps a RequestFn as relay::Caller ────────────────────────

@@ -22,6 +22,11 @@
 // fusa:req REQ-DISC-022
 // fusa:req REQ-DISC-023
 // fusa:req REQ-DISC-024
+// fusa:req REQ-DISC-025
+// fusa:req REQ-DISC-026
+// fusa:req REQ-DISC-027
+// fusa:req REQ-DISC-028
+// fusa:req REQ-DISC-030
 
 // TC18 requirements-corpus completeness pass: REQ-DISC-029 is catalogued in
 // this module's own requirements catalog with a "tc18" citation and a

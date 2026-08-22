@@ -3,6 +3,11 @@
 // fusa:test REQ-RELAY-003
 // fusa:test REQ-RELAY-004
 // fusa:test REQ-RELAY-005
+// fusa:test REQ-RELAY-006
+// fusa:test REQ-RELAY-008
+// fusa:test REQ-RELAY-009
+// fusa:test REQ-RELAY-010
+// fusa:test REQ-RELAY-012
 
 // rcp/adapt.hpp conformance and behavioral-equivalence tests (RELAY spec
 // §10.3, §15.7.5) — cpp-RCP issue #129, ROADMAP.md Phase 17 ("Phase 4")
