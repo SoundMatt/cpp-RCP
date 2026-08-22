@@ -267,7 +267,8 @@ TEST_CASE("observe: sequential spans are recorded in call order", "[observe]") {
     auto sink = std::make_shared<InMemorySink>();
     auto oc   = new_observing_client(ok_request(), 1, sink);
 
-    for (avtp::ByteBusId bus : {3, 1, 4, 1, 5}) {
+    for (avtp::ByteBusId bus :
+         {avtp::ByteBusId{3}, avtp::ByteBusId{1}, avtp::ByteBusId{4}, avtp::ByteBusId{1}, avtp::ByteBusId{5}}) {
         auto req = standard_request(bus, 0);
         acf::AcfMessageInfo   resp;
         std::vector<uint8_t>  resp_payload;
