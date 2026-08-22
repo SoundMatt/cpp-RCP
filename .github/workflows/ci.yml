@@ -371,6 +371,198 @@ jobs:
           name: coverage-info
           path: coverage.info
 
+  # ── LLVM MC/DC (real condition/decision coverage, ratchet-gated) ─────────────
+  #
+  # Phase 7 batch 2 (cpp-RCP #129): real MC/DC evidence per ISO 26262-6:2018
+  # Table 12 (MC/DC is "++" recommended at ASIL-C/D), distinct from the
+  # `cpfusa coverage --mcdc`/`--dal DAL-B` branch-coverage fallback used in
+  # cpfusa-report below, which is NOT verified MC/DC evidence (see
+  # AUDIT_PACK.md §3).
+  #
+  # `cpfusa coverage --mcdc-file` (the mechanism this job would otherwise
+  # feed) cannot be used here: confirmed by direct local reproduction that
+  # cpp-FuSa v0.18.0's parser (src/coverage/coverage.cpp's apply_mcdc)
+  # scans for `mcdc_records[].conditions[].covered_true_count`/
+  # `covered_false_count` object fields, while real `llvm-cov export
+  # -format=text` emits `mcdc_records` as positional arrays (LineStart/
+  # ColumnStart/LineEnd/ColumnEnd/.../a bool TestVectors array) with no such
+  # keys anywhere in the schema, at any LLVM version — the same bug class
+  # sibling repo c-RCP hit and filed as SoundMatt/c-FuSa#129. This job does
+  # not wait on an upstream fix — it reads `llvm-cov export`'s own
+  # `totals.mcdc` block directly instead of routing through cpfusa's
+  # mismatched parser, so the number below is genuine, tool-independent
+  # MC/DC evidence today.
+  #
+  # Landed ratchet-gated from the start (not informational-only): unlike
+  # c-RCP's mcdc job, which shipped informational before a later issue
+  # added its gate, this job ships its regression floor in the same PR that
+  # introduces it, mirroring this file's own "Coverage regression gate
+  # (line floor, not DAL-B)" step further down in cpfusa-report — a
+  # ratchet against regression, not a claim of 100% (or even 80%) MC/DC.
+  # See the "MC/DC regression gate" step at the end of this job for the
+  # floor itself and its provenance comment.
+  mcdc:
+    name: MC/DC coverage (LLVM, ratchet-gated)
+    runs-on: ubuntu-22.04
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 18 (clang/llvm-cov/llvm-profdata with MC/DC support)
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 18
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Configure (MC/DC-instrumented build)
+        env:
+          CXX: clang++-18
+        run: |
+          cmake -B build-mcdc \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DCMAKE_CXX_FLAGS="-fprofile-instr-generate -fcoverage-mapping -fcoverage-mcdc -O0" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate -fcoverage-mapping" \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build-mcdc --parallel
+
+      - name: Test (profiled; one .profraw per test binary, %p/%m-namespaced)
+        env:
+          LLVM_PROFILE_FILE: mcdc-profiles/%p-%16m.profraw
+        run: |
+          mkdir -p build-mcdc/tests/mcdc-profiles
+          ctest --test-dir build-mcdc --output-on-failure -j1
+
+      - name: Merge profile data
+        run: |
+          llvm-profdata-18 merge -sparse \
+            build-mcdc/tests/mcdc-profiles/*.profraw \
+            -o mcdc.profdata
+
+      - name: Export real MC/DC totals (llvm-cov, not cpfusa --mcdc-file -- see job header)
+        run: |
+          bins=()
+          while IFS= read -r f; do bins+=("$f"); done < <(find build-mcdc/tests -maxdepth 1 -type f -perm -u+x -name 'test_*')
+          primary="${bins[0]}"
+          objargs=()
+          for b in "${bins[@]:1}"; do objargs+=(-object "$b"); done
+          # Header-only: the real implementation lives in include/rcp/*.hpp,
+          # not in any src/ dir (cpp-RCP has none) -- scope -sources there,
+          # not to tests/*.cpp, so this measures whether the implementation's
+          # own conditions/decisions are independently exercised by the test
+          # suite, matching c-RCP's own src/*.c-scoped intent.
+          srcs=()
+          while IFS= read -r f; do srcs+=("$f"); done < <(find include/rcp -name '*.hpp')
+          llvm-cov-18 export "$primary" "${objargs[@]}" \
+            -instr-profile=mcdc.profdata -format=text \
+            -sources "${srcs[@]}" \
+            > mcdc-export.json
+
+      - name: Summarize MC/DC totals
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          d = json.load(open("mcdc-export.json"))
+          totals = d["data"][0]["totals"]
+          mcdc = totals.get("mcdc", {})
+          branch = totals.get("branches", {})
+          summary = {
+              "mcdc_condition_pairs_covered": mcdc.get("covered"),
+              "mcdc_condition_pairs_total": mcdc.get("count"),
+              "mcdc_percent": mcdc.get("percent"),
+              "branch_percent_for_comparison": branch.get("percent"),
+          }
+          json.dump(summary, open("mcdc-summary.json", "w"), indent=2)
+          print(json.dumps(summary, indent=2))
+          note = (
+              f"Real LLVM MC/DC (condition/decision) coverage: "
+              f"{mcdc.get('percent', 0):.2f}% "
+              f"({mcdc.get('covered')}/{mcdc.get('count')} condition "
+              f"independence pairs) across include/rcp/*.hpp -- "
+              f"ratchet-gated (regression-only, not a 100% gate; see the "
+              f"gate step below). For comparison, branch coverage over the "
+              f"same instrumented binaries: "
+              f"{branch.get('percent', 0):.2f}%. See job header for why "
+              f"this is measured directly via llvm-cov rather than "
+              f"cpfusa coverage --mcdc-file."
+          )
+          print(f"::notice title=MC/DC Coverage::{note}")
+          with open("mcdc-summary.md", "w") as f:
+              f.write("### MC/DC coverage (ratchet-gated, not a 100% gate)\n\n")
+              f.write(note + "\n")
+          PYEOF
+          cat mcdc-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Uploaded *before* the gate step below so a failing gate still
+      # leaves this diagnostic artifact inspectable -- matching how this
+      # file's own cpfusa-report job uploads its compliance-report artifact
+      # ahead of any of its own non-gating steps failing.
+      - name: Upload MC/DC report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcdc-report
+          path: |
+            mcdc-summary.json
+            mcdc-export.json
+
+      # The real gate: hard-fails if MC/DC condition/decision coverage
+      # drops below a floor set with real margin under the currently-
+      # measured percentage, mirroring this file's own "Coverage
+      # regression gate (line floor, not DAL-B)" step in cpfusa-report --
+      # a ratchet against regression, not a claim of complete MC/DC (see
+      # AUDIT_PACK.md §3). Reads mcdc-summary.json already written by the
+      # step above rather than recomputing anything.
+      #
+      # Floor set at 60% (Phase 7 batch 2 / cpp-RCP #129): cpp-RCP had ZERO
+      # MC/DC infrastructure before this PR, so there is no prior
+      # measurement to ratchet against -- this is the first one. Local
+      # instrumented build+test+export (same mechanism and flags as this
+      # job) run twice: Homebrew LLVM 18.1.8 (matching this job's own
+      # clang-18 major version) measured 313/466 = 67.17% over
+      # include/rcp/*.hpp with all 58 tests passing under instrumentation;
+      # a second run on Homebrew LLVM 22.1.8 measured 426/629 = 67.73%,
+      # close agreement despite a 4-major-version toolchain gap, which is
+      # itself evidence the percentage is a stable property of the test
+      # suite rather than a toolchain artifact. 60% keeps ~7 points of
+      # margin below the clang-18-matched 67.17% figure -- wider than
+      # would be needed for gcc/clang version drift alone, because this
+      # measurement also crosses macOS/arm64 (local) vs Ubuntu 22.04/x86_64
+      # (this job) and Homebrew's clang-18 build vs apt.llvm.org's, either
+      # of which could plausibly shift condition-pair counts on a
+      # header-only codebase (many decisions live in platform-conditional
+      # code, e.g. rcp/l2.hpp's raw-socket paths) more than a same-OS
+      # version bump would. Raise this floor deliberately, with an updated
+      # provenance comment, once a fresh re-measurement on this job's own
+      # runner confirms real headroom -- do not raise it from a
+      # locally-measured number alone.
+      - name: MC/DC regression gate (ratchet floor, not 100% -- Phase 7 batch 2 / cpp-RCP #129)
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import sys
+
+          floor = 60.0  # see step name's comment above for provenance
+
+          summary = json.load(open("mcdc-summary.json"))
+          actual = summary["mcdc_percent"]
+
+          if actual is None or actual < floor:
+              print(f"::error::MC/DC coverage regression: {actual}% < floor {floor}% "
+                    f"({summary['mcdc_condition_pairs_covered']}/"
+                    f"{summary['mcdc_condition_pairs_total']} condition "
+                    f"independence pairs). This is a ratchet floor (Phase 7 "
+                    f"batch 2 / cpp-RCP #129), not a 100% gate -- if this drop "
+                    f"is an intentional tradeoff, lower the floor explicitly "
+                    f"with a provenance comment matching this step's own "
+                    f"convention; do not just delete or skip this step.")
+              sys.exit(1)
+
+          print(f"OK: {actual:.2f}% >= floor {floor}%")
+          PYEOF
+
   # ── Build cpp-FuSa binary (shared by all cpfusa-* jobs) ──────────────────────
   cpfusa-build:
     name: Build cpp-FuSa
