@@ -118,6 +118,76 @@
       "asil": "ASIL-B",
       "tc18": "§12.7.10 Table 28 (own-access-control rule, \"Request_stream_index... allowed to access this sequencer\"), TC18.txt L3460-3493; §12.9.6 Table 30 (SEQUENCER_NOT_KNOWN=2, UNAUTHORIZED_ACCESS=3), TC18.txt L3812-3844",
       "gap": "Confirmed absent (2026-08-22): rcp::acf::WireErrorCode::SequencerNotKnown (acf.hpp:695) is defined but grepped as having ZERO consumers anywhere in include/ or tests/ -- no caller ever produces it. This is consistent with rcp/request.hpp's own explicit \"TODO(phase1-followup)\" (lines 219-225) acknowledging that c-RCP's REQ-SEQ-013/014-style per-sequencer-owner/access-control gate is not yet ported: SequencerTable has no owner-per-sequencer concept to distinguish \"unknown index\" from \"real sequencer, wrong owner\" in the first place, so there is nothing yet to map to these two distinct wire codes. Real, TC18-cited (§12.7.10 Table 28) gap; the WireErrorCode enumerator itself lives in rcp/acf.hpp (in this batch's scope) but the classifier logic's natural home is rcp/request.hpp (out of this batch's scope, and already tracked there via that file's own TODO)."
+    },
+    {
+      "id": "REQ-CMP-008",
+      "title": "encode_compound_request() shall reject an unrecognized request_type",
+      "text": "rcp::request::encode_compound_request() shall report a failure (e.g. std::optional<std::vector<uint8_t>> == std::nullopt) when type is neither is_compound() nor is_compound_wait(), rather than silently encoding whatever RequestTypeOpcode value it is given.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.2 Table 7 / Figure 8 (GBB message for compound requests: request_type, cmp_start_state, cmp_next_state, cmp_sequencer, cmp_exec_delay, cmp_repetitions), TC18.txt L1379-1458; §11.2.2.3 Table 8 / Figure 9 (GBB message for compound wait requests: request_type, cmpw_start_state, cmpw_next_state, cmpw_sequencer, cmpw_exec_delay, cmpw_repetitions), TC18.txt L1476-1567",
+      "gap": "Confirmed absent (2026-08-22): encode_compound_request() (request.hpp:540-551) takes `type` as a plain RequestTypeOpcode parameter and never checks is_compound(type)||is_compound_wait(type) before calling encode_request_type()/acf::encode_acf_gbb() — it will happily encode e.g. RequestTypeOpcode::Chained into a syntactically well-formed 'compound' frame. Its return type is a plain std::vector<uint8_t> (not std::optional, unlike encode_timed_request() at request.hpp:1048, which does reject via std::nullopt), so there is structurally no way for it to signal rejection even if the check were added without a signature change. No test in test_request.cpp exercises this path (grepped for a REQ-CMP-008 inline tag or an 'encode_compound_request' + invalid-type test — none found; the only tag near this area, [REQ-CMP-011] at test_request.cpp:316, tests a round-trip, not rejection). Root cause is shared with acf.hpp's own documented 'always returns bytes, never an error code' contract for encode_acf_abb()/encode_acf_gbb() (acf.hpp:445-451) that every conditional-request encoder in this file is built on — same architecture, not unique to this function."
+    },
+    {
+      "id": "REQ-CMP-009",
+      "title": "encode_compound_request() shall reject an oversized payload",
+      "text": "rcp::request::encode_compound_request() shall report a failure when payload.size() would produce an acf_msg_length exceeding the ACF_GBB payload bound, rather than silently masking/wrapping it onto the wire.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.2 Table 7 / Figure 8 (GBB message for compound requests: request_type, cmp_start_state, cmp_next_state, cmp_sequencer, cmp_exec_delay, cmp_repetitions), TC18.txt L1379-1458; §11.2.2.3 Table 8 / Figure 9 (GBB message for compound wait requests: request_type, cmpw_start_state, cmpw_next_state, cmpw_sequencer, cmpw_exec_delay, cmpw_repetitions), TC18.txt L1476-1567",
+      "gap": "Confirmed absent (2026-08-22): encode_compound_request() forwards payload directly to acf::encode_acf_gbb() (request.hpp:550), which by its own documented design (acf.hpp:445-451, 'encode_acf_abb()/encode_acf_gbb() below mask acf_msg_length to 9 bits on encode... rather than rejecting an oversized payload outright... a caller that must not silently wrap can check a payload's size against these bounds itself before encoding') never rejects an oversized payload — it masks acf_msg_length to 9 bits and proceeds. encode_compound_request()'s own plain-vector return type has no channel to report such a rejection even if added. No test exercises an oversized-payload call. Same shared architectural root cause as REQ-CMP-008; both would need encode_compound_request() to gain either a caller-side kAcfGbbMaxPayload check (returning std::optional, mirroring encode_timed_request()'s own convention) or an equivalent guard, which does not exist today."
+    },
+    {
+      "id": "REQ-TRIG-003",
+      "title": "encode_triggered_request() shall reject an unrecognized request_type",
+      "text": "rcp::request::encode_triggered_request() shall report a failure when type is not is_triggered(type), rather than silently encoding whatever RequestTypeOpcode value it is given.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.5 Figure 11 / Table 10 (GBB message for triggered requests: request_type=0x0E/0x8E, trigger_source_ep, trigger_signal_nr, trigger_threshold, trigger_exec_delay, trigger_repetitions), TC18.txt L1685-1755",
+      "gap": "Confirmed absent (2026-08-22): encode_triggered_request() (request.hpp:941-949) takes `type` as a plain RequestTypeOpcode parameter and never checks is_triggered(type) before encoding — mirrors REQ-CMP-008's exact gap shape (same missing-validation pattern, same plain-vector return type with no rejection channel, same acf::encode_acf_gbb() root cause). No test in test_request.cpp calls encode_triggered_request() with a non-triggered opcode and checks for a rejection; the existing [REQ-TRIG-005] tests are round-trips with valid opcodes only."
+    },
+    {
+      "id": "REQ-CHAIN-003",
+      "title": "encode_chained_member() shall reject an oversized payload",
+      "text": "rcp::request::encode_chained_member() shall report a failure when payload.size() would produce an acf_msg_length exceeding the ACF_GBB payload bound, rather than silently masking/wrapping it onto the wire.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.6 Figure 12 / field table (GBB for chained requests: request_type=0x01, reserved octets, chain_exec_delay, cs), TC18.txt L1773-1847; general ACF_GBB frame-validation basis",
+      "gap": "Confirmed absent (2026-08-22): encode_chained_member() (request.hpp:716-731) forwards payload directly to acf::encode_acf_gbb() with no size check and a plain std::vector<uint8_t> return type — identical shape to REQ-CMP-009's gap (same acf.hpp:445-451 'never rejects, caller's responsibility' root cause). No test exercises an oversized-payload call to encode_chained_member()."
+    },
+    {
+      "id": "REQ-CHAIN-008",
+      "title": "A chained request submitted with no predecessor shall be rejected, and its whole chain ignored",
+      "text": "rcp::request::RequestLedger shall reject (or otherwise refuse to execute) a chained request record submitted with no chained_predecessor at all, reporting an error equivalent to c-RCP's CHAIN_ERROR, and shall not execute any request that would have chained from it — per TC18 §11.2.2.6, 'If the first request in an AVTPDU is a chain request, then there is no predecessor to chain to, thus the entire chain will be ignored.'",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.2.6 (\"If the first request in an AVTPDU is a chain request, then there is no predecessor to chain to, thus the entire chain will be ignored. An error response with the error code 'CHAIN_ERROR' to each request will be generated\"), TC18.txt L1796-1798",
+      "gap": "Confirmed absent (2026-08-22): RequestRecord::chained_predecessor is std::optional<uint8_t> (request.hpp:1315), and RequestLedger::submit() (request.hpp:1354-1362) never inspects it — a Chained-opcode record with chained_predecessor == std::nullopt is accepted and tracked exactly like any other Pending record, with no special rejection path. RequestErrc (request.hpp:270-285) has no CHAIN_ERROR-equivalent enumerator at all — the closest neighbors (request_not_found, request_canceled, invalid_lifecycle_transition) are semantically unrelated. This is distinct from REQ-CHAIN-009's 'already-aborted chain' case (which cascade_cancel()/propagate_chain_completion() genuinely do handle, unconditionally cancelling every downstream chained_successor once one member aborts — see request.hpp's own file-header delta #4/judgment-call note at lines 207-217): REQ-CHAIN-008 is about a chained member that never had a predecessor relationship recorded in the first place, which nothing in RequestLedger detects or rejects today. A caller assembling chained_predecessor/chained_successors links at submission time (this codebase's own design, not c-RCP's positional has_predecessor bool) could in principle already choose not to submit a first-frame Chained request with a false chained_predecessor link, but RequestLedger itself provides no enforcement or detection of the case, and no test in test_request.cpp exercises it."
+    },
+    {
+      "id": "REQ-TIMED-012",
+      "title": "A request carried under a TSCF header is postponed until the header's presentation time",
+      "text": "A caller-facing admission/dispatch entry point shall, given an AVTPDU decoded under a TSCF header (carrying its own avtp_timestamp), defer executing any request in it until that timestamp is reached, using the already-implemented timed_admit()/timed_due() primitives (REQ-TIMED-007/008/011) as the gate.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2, TC18.txt L1159; §11.2.1, TC18.txt L1204",
+      "gap": "Confirmed absent (2026-08-22): rcp/request.hpp implements every TSCF-admission PRIMITIVE this requirement depends on (timed_admit()/timed_due()/timed_too_far(), request.hpp:1094-1125) but, by this file's own explicit design note (request.hpp:246-250, 'this header... does not implement a running scheduler thread; wiring select_next_due()'s output into an actual dispatch loop is left to the embedding application'), provides no dispatch/admission LOOP that actually calls them against a real TSCF-decoded avtp_timestamp. Grepped the whole tree (include/, src/) for a dispatch-tscf/admit-gate equivalent to c-RCP's rcp_mock_server_dispatch_tscf()/rcp_server_endpoint_admit(): none exists — rcp/l2.hpp/udp.hpp encode/decode TSCF *framing* (use_tscf bit, avtp_timestamp field) but never route a decoded timestamp into timed_admit()/timed_due(). This is a genuine, confirmed absence of end-to-end behavior (not merely an unwired primitive): nothing in cpp-RCP today defers ANY request's execution until a TSCF header's presentation time arrives. Per this file's own design note this may be intentionally out of request.hpp's charter (a library of primitives, not a server), but the requirement's own text (postponement actually happening) has no home anywhere else in the tree either."
+    },
+    {
+      "id": "REQ-TIMED-013",
+      "title": "Standard requests, and timed requests under a TSCF header, are sent as ACF_ABB",
+      "text": "A caller building a Standard or Timed request for transmission under a TSCF header shall encode it as ACF_ABB (not the ACF_GBB message_timestamp-repurposing path REQ-TIMED-002/003 model), with the TSCF header's own avtp_timestamp carrying the presentation time, and a receiver's admission/dispatch path shall honor that presentation time per REQ-TIMED-012.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2, TC18.txt L1182; §11.2.1, TC18.txt L1204",
+      "gap": "Confirmed absent (2026-08-22): shares REQ-TIMED-012's exact root cause and evidence — rcp/acf.hpp's encode_acf_abb() and rcp/l2.hpp's/udp.hpp's TSCF framing already provide the wire-encoding half of this pair (a caller can build a TSCF-headed ACF_ABB frame today), but the decode/admission half (a dispatch entry point that decodes a real TSCF-wrapped ACF_ABB frame and threads its avtp_timestamp into timed_admit()/timed_due() the way REQ-TIMED-012 describes) does not exist anywhere in cpp-RCP. See REQ-TIMED-012's gap text for the full detail; both ids share one missing piece (a TSCF-aware dispatch/admission entry point) and would likely be closed together."
     }
   ]
 }

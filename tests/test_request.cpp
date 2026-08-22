@@ -13,8 +13,6 @@
 // fusa:test REQ-CMP-001
 // fusa:test REQ-CMP-002
 // fusa:test REQ-CMP-003
-// fusa:test REQ-CMP-008
-// fusa:test REQ-CMP-009
 // fusa:test REQ-CMP-010
 // fusa:test REQ-CMP-011
 // fusa:test REQ-CMP-012
@@ -36,7 +34,6 @@
 // fusa:test REQ-CMP-028
 // fusa:test REQ-CMP-029
 // fusa:test REQ-TRIG-001
-// fusa:test REQ-TRIG-003
 // fusa:test REQ-TRIG-004
 // fusa:test REQ-TRIG-005
 // fusa:test REQ-TRIG-006
@@ -48,7 +45,6 @@
 // fusa:test REQ-TRIG-012
 // fusa:test REQ-TRIG-013
 // fusa:test REQ-CHAIN-002
-// fusa:test REQ-CHAIN-003
 // fusa:test REQ-CHAIN-004
 // fusa:test REQ-CHAIN-005
 // fusa:test REQ-CHAIN-006
@@ -76,6 +72,7 @@
 // fusa:test REQ-CANCEL-009
 // fusa:test REQ-CANCEL-010
 // fusa:test REQ-CANCEL-011
+// fusa:test REQ-CANCEL-012
 // fusa:test REQ-CANCEL-013
 // fusa:test REQ-CANCEL-014
 // fusa:test REQ-CANCEL-015
@@ -313,7 +310,7 @@ TEST_CASE("kCompoundRepeatInfinite is the two-octet all-ones sentinel", "[reques
 }
 
 TEST_CASE("compound request round-trips through encode_compound_request/decode_compound_request",
-          "[request][REQ-CMP-011]") {
+          "[request][REQ-CMP-011][REQ-CMP-015]") {
     CompoundStep step;
     step.start_state    = 1;
     step.next_state      = 2;
@@ -339,7 +336,7 @@ TEST_CASE("compound request round-trips through encode_compound_request/decode_c
 }
 
 TEST_CASE("compound-wait safety request round-trips, evt_op independent of step sub-fields",
-          "[request][REQ-CMP-026]") {
+          "[request][REQ-CMP-026][REQ-CMP-027]") {
     CompoundStep step;
     step.start_state    = 4;
     step.next_state      = 0; // "leave it where it is" sentinel
@@ -395,7 +392,7 @@ TEST_CASE("decode_compound_request rejects a non-ACF_GBB message", "[request][RE
 
 // ── clear-non-safestate (0x06) ────────────────────────────────────────────────
 
-TEST_CASE("clear-non-safestate round-trips through encode/decode", "[request][REQ-CMP-016]") {
+TEST_CASE("clear-non-safestate round-trips through encode/decode", "[request][REQ-CMP-016][REQ-CMP-017]") {
     auto encoded = encode_clear_non_safestate(/*byte_bus_id=*/3, /*transaction_num=*/7);
     ClearNonSafestateRequest out;
     REQUIRE_FALSE(decode_clear_non_safestate(encoded.data(), encoded.size(), out));
@@ -965,6 +962,20 @@ TEST_CASE("chained member wire sub-field offsets: chain_exec_delay at octets 4..
     REQUIRE(encoded[15] == 0);
 }
 
+TEST_CASE("decode_chained_member maps ACF decode failures to their RequestErrc equivalents",
+          "[request][REQ-CHAIN-005]") {
+    auto full = encode_chained_member(1, 0, false, 1);
+    std::vector<uint8_t> too_short(full.begin(), full.begin() + 4);
+    ChainedMember out;
+    auto ec_short = decode_chained_member(too_short.data(), too_short.size(), out);
+    REQUIRE(ec_short == rcp::avtp::make_error_code(rcp::avtp::AvtpErrc::short_buffer));
+
+    rcp::acf::AcfMessageInfo abb_info;
+    auto abb_encoded = rcp::acf::encode_acf_abb(abb_info, {});
+    auto ec_bad_type = decode_chained_member(abb_encoded.data(), abb_encoded.size(), out);
+    REQUIRE(ec_bad_type == rcp::acf::make_error_code(rcp::acf::AcfErrc::bad_acf_msg_type));
+}
+
 TEST_CASE("decode_chained_member rejects a non-chained opcode", "[request][REQ-CHAIN-007]") {
     auto encoded = encode_clear_all(1, 1);
     ChainedMember out;
@@ -1059,6 +1070,27 @@ TEST_CASE("decode_timed_request rejects hs or cs set", "[request][REQ-TIMED-010]
     auto encoded2 = rcp::acf::encode_acf_gbb(info2, uint64_t{0x0A} << 56, {});
     REQUIRE(decode_timed_request(encoded2.data(), encoded2.size(), out) ==
             make_error_code(RequestErrc::unsupported_cmd));
+}
+
+TEST_CASE("decode_timed_request maps ACF decode failures and rejects a non-repurposed message_timestamp",
+          "[request][REQ-TIMED-004]") {
+    auto full = *encode_timed_request(1, 0, 1);
+    std::vector<uint8_t> too_short(full.begin(), full.begin() + 4);
+    TimedRequest out;
+    auto ec_short = decode_timed_request(too_short.data(), too_short.size(), out);
+    REQUIRE(ec_short == rcp::avtp::make_error_code(rcp::avtp::AvtpErrc::short_buffer));
+
+    rcp::acf::AcfMessageInfo abb_info;
+    auto abb_encoded = rcp::acf::encode_acf_abb(abb_info, {});
+    auto ec_bad_type = decode_timed_request(abb_encoded.data(), abb_encoded.size(), out);
+    REQUIRE(ec_bad_type == rcp::acf::make_error_code(rcp::acf::AcfErrc::bad_acf_msg_type));
+
+    rcp::acf::AcfMessageInfo mtv_info;
+    mtv_info.byte_bus_id = 1;
+    mtv_info.mtv          = true;
+    auto mtv_encoded = rcp::acf::encode_acf_gbb(mtv_info, uint64_t{0x0A} << 56, {});
+    auto ec_not_repurposed = decode_timed_request(mtv_encoded.data(), mtv_encoded.size(), out);
+    REQUIRE(ec_not_repurposed == make_error_code(RequestErrc::timestamp_not_repurposed));
 }
 
 TEST_CASE("decode_timed_request rejects a non-timed opcode", "[request][REQ-TIMED-005]") {
@@ -1388,7 +1420,7 @@ TEST_CASE("RequestLedger::cancel_single reports request_not_found for a transact
 
 TEST_CASE("RequestLedger::cancel_single reports request_not_cancellable — not request_not_found — "
           "for a request that is tracked but already past cancellation (c-RCP delta #3)",
-          "[request][REQ-CANCEL-010]") {
+          "[request][REQ-CANCEL-010][REQ-CANCEL-008]") {
     RequestLedger ledger;
     RequestRecord rec;
     rec.transaction_num = 1;
