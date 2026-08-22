@@ -60,9 +60,27 @@
 //   - c-RCP REQ-WDG-010 (the RC Server's request-reception path shall call
 //     kick() on every request received) is a cross-cutting dispatch-layer
 //     integration requirement, not watchdog-module behavior; this file's
-//     kick_from_request()/Manager::on_request_received() are the hook, and
-//     rcp/sim.hpp's Simulator::dispatch already wires it in exactly this
-//     shape (see sim.hpp's own header comment).
+//     kick_from_request()/Manager::on_request_received() are the hook.
+//     [Phase 6 batch 5, cpp-RCP issue #129, 2026-08-22] Re-verified against
+//     real code, not just this comment's own prior claim: rcp/sim.hpp's
+//     Simulator::dispatch already wires it in exactly this shape (see
+//     sim.hpp's own header comment), and separately rcp/mock.hpp's
+//     dispatch_e2e_core() (the reference RC Server's actual
+//     request-reception path) calls rx_watchdog_kick() -- which forwards
+//     straight to Manager::on_request_received() -- unconditionally before
+//     any admission check, at both of its call sites, with a dedicated
+//     tests/test_mock.cpp TEST_CASE exercising it end-to-end. Genuinely
+//     implemented and tested, but NOT added as a REQ-WDG-010 entry in this
+//     project's own .fusa-reqs.json here: neither mock.hpp nor
+//     test_mock.cpp carries cpp-FuSa's required literal `// fusa:req`/
+//     `// fusa:test` tag for it (only informal comment mentions and a
+//     Catch2 tag string, which cpp-FuSa's trace tool does not recognize),
+//     and adding the catalog entry without that tag existing somewhere
+//     would fail CI's hard 100%-traced/100%-tested trace gates
+//     (.github/workflows/ci.yml's cpfusa-trace job). Filed to
+//     .fusa-reqs-pending.json instead, with the full citation, for a
+//     future mock.hpp/test_mock.cpp-scoped batch (out of this batch's
+//     watchdog.hpp/test_watchdog.cpp-only file-scope) to tag and migrate.
 //   - c-RCP REQ-WDG-012 (destroy(k) is a null-safe no-op, otherwise closes
 //     then frees) does not transfer: no manual destroy exists here —
 //     StreamWatchdog/Manager are plain value types with ordinary C++
