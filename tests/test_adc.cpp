@@ -29,11 +29,15 @@
 // fusa:test REQ-ADC-029
 // fusa:test REQ-ADC-030
 // fusa:test REQ-ADC-031
+// fusa:test REQ-ADC-032
 // fusa:test REQ-ADC-033
+// fusa:test REQ-ADC-035
+// fusa:test REQ-ADC-036
 // fusa:test REQ-ADC-037
 // fusa:test REQ-ADC-038
 // fusa:test REQ-ADC-039
 // fusa:test REQ-ADC-040
+// fusa:test REQ-ADC-041
 // fusa:test REQ-ADC-042
 // fusa:test REQ-ADC-043
 // fusa:test REQ-ADC-044
@@ -149,6 +153,16 @@ TEST_CASE("collect_response_values packs averaged values in capture order, verba
     auto n = collect_response_values(avg, 3, out);
     REQUIRE(n == 3);
     REQUIRE(out == std::vector<uint16_t>{10, kAdcNoSignal, 30});
+}
+
+TEST_CASE("collect_response_values packs exactly value_count values -- the leading ones -- when "
+          "more averages are available than requested",
+          "[adc][REQ-ADC-007]") {
+    std::vector<AdcAvgValue> avg{{10, 0}, {20, 0}, {30, 0}, {40, 0}};
+    std::vector<uint16_t> out;
+    auto n = collect_response_values(avg, 2, out);
+    REQUIRE(n == 2);
+    REQUIRE(out == std::vector<uint16_t>{10, 20});
 }
 
 TEST_CASE("collect_response_values reports a short count without touching unwritten entries",
@@ -288,6 +302,18 @@ TEST_CASE("trigger_evaluate never fires an edge trigger on the first call", "[ad
     auto fired = trigger_evaluate(s, 5, 10, 100, false);
     REQUIRE(fired == 0);
     REQUIRE(s.has_previous);
+}
+
+TEST_CASE("an ADC measurement value is fixed at 16 bits, matching TC18's byte_msg_payload layout",
+          "[adc][REQ-ADC-032]") {
+    // kAdcValueLen is the single source of truth every wire-level ADC
+    // encode/decode path (encode_response/decode_response, response_
+    // value_count) derives its byte-count arithmetic from -- pin it
+    // directly at 16 bits (RCP_EP_ADC_VALUE_LEN's own value in c-RCP) so
+    // any future change to that constant is caught here explicitly, not
+    // just as an incidental side effect of an unrelated codec test.
+    REQUIRE(kAdcValueLen == sizeof(uint16_t));
+    REQUIRE(kAdcValueLen == 2);
 }
 
 TEST_CASE("trigger_evaluate BELOW_MIN fires on a downward crossing of trigger_min",
@@ -475,6 +501,15 @@ TEST_CASE("AdcErrc reports a non-empty, category-correct message for every value
         REQUIRE(ec.category() == adc_category());
         REQUIRE_FALSE(ec.message().empty());
     }
+    // An out-of-range/unrecognized code (covers both AdcErrc's own general
+    // default branch, REQ-ADC-024, and the reconfig-specific codes 9/10
+    // folded into the same category, REQ-ADC-055 -- c-RCP's
+    // rcp_ep_adc_strerror()/rcp_ep_adc_reconfig_strerror() are two separate
+    // functions each tested with an out-of-range value; this category's
+    // message() merges both, so one out-of-range assertion here covers both
+    // ids' "including an out-of-range value" clause).
+    auto ec = make_error_code(static_cast<AdcErrc>(99));
+    REQUIRE_FALSE(ec.message().empty());
 }
 
 TEST_CASE("AdcErrc::no_signal's message does not claim an invented ADC_NO_SIGNAL spec identifier",

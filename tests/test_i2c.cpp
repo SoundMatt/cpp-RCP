@@ -574,7 +574,7 @@ TEST_CASE("I2cEndpoint::handle_request rejects every reserved evt[2:0] value (00
 }
 
 TEST_CASE("I2cEndpoint::handle_request reports config_write_not_supported for evt[2:0]==111b",
-          "[i2c][REQ-I2C-012]") {
+          "[i2c][REQ-I2C-007]") {
     I2cEndpoint ep;
     auto ec = ep.handle_request(/*evt_op=*/7, {0x00, 0xAB}, {});
     REQUIRE(ec == make_error_code(I2cErrc::config_write_not_supported));

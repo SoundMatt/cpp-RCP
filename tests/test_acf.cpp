@@ -37,6 +37,7 @@
 // fusa:test REQ-ACF-052
 // fusa:test REQ-ACF-053
 // fusa:test REQ-WIREERR-001
+// fusa:test REQ-ADC-034
 
 // Tests for rcp/acf.hpp — the ACF_ABB/ACF_GBB message-format half of the TC18
 // wire codec (ROADMAP.md milestone 44, "Wire Format Core", v2.0.0; split
@@ -779,7 +780,7 @@ TEST_CASE("compound_wait_match caps status to payload_length (the specification'
     REQUIRE_FALSE(compound_wait_match(0x0, payload, sizeof(payload), status, sizeof(status)));
 }
 
-TEST_CASE("compound_wait_match exact-match mode (evt[2:0] = 000b)", "[acf][REQ-ACF-026]") {
+TEST_CASE("compound_wait_match exact-match mode (evt[2:0] = 000b)", "[acf][REQ-ACF-026][REQ-ADC-034]") {
     const uint8_t payload[2] = {0x01, 0x02};
     const uint8_t equal[2]   = {0x01, 0x02};
     const uint8_t differs[2] = {0x01, 0x03};
