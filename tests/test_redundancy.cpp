@@ -20,8 +20,12 @@
 #include "rcp/mock.hpp"
 #include "rcp/redundancy.hpp"
 
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
 
 using namespace rcp;
 using namespace std::chrono_literals;
@@ -149,4 +153,108 @@ TEST_CASE("redundancy: RedundantRequestFn is itself usable as an rcp::RequestFn 
     auto [resp, ec] = caller->call(relay::Context::with_timeout(1s), req);
     REQUIRE_FALSE(ec);
     REQUIRE(resp.id == req.id);
+}
+
+// ── Concurrency regression: promote() must not be a blind toggle ───────────
+//
+// send() reads active_ under a short lock, then calls the RequestFn pointer
+// *outside* the lock. Two concurrent send() calls can therefore both observe
+// active_ == &primary_, both have the primary fail, and both attempt to
+// promote. An unconditional toggle (active_ = active_==&primary_ ? &standby_
+// : &primary_) would apply twice in that case -- the first promote flips
+// primary->standby, the second (serialized behind the same mutex, but blind
+// to what the caller actually observed) flips it straight back
+// standby->primary -- silently reverting to the confirmed-bad primary and
+// defeating failover for every later caller. This is a real regression risk
+// for REQ-RED-006 ("subsequent send() calls shall continue to be served by
+// the standby without reverting to the primary on their own").
+//
+// The two send() calls are driven through an explicit two-phase handshake
+// (entered_cv / release_cv), following this project's established pattern
+// for deterministic concurrency tests (see e.g. shmem's
+// "admits up to queue_capacity concurrent callers" case): both threads are
+// held inside their (still-primary) RequestFn call -- i.e. both have already
+// captured active_ == &primary_ under send()'s lock -- until both have
+// entered, and are then released together so their promote attempts
+// genuinely race on the *same* observed-primary pointer. This makes the race
+// deterministic instead of depending on OS scheduling luck.
+TEST_CASE("redundancy: concurrent send() failures on the same observed primary promote "
+          "exactly once and never revert to primary",
+          "[redundancy][thread][REQ-RED-006]") {
+    constexpr int kThreads = 8;
+
+    std::mutex              mu;
+    std::condition_variable entered_cv;
+    std::condition_variable release_cv;
+    int                     entered_count = 0;
+    bool                    may_release   = false;
+
+    // Always fails (like fail_fn), but first blocks every caller until all
+    // kThreads callers are simultaneously inside the primary call -- forcing
+    // every send() to have observed active_ == &primary_ before any of them
+    // can reach promote_from().
+    RequestFn blocking_fail_fn = [&](const Context&, const acf::AcfMessageInfo&,
+                                      const std::vector<uint8_t>&, acf::AcfMessageInfo&,
+                                      std::vector<uint8_t>&) {
+        {
+            std::lock_guard<std::mutex> lk(mu);
+            ++entered_count;
+        }
+        entered_cv.notify_all();
+
+        std::unique_lock<std::mutex> lk(mu);
+        release_cv.wait(lk, [&] { return may_release; });
+        return ErrClosed;
+    };
+
+    // The standby is a trivial, stateless always-succeeds fn rather than a
+    // mock::Server (which is not itself documented/guaranteed thread-safe
+    // for concurrent dispatch()) -- this test's own retries after promotion
+    // are deliberately concurrent, and must not introduce a second, unrelated
+    // race of their own on top of the one under test.
+    RequestFn always_ok_fn = [](const Context&, const acf::AcfMessageInfo&,
+                                 const std::vector<uint8_t>&, acf::AcfMessageInfo&,
+                                 std::vector<uint8_t>&) { return std::error_code{}; };
+
+    redundancy::RedundantRequestFn rr(blocking_fail_fn, always_ok_fn);
+    REQUIRE(rr.is_primary_active());
+
+    auto req = gpio_read_request();
+
+    std::vector<std::thread> threads;
+    threads.reserve(kThreads);
+    for (int i = 0; i < kThreads; ++i) {
+        threads.emplace_back([&] {
+            acf::AcfMessageInfo  out;
+            std::vector<uint8_t> out_payload;
+            rr.send(Context{}, req, {}, out, out_payload);
+        });
+    }
+
+    // Wait until every thread's send() is blocked inside the primary call --
+    // each has already read active_ == &primary_ under the lock, before any
+    // of them can call promote_from().
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        entered_cv.wait(lk, [&] { return entered_count == kThreads; });
+    }
+
+    // Release them all together: every thread's primary call now returns
+    // ErrClosed and races to promote_from(observed == &primary_) at
+    // (approximately) the same time, serialized only by RedundantRequestFn's
+    // internal mutex.
+    {
+        std::lock_guard<std::mutex> lk(mu);
+        may_release = true;
+    }
+    release_cv.notify_all();
+
+    for (auto& th : threads) th.join();
+
+    // Exactly one net promotion must have occurred: active_ must be the
+    // standby, never reverted back to the primary that every caller observed
+    // failing (REQ-RED-006). With the old blind-toggle promote(), an even
+    // number of concurrent promote attempts on the same observed pointer
+    // cancel back out to &primary_, and this REQUIRE fails.
+    REQUIRE_FALSE(rr.is_primary_active());
 }
