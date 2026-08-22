@@ -1,5 +1,7 @@
 {
-  "generatedAt": "2026-07-30T19:16:24Z",
+  "generatedAt": "2026-08-22T22:19:44Z",
+  "kind": "iec61508-gap-report",
+  "language": "cpp",
   "objectives": [
     {
       "clause": "§7.1",
@@ -75,7 +77,7 @@
       "clause": "§7.7",
       "id": "3-7.7",
       "part": "Part 3",
-      "status": "gap",
+      "status": "partial",
       "title": "Software modification"
     },
     {
@@ -129,11 +131,15 @@
     }
   ],
   "project": "cpp-RCP",
+  "schemaVersion": "1.15.2",
   "sil": "SIL-2",
+  "standard": "iec61508",
   "summary": {
-    "gaps": 6,
-    "partial": 8,
+    "gaps": 5,
+    "partial": 9,
     "satisfied": 4,
     "total": 18
-  }
+  },
+  "tool": "cpp-FuSa",
+  "toolVersion": "0.18.0"
 }

@@ -1,9 +1,9 @@
 # Software Accomplishment Summary
 
 **Project:** cpp-RCP  
-**Version:** 0.1.0  
+**Version:** 3.0.0  
 **DAL/ASIL/SIL:** DAL-B  
-**Generated:** 2026-07-30T19:16:24Z  
+**Generated:** 2026-08-22T22:19:44Z  
 
 ## Checklist
 
@@ -28,6 +28,6 @@
 | DO-178C gap report | 11.20 | present | `do178-gap-report.json` |
 | Vulnerability report | 11.15 | absent | `vuln.json` |
 | HARA | 11.9 | present | `.fusa-hara.json` |
-| Dispositions | 11.15 | absent | `.fusa-dispositions.json` |
+| Dispositions | 11.15 | present | `.fusa-dispositions.json` |
 
-**Present: 14 / 20**
+**Present: 15 / 20**

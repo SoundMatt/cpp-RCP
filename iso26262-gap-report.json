@@ -1,6 +1,8 @@
 {
   "asil": "ASIL-B",
-  "generatedAt": "2026-07-30T19:16:24Z",
+  "generatedAt": "2026-08-22T22:19:44Z",
+  "kind": "iso26262-gap-report",
+  "language": "cpp",
   "objectives": [
     {
       "clause": "§5.1",
@@ -111,7 +113,7 @@
       "evidence": "",
       "id": "6-4.8",
       "part": "Part 6",
-      "status": "gap",
+      "status": "partial",
       "title": "Change management"
     },
     {
@@ -164,10 +166,14 @@
     }
   ],
   "project": "cpp-RCP",
+  "schemaVersion": "1.15.2",
+  "standard": "iso26262",
   "summary": {
-    "gaps": 8,
-    "partial": 9,
+    "gaps": 7,
+    "partial": 10,
     "satisfied": 3,
     "total": 20
-  }
+  },
+  "tool": "cpp-FuSa",
+  "toolVersion": "0.18.0"
 }

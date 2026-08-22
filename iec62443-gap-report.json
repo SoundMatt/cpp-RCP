@@ -1,0 +1,109 @@
+{
+  "generatedAt": "2026-08-22T22:19:44Z",
+  "kind": "gap-report",
+  "language": "cpp",
+  "objectives": [
+    {
+      "id": "SR-1.1",
+      "status": "gap",
+      "title": "Human user identification and authentication"
+    },
+    {
+      "id": "SR-1.2",
+      "status": "gap",
+      "title": "Software process identification and authentication"
+    },
+    {
+      "id": "SR-1.3",
+      "status": "gap",
+      "title": "Account management"
+    },
+    {
+      "id": "SR-1.4",
+      "status": "gap",
+      "title": "Identifier management"
+    },
+    {
+      "id": "SR-1.5",
+      "status": "gap",
+      "title": "Authenticator management"
+    },
+    {
+      "id": "SR-2.1",
+      "status": "gap",
+      "title": "Authorization enforcement"
+    },
+    {
+      "id": "SR-2.3",
+      "status": "gap",
+      "title": "Use control for portable devices"
+    },
+    {
+      "id": "SR-3.1",
+      "status": "gap",
+      "title": "Communication integrity"
+    },
+    {
+      "id": "SR-3.2",
+      "status": "gap",
+      "title": "Malicious code protection"
+    },
+    {
+      "id": "SR-3.4",
+      "status": "partial",
+      "title": "Software and information integrity"
+    },
+    {
+      "id": "SR-3.5",
+      "status": "gap",
+      "title": "Input validation"
+    },
+    {
+      "id": "SR-4.2",
+      "status": "partial",
+      "title": "Use of cryptography"
+    },
+    {
+      "id": "SR-5.2",
+      "status": "gap",
+      "title": "Zone boundary protection"
+    },
+    {
+      "id": "SR-6.1",
+      "status": "partial",
+      "title": "Audit log accessibility"
+    },
+    {
+      "id": "SR-7.1",
+      "status": "gap",
+      "title": "Denial of service protection"
+    },
+    {
+      "id": "SR-7.2",
+      "status": "gap",
+      "title": "Resource management"
+    },
+    {
+      "id": "SR-7.3",
+      "status": "partial",
+      "title": "Control system backup"
+    },
+    {
+      "id": "SR-7.6",
+      "status": "gap",
+      "title": "Network and security configuration settings"
+    }
+  ],
+  "project": "cpp-RCP",
+  "schemaVersion": "1.15.2",
+  "sl": "SL-2",
+  "standard": "iec62443",
+  "summary": {
+    "gaps": 14,
+    "partial": 4,
+    "satisfied": 0,
+    "total": 18
+  },
+  "tool": "cpp-FuSa",
+  "toolVersion": "0.18.0"
+}

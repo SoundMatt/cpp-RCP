@@ -1,6 +1,8 @@
 {
   "dal": "DAL-B",
-  "generatedAt": "2026-07-30T19:16:24Z",
+  "generatedAt": "2026-08-22T22:19:44Z",
+  "kind": "do178c-gap-report",
+  "language": "cpp",
   "objectives": [
     {
       "id": "A-1.1",
@@ -250,10 +252,14 @@
     }
   ],
   "project": "cpp-RCP",
+  "schemaVersion": "1.15.2",
+  "standard": "do178c",
   "summary": {
     "gaps": 34,
     "partial": 4,
     "satisfied": 3,
     "total": 41
-  }
+  },
+  "tool": "cpp-FuSa",
+  "toolVersion": "0.18.0"
 }

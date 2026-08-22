@@ -111,22 +111,23 @@
     },
     {
       "clause": "11.15",
+      "evidence": ".fusa-dispositions.json",
       "item": "Dispositions",
-      "present": false
+      "present": true
     }
   ],
   "dal": "DAL-B",
-  "generatedAt": "2026-07-30T19:16:24Z",
+  "generatedAt": "2026-08-22T22:19:44Z",
   "kind": "sas",
   "language": "cpp",
   "project": "cpp-RCP",
   "projectRoot": "/home/runner/work/cpp-RCP/cpp-RCP",
   "schemaVersion": "1.15.2",
   "summary": {
-    "present": 14,
+    "present": 15,
     "total": 20
   },
   "tool": "cpp-FuSa",
-  "toolVersion": "0.17.0",
-  "version": "0.1.0"
+  "toolVersion": "0.18.0",
+  "version": "3.0.0"
 }
