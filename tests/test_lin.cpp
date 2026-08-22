@@ -4,6 +4,37 @@
 // fusa:test REQ-LINEP-004
 // fusa:test REQ-LINEP-005
 // fusa:test REQ-LINEP-006
+// fusa:test REQ-LINEP-007
+// fusa:test REQ-LINEP-008
+// fusa:test REQ-LINEP-009
+// fusa:test REQ-LINEP-010
+// fusa:test REQ-LINEP-011
+// fusa:test REQ-LINEP-012
+// fusa:test REQ-LINEP-013
+// fusa:test REQ-LINEP-014
+// fusa:test REQ-LINEP-015
+// fusa:test REQ-LINEP-016
+// fusa:test REQ-LINEP-017
+// fusa:test REQ-LINEP-018
+// fusa:test REQ-LINEP-019
+// fusa:test REQ-LINEP-020
+// fusa:test REQ-LINEP-021
+// fusa:test REQ-LINEP-022
+// fusa:test REQ-LINEP-024
+// fusa:test REQ-LINEP-025
+// fusa:test REQ-LINEP-027
+// fusa:test REQ-LINEP-028
+// fusa:test REQ-LINEP-029
+// fusa:test REQ-LINEP-030
+// fusa:test REQ-LINEP-031
+// fusa:test REQ-LINEP-032
+// fusa:test REQ-LINEP-033
+// fusa:test REQ-LINEP-034
+// fusa:test REQ-LINEP-035
+// fusa:test REQ-LINEP-036
+// fusa:test REQ-LINEP-037
+// fusa:test REQ-LINEP-038
+// fusa:test REQ-LINEP-039
 
 // Tests for rcp/lin.hpp — the LIN commander endpoint type. Ported from
 // c-RCP's tests/test_ep_lin.c (ROADMAP.md "Phase 17", cpp-RCP issue #129,
@@ -382,4 +413,74 @@ TEST_CASE("encode_reconfig_request builds a WRITE frame with evt[2:0]=111b", "[l
 
 TEST_CASE("encode_reconfig_request returns empty for empty data", "[lin][REQ-LINEP-006]") {
     REQUIRE(encode_reconfig_request(6, 0, {}, 1).empty());
+}
+
+// ── Phase 6 batch 7: closing real test-coverage gaps found while re-deriving
+// REQ-LINEP-* from c-RCP (id-collision audit, c-RCP-18-tracker issue #533's
+// per-endpoint-type successor). Every function below was already genuinely
+// implemented; only the specific branch/edge case exercised here was
+// previously untested.
+
+// ── REQ-LINEP-015: strerror-equivalent is non-empty and distinct per code,
+// exhaustively over every defined LinErrc value ──────────────────────────────
+
+TEST_CASE("LinErrc reports a distinct, non-empty message for every defined code, and a non-null "
+          "message for an undefined one",
+          "[lin][REQ-LINEP-015]") {
+    const LinErrc codes[] = {
+        LinErrc::no_response, LinErrc::config_write_not_supported, LinErrc::short_frame,
+        LinErrc::bad_msg_type, LinErrc::wrong_bus, LinErrc::wrong_op, LinErrc::bad_evt,
+    };
+    std::vector<std::string> seen;
+    for (auto c : codes) {
+        auto ec = make_error_code(c);
+        REQUIRE(ec.category() == lin_category());
+        REQUIRE_FALSE(ec.message().empty());
+        for (const auto& s : seen) REQUIRE(s != ec.message());
+        seen.push_back(ec.message());
+    }
+    REQUIRE_FALSE(make_error_code(static_cast<LinErrc>(999)).message().empty());
+}
+
+// ── REQ-LINEP-027/031: decode_command_request rejects evt[2:0] != 000b and
+// a non-ACF_ABB message — previously untested despite being named in the
+// pre-existing test's own title ──────────────────────────────────────────────
+
+TEST_CASE("decode_command_request rejects a nonzero evt[2:0] with bad_evt", "[lin][REQ-LINEP-027]") {
+    rcp::acf::AcfMessageInfo hdr;
+    hdr.byte_bus_id = 6;
+    hdr.op          = false; // read direction, matching encode_command_request()
+    hdr.evt_op      = 0x2;
+    auto frame = rcp::acf::encode_acf_abb(hdr, {0xAA});
+
+    std::vector<uint8_t> out_tx;
+    uint8_t               out_txn = 0;
+    REQUIRE(decode_command_request(frame.data(), frame.size(), 6, out_tx, out_txn) ==
+            make_error_code(LinErrc::bad_evt));
+}
+
+TEST_CASE("decode_command_request rejects a non-ACF_ABB frame with bad_msg_type",
+          "[lin][REQ-LINEP-031]") {
+    rcp::acf::AcfMessageInfo hdr;
+    hdr.byte_bus_id = 6;
+    hdr.op          = false;
+    auto frame = rcp::acf::encode_acf_gbb(hdr, 0, {0xAA});
+
+    std::vector<uint8_t> out_tx;
+    uint8_t               out_txn = 0;
+    REQUIRE(decode_command_request(frame.data(), frame.size(), 6, out_tx, out_txn) ==
+            make_error_code(LinErrc::bad_msg_type));
+}
+
+// ── REQ-LINEP-039: reconfig_strerror-equivalent never returns an empty
+// message, including for an unrecognized code ────────────────────────────────
+
+TEST_CASE("LinReconfigErrc reports a distinct, non-empty message per code", "[lin][REQ-LINEP-039]") {
+    auto short_ec = make_error_code(LinReconfigErrc::short_payload);
+    auto range_ec = make_error_code(LinReconfigErrc::out_of_range);
+    REQUIRE(short_ec.category() == lin_reconfig_category());
+    REQUIRE_FALSE(short_ec.message().empty());
+    REQUIRE_FALSE(range_ec.message().empty());
+    REQUIRE(short_ec.message() != range_ec.message());
+    REQUIRE_FALSE(make_error_code(static_cast<LinReconfigErrc>(999)).message().empty());
 }

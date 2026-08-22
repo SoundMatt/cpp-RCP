@@ -7,6 +7,39 @@
 // fusa:test REQ-CANEP-007
 // fusa:test REQ-CANEP-008
 // fusa:test REQ-CANEP-009
+// fusa:test REQ-CANEP-010
+// fusa:test REQ-CANEP-011
+// fusa:test REQ-CANEP-012
+// fusa:test REQ-CANEP-013
+// fusa:test REQ-CANEP-014
+// fusa:test REQ-CANEP-015
+// fusa:test REQ-CANEP-016
+// fusa:test REQ-CANEP-017
+// fusa:test REQ-CANEP-018
+// fusa:test REQ-CANEP-019
+// fusa:test REQ-CANEP-020
+// fusa:test REQ-CANEP-021
+// fusa:test REQ-CANEP-022
+// fusa:test REQ-CANEP-023
+// fusa:test REQ-CANEP-024
+// fusa:test REQ-CANEP-025
+// fusa:test REQ-CANEP-026
+// fusa:test REQ-CANEP-027
+// fusa:test REQ-CANEP-028
+// fusa:test REQ-CANEP-029
+// fusa:test REQ-CANEP-030
+// fusa:test REQ-CANEP-031
+// fusa:test REQ-CANEP-032
+// fusa:test REQ-CANEP-033
+// fusa:test REQ-CANEP-034
+// fusa:test REQ-CANEP-035
+// fusa:test REQ-CANEP-036
+// fusa:test REQ-CANEP-037
+// fusa:test REQ-CANEP-038
+// fusa:test REQ-CANEP-039
+// fusa:test REQ-CANEP-040
+// fusa:test REQ-CANEP-041
+// fusa:test REQ-CANEP-042
 
 // Tests for rcp/can.hpp — the CAN controller endpoint type. Ported from
 // c-RCP's tests/test_ep_can.c (ROADMAP.md "Phase 17", cpp-RCP issue #129,
@@ -760,4 +793,306 @@ TEST_CASE("Reassembler correctly reports kErrTooLarge partway through a multi-fr
         }
     }
     REQUIRE(saw_too_large);
+}
+
+// ── Phase 6 batch 7: closing real test-coverage gaps found while re-deriving
+// REQ-CANEP-* from c-RCP (id-collision audit, c-RCP-18-tracker issue #533's
+// per-endpoint-type successor). Every function below was already genuinely
+// implemented; only the specific branch/edge case exercised here was
+// previously untested.
+
+// ── REQ-CANEP-007: functional-config zero-init (implicit via default member
+// initializers — CanFunctionalConfig has no separate free init() function,
+// unlike rcp::iseled::iseled_functional_cfg_init(), so this test proves the
+// zero-initialized invariant directly instead) ───────────────────────────────
+
+TEST_CASE("CanFunctionalConfig default-constructs to an all-zero functional config",
+          "[can][REQ-CANEP-007]") {
+    CanFunctionalConfig cfg;
+    REQUIRE_FALSE(cfg.ep_enable);
+    REQUIRE_FALSE(cfg.ep_clear_req_storage);
+    REQUIRE_FALSE(cfg.ep_req_crc_enable);
+    REQUIRE_FALSE(cfg.ep_response_ts_enable);
+    REQUIRE_FALSE(cfg.ep_suppress_response);
+    REQUIRE(cfg.timing.arbitration.prescaler == 0);
+    REQUIRE(cfg.timing.fd_data.prescaler == 0);
+    REQUIRE(cfg.timing.xl_data.prescaler == 0);
+    REQUIRE_FALSE(cfg.delay_comp_enable);
+    REQUIRE(cfg.delay_comp_offset == 0);
+    REQUIRE(cfg.exec_delay_clk_divider == 0);
+    for (const auto& f : cfg.xl_filters) {
+        REQUIRE(f.id == 0);
+        REQUIRE(f.mask == 0);
+        REQUIRE_FALSE(f.enable);
+    }
+    REQUIRE(cfg.ep_status == 0);
+    REQUIRE(cfg.status == 0);
+    REQUIRE(cfg.fifo_status == 0);
+    REQUIRE_FALSE(cfg.xl_new_pl_provisioned);
+}
+
+// ── REQ-CANEP-015: strerror-equivalent is non-empty and distinct per code,
+// exhaustively over every defined CanErrc value ──────────────────────────────
+
+TEST_CASE("CanErrc reports a distinct, non-empty message for every defined code, and a non-null "
+          "message for an undefined one",
+          "[can][REQ-CANEP-015]") {
+    const CanErrc codes[] = {
+        CanErrc::identifier_out_of_range,
+        CanErrc::payload_exceeds_format_limit,
+        CanErrc::xl_payload_exceeds_single_avtpdu_bound,
+        CanErrc::config_write_not_supported,
+        CanErrc::bad_frame_format,
+        CanErrc::short_frame,
+        CanErrc::bad_msg_type,
+        CanErrc::wrong_bus,
+        CanErrc::wrong_op,
+        CanErrc::bad_evt,
+        CanErrc::bad_arbitration_id,
+    };
+    std::vector<std::string> seen;
+    for (auto c : codes) {
+        auto ec = make_error_code(c);
+        REQUIRE(ec.category() == can_category());
+        REQUIRE_FALSE(ec.message().empty());
+        for (const auto& s : seen) REQUIRE(s != ec.message());
+        seen.push_back(ec.message());
+    }
+    REQUIRE_FALSE(make_error_code(static_cast<CanErrc>(999)).message().empty());
+}
+
+// ── REQ-CANEP-017: decode_frame_request's full reject taxonomy — wrong_bus/
+// short_frame/wrong_op/bad_evt already covered above; this closes
+// bad_msg_type/bad_frame_format/bad_arbitration_id ───────────────────────────
+
+TEST_CASE("decode_frame_request reports bad_msg_type for a non-ACF_ABB frame", "[can][REQ-CANEP-017]") {
+    rcp::acf::AcfMessageInfo hdr;
+    hdr.byte_bus_id = 7;
+    hdr.op          = true;
+    auto frame = rcp::acf::encode_acf_gbb(hdr, 0, {0x01, 0x02});
+
+    FrameFormat out_fmt{};
+    uint32_t     out_id = 0;
+    XlHeader      out_xl{};
+    std::vector<uint8_t> out_tx;
+    uint8_t                out_txn = 0;
+    REQUIRE(decode_frame_request(frame.data(), frame.size(), 7, out_fmt, out_id, out_xl, out_tx, out_txn) ==
+            make_error_code(CanErrc::bad_msg_type));
+}
+
+TEST_CASE("decode_frame_request reports bad_frame_format for a leading-quadlet value of 6 or 7",
+          "[can][REQ-CANEP-017]") {
+    auto frame = encode_frame_request(7, FrameFormat::Cbff, 0x1, std::nullopt, {0xAA}, 1);
+    REQUIRE(frame.size() >= rcp::acf::kAcfCommonHeaderLen + 1);
+    // Force the leading quadlet's top 3 bits (payload byte 0's top 3 bits) to
+    // 110b (6), an unassigned FrameFormat code.
+    frame[rcp::acf::kAcfCommonHeaderLen] =
+        static_cast<uint8_t>((frame[rcp::acf::kAcfCommonHeaderLen] & 0x1F) | 0xC0);
+
+    FrameFormat out_fmt{};
+    uint32_t     out_id = 0;
+    XlHeader      out_xl{};
+    std::vector<uint8_t> out_tx;
+    uint8_t                out_txn = 0;
+    REQUIRE(decode_frame_request(frame.data(), frame.size(), 7, out_fmt, out_id, out_xl, out_tx, out_txn) ==
+            make_error_code(CanErrc::bad_frame_format));
+}
+
+TEST_CASE("decode_frame_request reports bad_arbitration_id when the id exceeds its format's own "
+          "width",
+          "[can][REQ-CANEP-017]") {
+    auto frame = encode_frame_request(7, FrameFormat::Cbff, 0x1, std::nullopt, {0xAA}, 1);
+    // Leading quadlet's byte 1 (payload offset 1) carries id bits [23:16] —
+    // for a valid Base11 (Cbff) id these are always 0; forcing one high
+    // makes the id exceed 0x7FF while frame_format (top 3 bits of byte 0)
+    // stays untouched (still Cbff).
+    frame[rcp::acf::kAcfCommonHeaderLen + 1] |= 0x01;
+
+    FrameFormat out_fmt{};
+    uint32_t     out_id = 0;
+    XlHeader      out_xl{};
+    std::vector<uint8_t> out_tx;
+    uint8_t                out_txn = 0;
+    REQUIRE(decode_frame_request(frame.data(), frame.size(), 7, out_fmt, out_id, out_xl, out_tx, out_txn) ==
+            make_error_code(CanErrc::bad_arbitration_id));
+}
+
+// ── REQ-CANEP-020: decode_frame_response's full reject taxonomy (previously
+// only its round-trip success paths were tested) ─────────────────────────────
+
+TEST_CASE("decode_frame_response reports short_frame/wrong_bus/bad_evt/bad_msg_type/"
+          "bad_frame_format/bad_arbitration_id",
+          "[can][REQ-CANEP-020]") {
+    std::vector<uint8_t> rx{0x01};
+    auto frame = encode_frame_response(7, FrameFormat::Cbff, 0x1, std::nullopt, rx, 1, false, 0);
+
+    FrameFormat out_fmt{};
+    uint32_t     out_id = 0;
+    XlHeader      out_xl{};
+    std::vector<uint8_t> out_rx;
+    bool                   out_timed = false;
+    uint64_t                out_ts   = 0;
+    uint8_t                  out_txn  = 0;
+
+    std::vector<uint8_t> empty;
+    REQUIRE(decode_frame_response(empty.data(), empty.size(), 7, out_fmt, out_id, out_xl, out_rx,
+                                   out_timed, out_ts, out_txn) == make_error_code(CanErrc::short_frame));
+
+    REQUIRE(decode_frame_response(frame.data(), frame.size(), 8, out_fmt, out_id, out_xl, out_rx,
+                                   out_timed, out_ts, out_txn) == make_error_code(CanErrc::wrong_bus));
+
+    std::vector<uint8_t> forced_evt = frame;
+    forced_evt[4] |= 0x10; // evt[2:0] -> 001b, Reserved
+    REQUIRE(decode_frame_response(forced_evt.data(), forced_evt.size(), 7, out_fmt, out_id, out_xl,
+                                   out_rx, out_timed, out_ts, out_txn) == make_error_code(CanErrc::bad_evt));
+
+    // bad_msg_type: an acf_msg_type that is neither ACF_ABB (0x0E) nor
+    // ACF_GBB (0x0D) — peek_msg_type() reports it, decode_frame_response()
+    // falls into its ABB-decode branch (any non-GBB type takes that path),
+    // and decode_acf_abb()'s own internal type check rejects it.
+    std::vector<uint8_t> wrong_type(rcp::acf::kAcfCommonHeaderLen, 0x00);
+    REQUIRE(decode_frame_response(wrong_type.data(), wrong_type.size(), 7, out_fmt, out_id, out_xl,
+                                   out_rx, out_timed, out_ts, out_txn) == make_error_code(CanErrc::bad_msg_type));
+
+    std::vector<uint8_t> forced_format = frame;
+    forced_format[rcp::acf::kAcfCommonHeaderLen] =
+        static_cast<uint8_t>((forced_format[rcp::acf::kAcfCommonHeaderLen] & 0x1F) | 0xE0); // format=7
+    REQUIRE(decode_frame_response(forced_format.data(), forced_format.size(), 7, out_fmt, out_id, out_xl,
+                                   out_rx, out_timed, out_ts, out_txn) ==
+            make_error_code(CanErrc::bad_frame_format));
+
+    std::vector<uint8_t> forced_id = frame;
+    forced_id[rcp::acf::kAcfCommonHeaderLen + 1] |= 0x01; // id bit above Base11's 0x7FF ceiling
+    REQUIRE(decode_frame_response(forced_id.data(), forced_id.size(), 7, out_fmt, out_id, out_xl, out_rx,
+                                   out_timed, out_ts, out_txn) == make_error_code(CanErrc::bad_arbitration_id));
+}
+
+// ── REQ-CANEP-026: decode_frame_response_fragment validates byte_bus_id/
+// message type/evt the same way the unfragmented response decoder does
+// (frame_format/arbitration_id are deliberately NOT its job — see
+// REQ-CANEP-027) ───────────────────────────────────────────────────────────
+
+TEST_CASE("decode_frame_response_fragment reports short_frame/wrong_bus/bad_evt/bad_msg_type",
+          "[can][REQ-CANEP-026]") {
+    std::vector<uint8_t> rx(300, 0x11);
+    auto frames = encode_frame_response_fragmented(7, FrameFormat::XlClassicalPl, 0x1,
+                                                     XlHeader{0, 0, 0}, rx, 1, false, 0, 64);
+    REQUIRE(frames.size() > 1);
+
+    bool     ms;
+    uint16_t segment_num;
+    std::vector<uint8_t> payload;
+    bool     timed;
+    uint64_t timestamp;
+    uint8_t  txn;
+
+    std::vector<uint8_t> empty;
+    REQUIRE(decode_frame_response_fragment(empty.data(), empty.size(), 7, ms, segment_num, payload,
+                                            timed, timestamp, txn) == make_error_code(CanErrc::short_frame));
+
+    REQUIRE(decode_frame_response_fragment(frames[0].data(), frames[0].size(), 8, ms, segment_num,
+                                            payload, timed, timestamp, txn) ==
+            make_error_code(CanErrc::wrong_bus));
+
+    std::vector<uint8_t> forced_evt = frames[0];
+    forced_evt[4] |= 0x10;
+    REQUIRE(decode_frame_response_fragment(forced_evt.data(), forced_evt.size(), 7, ms, segment_num,
+                                            payload, timed, timestamp, txn) ==
+            make_error_code(CanErrc::bad_evt));
+
+    // bad_msg_type: an acf_msg_type that is neither ACF_ABB nor ACF_GBB — see
+    // the identical construction in decode_frame_response's own reject-
+    // taxonomy test above for why this is the only reachable way to trigger
+    // it (a well-formed ACF_GBB frame always agrees with itself).
+    std::vector<uint8_t> wrong_type(rcp::acf::kAcfCommonHeaderLen, 0x00);
+    REQUIRE(decode_frame_response_fragment(wrong_type.data(), wrong_type.size(), 7, ms, segment_num,
+                                            payload, timed, timestamp, txn) ==
+            make_error_code(CanErrc::bad_msg_type));
+}
+
+// ── REQ-CANEP-027: decode_reassembled_frame_response's reject taxonomy
+// (short_frame/bad_frame_format/bad_arbitration_id — success-path recovery
+// is REQ-CANEP-036, already covered by the worst-case round-trip tests) ─────
+
+TEST_CASE("decode_reassembled_frame_response reports short_frame/bad_frame_format/"
+          "bad_arbitration_id",
+          "[can][REQ-CANEP-027]") {
+    FrameFormat out_fmt{};
+    uint32_t     out_id = 0;
+    XlHeader      out_xl{};
+    std::vector<uint8_t> out_data;
+
+    std::vector<uint8_t> too_short{0x00, 0x00, 0x00};
+    REQUIRE(decode_reassembled_frame_response(too_short.data(), too_short.size(), out_fmt, out_id, out_xl,
+                                               out_data) == make_error_code(CanErrc::short_frame));
+
+    std::vector<uint8_t> bad_format{0xE0, 0x00, 0x00, 0x01}; // top 3 bits = 111b (7), unassigned
+    REQUIRE(decode_reassembled_frame_response(bad_format.data(), bad_format.size(), out_fmt, out_id,
+                                               out_xl, out_data) == make_error_code(CanErrc::bad_frame_format));
+
+    std::vector<uint8_t> bad_id{0x00, 0x01, 0x00, 0x00}; // Cbff (format=0) with id bit 16 set (>0x7FF)
+    REQUIRE(decode_reassembled_frame_response(bad_id.data(), bad_id.size(), out_fmt, out_id, out_xl,
+                                               out_data) == make_error_code(CanErrc::bad_arbitration_id));
+}
+
+// ── REQ-CANEP-032: the CAN endpoint does not support sending remote frames —
+// CanDataFrame carries no remote-frame flag and this module's own encode
+// functions produce only data frames ─────────────────────────────────────────
+
+TEST_CASE("CanDataFrame carries no remote-frame concept — every encoded frame is a data frame",
+          "[can][REQ-CANEP-032]") {
+    // There is no remote-frame flag on CanDataFrame, no separate
+    // encode_remote_frame_request() overload, and no decode outcome
+    // distinguishing a remote frame from a data frame anywhere in this
+    // module — that absence, not a runtime check, is this requirement's own
+    // claim. This round trip demonstrates the only frame shape this module
+    // can produce or consume.
+    std::vector<uint8_t> tx{0xAA};
+    auto frame = encode_frame_request(7, FrameFormat::Cbff, 0x1, std::nullopt, tx, 1);
+    REQUIRE_FALSE(frame.empty());
+    FrameFormat out_fmt{};
+    uint32_t     out_id = 0;
+    XlHeader      out_xl{};
+    std::vector<uint8_t> out_tx;
+    uint8_t                out_txn = 0;
+    REQUIRE_FALSE(decode_frame_request(frame.data(), frame.size(), 7, out_fmt, out_id, out_xl, out_tx, out_txn));
+    REQUIRE(out_tx == tx); // a plain data payload, never a remote-frame marker
+}
+
+// ── REQ-CANEP-037: can_ep_enable&clr's ep_clear_req_storage bit is wire bit
+// 4 (0x10), matching TC18 Table 35 and every sibling endpoint — a dedicated
+// byte-literal regression test, since a round-trip test alone cannot catch
+// this class of defect (render and parse would agree on a wrong bit too) ────
+
+TEST_CASE("render_registers places ep_clear_req_storage at wire bit 4 (0x10), not bit 1",
+          "[can][REQ-CANEP-037]") {
+    CanFunctionalConfig cfg;
+    cfg.ep_clear_req_storage = true;
+
+    std::array<uint8_t, kEpFuncLen> out{};
+    render_registers(cfg, out);
+
+    REQUIRE(out[kRegEpEnableClr] == 0x10);
+}
+
+// ── REQ-CANEP-040: an 11-bit CAN identifier is right-aligned within the CAN
+// ID field — explicit byte-level assertion (a round trip alone cannot rule
+// out an unexpected shift that still happens to round-trip) ─────────────────
+
+TEST_CASE("An 11-bit arbitration id is right-aligned in the leading quadlet's low bits",
+          "[can][REQ-CANEP-040]") {
+    auto frame = encode_frame_request(7, FrameFormat::Cbff, 0x7FF, std::nullopt, {}, 1);
+    REQUIRE(frame.size() >= rcp::acf::kAcfCommonHeaderLen + 4);
+    // Leading quadlet, big-endian: byte0's top 3 bits are frame_format
+    // (Cbff = 0); the remaining 29 bits (byte0's low 5 bits, then byte1,
+    // byte2, byte3) are arbitration_id. For id=0x7FF (11 bits, all set),
+    // only byte2's low 3 bits and all of byte3 may be nonzero — every bit
+    // above bit 10 (including all of byte0's low 5 bits and all of byte1)
+    // must be clear, proving the id is right-aligned rather than shifted.
+    const uint8_t* p = &frame[rcp::acf::kAcfCommonHeaderLen];
+    REQUIRE((p[0] & 0xE0) == 0x00);       // format bits (Cbff = 0)
+    REQUIRE(p[0] == 0x00);                // id bits [28:24]: clear
+    REQUIRE(p[1] == 0x00);                // id bits [23:16]: clear
+    REQUIRE(p[2] == 0x07);                // id bits [15:8], only [10:8] set = 0b111
+    REQUIRE(p[3] == 0xFF);                // id bits [7:0], right-aligned
 }

@@ -7,6 +7,39 @@
 // fusa:req REQ-CANEP-007
 // fusa:req REQ-CANEP-008
 // fusa:req REQ-CANEP-009
+// fusa:req REQ-CANEP-010
+// fusa:req REQ-CANEP-011
+// fusa:req REQ-CANEP-012
+// fusa:req REQ-CANEP-013
+// fusa:req REQ-CANEP-014
+// fusa:req REQ-CANEP-015
+// fusa:req REQ-CANEP-016
+// fusa:req REQ-CANEP-017
+// fusa:req REQ-CANEP-018
+// fusa:req REQ-CANEP-019
+// fusa:req REQ-CANEP-020
+// fusa:req REQ-CANEP-021
+// fusa:req REQ-CANEP-022
+// fusa:req REQ-CANEP-023
+// fusa:req REQ-CANEP-024
+// fusa:req REQ-CANEP-025
+// fusa:req REQ-CANEP-026
+// fusa:req REQ-CANEP-027
+// fusa:req REQ-CANEP-028
+// fusa:req REQ-CANEP-029
+// fusa:req REQ-CANEP-030
+// fusa:req REQ-CANEP-031
+// fusa:req REQ-CANEP-032
+// fusa:req REQ-CANEP-033
+// fusa:req REQ-CANEP-034
+// fusa:req REQ-CANEP-035
+// fusa:req REQ-CANEP-036
+// fusa:req REQ-CANEP-037
+// fusa:req REQ-CANEP-038
+// fusa:req REQ-CANEP-039
+// fusa:req REQ-CANEP-040
+// fusa:req REQ-CANEP-041
+// fusa:req REQ-CANEP-042
 
 // CAN controller endpoint (ep_type 0x0B) — the OPEN Alliance TC18 Remote
 // Control Protocol Specification v0.5.1_RC's Classical/FD/XL frame-format
