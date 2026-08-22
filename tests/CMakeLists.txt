@@ -58,6 +58,10 @@ add_executable(test_request test_request.cpp)
 target_link_libraries(test_request PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_request COMMAND test_request)
 
+add_executable(test_server test_server.cpp)
+target_link_libraries(test_server PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_server COMMAND test_server)
+
 add_executable(test_e2e test_e2e.cpp)
 target_link_libraries(test_e2e PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_e2e COMMAND test_e2e)
@@ -106,9 +110,21 @@ add_executable(test_loan test_loan.cpp)
 target_link_libraries(test_loan PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_loan COMMAND test_loan)
 
+add_executable(test_fragment test_fragment.cpp)
+target_link_libraries(test_fragment PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_fragment COMMAND test_fragment)
+
+add_executable(test_respqueue test_respqueue.cpp)
+target_link_libraries(test_respqueue PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_respqueue COMMAND test_respqueue)
+
 add_executable(test_shmem test_shmem.cpp)
 target_link_libraries(test_shmem PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_shmem COMMAND test_shmem)
+
+add_executable(test_alloc test_alloc.cpp)
+target_link_libraries(test_alloc PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_alloc COMMAND test_alloc)
 
 # ── Milestones 19–40 ──────────────────────────────────────────────────────────
 
@@ -160,6 +176,10 @@ set_tests_properties(rcp_latency PROPERTIES TIMEOUT 60)
 add_executable(test_relay test_relay.cpp)
 target_link_libraries(test_relay PRIVATE rcp::rcp Catch2::Catch2WithMain)
 add_test(NAME rcp_relay COMMAND test_relay)
+
+add_executable(test_adapt test_adapt.cpp)
+target_link_libraries(test_adapt PRIVATE rcp::rcp Catch2::Catch2WithMain)
+add_test(NAME rcp_adapt COMMAND test_adapt)
 
 add_executable(test_cli test_cli.cpp)
 target_link_libraries(test_cli PRIVATE rcp::rcp Catch2::Catch2WithMain)

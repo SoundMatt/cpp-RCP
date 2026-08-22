@@ -53,7 +53,7 @@ Phase 13-16 work are appended as H-011/SG-011.
 | SG-001 | Requests to safety-critical endpoints shall be delivered within the configured watchdog period or a fault shall be signalled. | ASIL-C | `watchdog::Manager`/`StreamWatchdog`, `deadline::Monitor` |
 | SG-002 | Requests shall only be dispatched to the endpoint they are addressed to (stream_id + byte_bus_id); misaddressed requests shall be rejected. | ASIL-B | `acf::AcfMessageInfo` byte_bus_id decode, RC Server dispatch (e.g. `mock::Server::dispatch`) |
 | SG-003 | A per-stream watchdog kick shall be recorded for every accepted inbound request, regardless of request kind or safety tag. | ASIL-C | `watchdog::StreamWatchdog::kick_from_request`, `e2e::RxWatchdog` |
-| SG-004 | A request stream configured with rx_enforce_seq shall reject any sequence number that is not strictly greater than the last accepted one. | ASIL-B | `e2e::RxSequenceGuard::check` |
+| SG-004 | A request stream configured with rx_enforce_seq shall reject any sequence number that is not strictly greater than the last accepted one. | ASIL-B | **Implemented, not wired** — see H-004's corrected note below. `e2e::RxSequenceGuard::evaluate`/`check` correctly implement the check as a standalone primitive, but are not called from `mock::Server`'s dispatch or any transport `Server`; this goal is not actually met until an integrator wires `RxSequenceGuard` into their own dispatch path. |
 | SG-005 | Cancellation and triggered requests shall never be delayed by a standard or compound request queued earlier on the same stream. | ASIL-B | `request::SequencerTable`/`RequestLedger` execution-priority ordering |
 | SG-006 | Transport authentication (mTLS on the UDP/IP variant, or link-layer authentication on native Ethernet) and per-endpoint access policy shall be enforced on every external RC Server connection. | ASIL-B | `tls::SecureClient`/`SecureServer`, `authz::AccessPolicy`, `discovery::DiscoveryClaim` |
 | SG-007 | An RC Server that stops responding shall be detected as unreachable within the configured liveness deadline. | ASIL-C | `deadline::Monitor`/`LivenessTracker` |
@@ -119,14 +119,53 @@ endpoint through its own safe-state sequence.
 
 ### H-004 (ASIL-B): Request replay / out-of-order delivery
 
-`e2e::RxSequenceGuard::check` enforces a strictly-increasing sequence
-number per stream when `rx_enforce_seq` is set: the first observed
-sequence number bootstraps the comparison, and any subsequent sequence
-number that is not strictly greater than the last accepted one is
-rejected outright. Unlike the pre-replacement 32-entry sliding-window
-bitmap this supersedes, there is no window to exhaust — the check is a
-single comparison against the high-water mark, independently gated per
-stream and orthogonal to the E2E CRC check in H-011.
+**STATUS CORRECTED 2026-08-21 (cpp-RCP issue #129 / RELAY Phase 17 Phase 2
+pass):** this section previously described `e2e::RxSequenceGuard` in
+present-tense mitigating language, as if it were an active, wired
+mitigation for H-004. It is not. A Phase 2 audit of this codebase found
+`RxSequenceGuard` is implemented and unit-tested (`tests/test_e2e.cpp`)
+but is **never instantiated anywhere outside its own unit test** — not in
+`mock::Server`'s dispatch, and not in any transport `Server`. No caller
+anywhere in this tree evaluates a real AVTPDU's `sequence_num` through it,
+so linking this library today gives an integrator no actual protection
+against H-004.
+
+c-RCP resolved the identical ambiguity for itself (issues #601/#606): it
+found its own equivalent (`rcp_e2e_seq_evaluate()`/`rcp_e2e_seq_tracker_t`)
+genuinely **is** wired into its own reference dispatch (`mock.c`'s
+`frame_seq_gate_admits()`, called once per AVTPDU frame), and documented
+the mitigation as "Mitigated (opt-in)" with an explicit residual-risk list
+(opt-in config bits, no cross-restart persistence, the RFC 1982
+`[1,127]` forward-window bound, per-frame not per-message granularity) —
+see c-RCP's `HARA.md` H-004 section and `include/rcp/e2e.h`'s file header.
+cpp-RCP is not yet at that point.
+
+`e2e::RxSequenceGuard::evaluate()`/`check()` are a correct, content-
+verified primitive as of this same pass (re-derived against c-RCP's
+`rcp_e2e_seq_evaluate()`: an RFC 1982 forward-window comparison over the
+8-bit AVTPDU `sequence_num` space — accept iff the forward distance from
+the last accepted value lies in `[1, 127]` when `rx_enforce_seq` is set,
+with a separate `rx_seq_safestate_enable`-gated discontinuity signal for
+an increase-by-more-than-one gap; see `e2e.hpp`'s own doc comment for the
+full rationale and what this pass corrected from a previous, non-wrapping
+`uint32_t` comparison that never consulted `rx_seq_safestate_enable` at
+all). But **implemented is not the same as wired**: this header provides
+primitives, not a running dispatcher, same as every other header in this
+codebase — deciding when to call `evaluate()` against real inbound traffic
+is left to the embedding application, and no embedding application in
+this tree does so yet. Wiring `RxSequenceGuard` into `rcp/mock.hpp`'s
+dispatch (or any transport `Server`) is explicitly **out of scope** for
+this pass — it is Phase 4 (server/dispatch) work — so this correction is
+documentation-only: it makes this file accurately describe the wiring gap
+that already existed, rather than closing it.
+
+H-004 is therefore **effectively Open** for this hazard's practical
+purposes — an integrator gets no protection against replay/out-of-order
+delivery by linking this library alone — notwithstanding the primitive's
+existence and correctness. This does not change H-004's S2/E3/C2/ASIL-B
+classification (the hazard's worst case, "no sequence check evaluated at
+all," is exactly what every current caller already experiences); it
+corrects SG-004's own "Addressed By" claim below to say so.
 
 ### H-006 (ASIL-B): Execution-priority inversion
 
@@ -172,6 +211,7 @@ or best-effort behavior is involved.
 
 | Risk | Likelihood | Mitigation | Status |
 |------|-----------|------------|--------|
+| `e2e::RxSequenceGuard` is implemented and content-correct but not wired into `mock::Server`'s dispatch or any transport `Server` (H-004) | Medium | None within this library today — an integrator must call `RxSequenceGuard::evaluate()`/`check()` from their own dispatch loop, per AVTPDU frame, for H-004's SG-004 goal to actually be met; wiring it into `mock.hpp` is tracked as Phase 4 (server/dispatch) work, cpp-RCP issue #129 | **Open — documented gap, not silently overstated (see H-004's corrected note)** |
 | A stream with `rx_enforce_seq` clear accepts replayed/out-of-order requests by design | Low | Per-endpoint configuration choice; safety-relevant streams are expected to set `rx_enforce_seq` | Accepted |
 | `tls::SecureClient`/`SecureServer` require an application-supplied OpenSSL/wolfSSL backend; the interface itself performs no cryptography | Low | Native Ethernet deployments should prefer MACsec (802.1AE) at layer 2 instead, per `tls.hpp`'s own header note | Accepted |
 | `mdns.hpp`'s discovery-adjacent name service is rescoped to the UDP/IP transport variant only | Low | TC18's own wire-level discovery (`discovery.hpp`, v2.2.0) covers native Ethernet deployments without a name-service layer | Accepted |

@@ -309,3 +309,40 @@ TEST_CASE("cli: send with an invalid --endpoint value returns invalid-args (2)",
     capture({"send", "--server", "0", "--endpoint", "300", "--op", "read"}, code);
     REQUIRE(code == rcp::cli::kInvalidArgs);
 }
+
+// ── Test-gap closure (parity audit vs c-RCP's test_cli.c) ──────────────────────
+
+TEST_CASE("cli: capabilities reports the tsn transport and REQ-RMAP-030 feature bits",
+          "[cli][conformance]") {
+    int code = 0;
+    auto s = capture({"capabilities"}, code);
+    REQUIRE(code == rcp::cli::kOk);
+    REQUIRE(s.find("\"tsn\"") != std::string::npos);
+    for (auto k : {"time_sync", "enhanced_cancel", "trigger", "chained", "compound_bundles"}) {
+        REQUIRE(s.find(std::string("\"") + k + "\"") != std::string::npos);
+    }
+}
+
+TEST_CASE("cli: status default format is text", "[cli][conformance]") {
+    int code = 0;
+    auto s = capture({"status"}, code);
+    REQUIRE(code == rcp::cli::kOk);
+    REQUIRE(s.find("cpp-rcp: healthy=true") != std::string::npos);
+    REQUIRE(s.find("{") == std::string::npos); // not JSON
+}
+
+TEST_CASE("cli: --format with no following value returns invalid-args (2)",
+          "[cli][conformance]") {
+    int code = 0;
+    capture({"version", "--format"}, code);
+    REQUIRE(code == rcp::cli::kInvalidArgs);
+}
+
+TEST_CASE("cli: help/--help/-h all print usage and return OK", "[cli][conformance]") {
+    for (const char* spelling : {"help", "--help", "-h"}) {
+        int code = 0;
+        auto s = capture({spelling}, code);
+        REQUIRE(code == rcp::cli::kOk);
+        REQUIRE(s.find("Usage: cpp-rcp") != std::string::npos);
+    }
+}

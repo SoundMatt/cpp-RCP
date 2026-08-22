@@ -121,3 +121,80 @@ TEST_CASE("admin: concurrent record_counter and emit are thread-safe",
     REQUIRE(text.find("rcp.commands.total") != std::string::npos);
     REQUIRE(text.find(std::to_string(kThreads * kPerThread)) != std::string::npos);
 }
+
+// ── [Phase 17 c-RCP-reference pass, cpp-RCP issue #129] emit() deadlock fix ──
+// See rcp/admin.hpp's own header comment, delta #1: emit() used to hold mu_
+// across every subscriber callback invocation, so a subscriber calling back
+// into the same AdminServer (subscribe()/emit()/record_counter()) would
+// deadlock against a plain non-recursive std::mutex. This test hangs forever
+// pre-fix and completes immediately post-fix — a real regression test, not
+// just a documentation stand-in.
+TEST_CASE("admin: emit — a subscriber that calls back into the same server does not deadlock",
+          "[admin][REQ-ADMIN-004]") {
+    shmem::Registry reg;
+    admin::AdminServer srv(reg);
+
+    int reentrant_calls = 0;
+    bool reentered = false;
+    srv.subscribe([&](const admin::Event& ev) {
+        // Re-enter the server from inside the callback exactly once, on
+        // every distinct kind of call emit()'s own mu_ also guards, to
+        // exercise all three re-entrant paths the header comment names.
+        if (!reentered) {
+            reentered = true;
+            REQUIRE_FALSE(srv.record_counter("rcp.reentrant.total", "", 1.0));
+            REQUIRE_FALSE(srv.subscribe([&](const admin::Event&) { ++reentrant_calls; }));
+            srv.emit({admin::EventType::StatusUpdate, ev.stream_key, {}});
+        }
+    });
+
+    srv.emit({admin::EventType::StreamRegistered, 7, {}});
+
+    // Reaching here at all (rather than hanging) is the fix; the counts
+    // below additionally confirm the re-entrant calls actually took effect.
+    REQUIRE(srv.counter_count() == 1);
+    REQUIRE(srv.subscriber_count() == 2);
+    REQUIRE(reentrant_calls == 1);
+}
+
+// ── [c-RCP-17] Fixed-capacity subscriber list / counter table ───────────────
+// Boundary coverage ported from c-RCP's tests/test_admin.c
+// test_subscribe_at_max_succeeds_then_next_fails/
+// test_record_counter_at_max_succeeds_then_next_new_one_fails — see
+// rcp/admin.hpp's own header comment, delta #2.
+
+TEST_CASE("admin: subscribe at max succeeds, then the next one fails", "[admin][REQ-ADMIN-003]") {
+    shmem::Registry reg;
+    admin::AdminServer srv(reg);
+
+    for (size_t i = 0; i < admin::AdminServer::kMaxSubscribers; ++i) {
+        REQUIRE_FALSE(srv.subscribe([](const admin::Event&) {}));
+    }
+    REQUIRE(srv.subscriber_count() == admin::AdminServer::kMaxSubscribers);
+
+    // One more, at capacity: rejected, not silently grown.
+    auto ec = srv.subscribe([](const admin::Event&) {});
+    REQUIRE(ec == admin::AdminErrc::subscriber_capacity_exceeded);
+    REQUIRE(srv.subscriber_count() == admin::AdminServer::kMaxSubscribers);
+}
+
+TEST_CASE("admin: record_counter at max succeeds, a repeat still succeeds, a new one fails",
+          "[admin][REQ-ADMIN-005]") {
+    shmem::Registry reg;
+    admin::AdminServer srv(reg);
+
+    for (size_t i = 0; i < admin::AdminServer::kMaxCounters; ++i) {
+        REQUIRE_FALSE(srv.record_counter("counter_" + std::to_string(i), "", 1.0));
+    }
+    REQUIRE(srv.counter_count() == admin::AdminServer::kMaxCounters);
+
+    // A repeat delta against an already-tracked counter still succeeds at
+    // capacity -- only a genuinely new (name, labels) pair is rejected.
+    REQUIRE_FALSE(srv.record_counter("counter_0", "", 1.0));
+    REQUIRE(srv.counter_count() == admin::AdminServer::kMaxCounters);
+
+    // One more, genuinely new, at capacity: rejected, not silently grown.
+    auto ec = srv.record_counter("one_too_many", "", 1.0);
+    REQUIRE(ec == admin::AdminErrc::counter_capacity_exceeded);
+    REQUIRE(srv.counter_count() == admin::AdminServer::kMaxCounters);
+}

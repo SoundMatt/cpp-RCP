@@ -7,6 +7,104 @@
 // fusa:req REQ-WDG-007
 // fusa:req REQ-WDG-008
 
+// ── Phase 17 c-RCP-reference pass (cpp-RCP issue #129) ───────────────────────
+// c-RCP's include/rcp/watchdog.h + src/watchdog.c (this project's RC5-spec-
+// conformant reference implementation) is a substantially different design
+// from the one below: `rcp_watchdog_keeper_t` owns a background
+// re-evaluation thread (default poll_interval_ms = 10, `rcp_watchdog_
+// default_config()`), is constructed once from a fixed array of streams
+// (`rcp_watchdog_keeper_new(cfg, streams, n_streams)`), and reports state
+// purely via a cached `rcp_e2e_wd_result_t` (`rcp_watchdog_keeper_status()`)
+// updated by that thread, fired to subscribers on change. That shape is
+// itself a *later* c-RCP redesign (issue #338/[c-RCP-17]) of an even
+// earlier caller-driven c-RCP watchdog; this codebase's own StreamWatchdog/
+// Manager below is a third, independently-engineered design, derived
+// directly from the TC18 extraction (§3.8) at v2.10.0 (ROADMAP.md milestone
+// 54) rather than transliterated from either c-RCP shape — and already the
+// one every other Phase 17 module in this tree depends on (rcp/sim.hpp's
+// Simulator::register_stream/poll_watchdog, rcp/mdns.hpp's ServerInfo::
+// stream_key convention). Per this rewrite's own stated approach ("re-derive
+// ..., translated into idiomatic C++, not transliterated C" — ROADMAP.md
+// Phase 17), the audit below evaluates c-RCP's 12 REQ-WDG-* requirements
+// (.fusa-reqs.json) against this file's own already-shipped, independently-
+// numbered REQ-WDG-001..008 catalog (this project's own .fusa-reqs.json) for
+// *behavioral* content gaps, not API-shape gaps:
+//
+//   - c-RCP REQ-WDG-001/002 (re-run evaluate() at poll interval; elapsed =
+//     time since last kick) and REQ-WDG-003/004/005/008 (kick/status/notify/
+//     disabled-never-overflows) are behaviorally already covered by this
+//     file's own REQ-WDG-001/002/004/005/008 — StreamWatchdog::check/
+//     kick_from_request compute the identical "elapsed since last kick vs.
+//     rx_wd_timeout_interval, gated on rx_wd_enable" rule, just evaluated
+//     on caller-driven poll() rather than a thread's own timer.
+//   - c-RCP REQ-WDG-006 (event callback fires on result *change*) does NOT
+//     transfer as written: this file's Manager::poll fires subscribers on
+//     every HealthEvent poll() *produces* (REQ-WDG-008, below), which is a
+//     deliberately different, already-tested edge-triggered contract (an
+//     overflow event and a still-latched info-notification are both
+//     "produced", not deduplicated against a cached previous result) — c-RCP
+//     itself changed on essentially this exact axis across its own
+//     watchdog redesigns; no cached rcp_e2e_wd_result_t exists here to
+//     compare against for a "changed" test in the first place.
+//   - c-RCP REQ-WDG-007 (close() terminates the poll thread, idempotent) and
+//     REQ-WDG-011 (default_config poll_interval_ms) do not transfer: this
+//     header owns no clock or background thread of its own, same
+//     disclaimer as every other endpoint/lifecycle header in this codebase
+//     since v2.6.0 (see this file's own header comment below) — there is no
+//     thread to close and no poll interval to default.
+//   - c-RCP REQ-WDG-009 (initial status computed synchronously before
+//     rcp_watchdog_keeper_new() returns, so status() never observes a stale
+//     placeholder) does not transfer: this design has no cached "last
+//     computed result" at all — check()/poll() compute and return live,
+//     nothing to go stale.
+//   - c-RCP REQ-WDG-010 (the RC Server's request-reception path shall call
+//     kick() on every request received) is a cross-cutting dispatch-layer
+//     integration requirement, not watchdog-module behavior; this file's
+//     kick_from_request()/Manager::on_request_received() are the hook.
+//     [Phase 6 batch 5, cpp-RCP issue #129, 2026-08-22] Re-verified against
+//     real code, not just this comment's own prior claim: rcp/sim.hpp's
+//     Simulator::dispatch already wires it in exactly this shape (see
+//     sim.hpp's own header comment), and separately rcp/mock.hpp's
+//     dispatch_e2e_core() (the reference RC Server's actual
+//     request-reception path) calls rx_watchdog_kick() -- which forwards
+//     straight to Manager::on_request_received() -- unconditionally before
+//     any admission check, at both of its call sites, with a dedicated
+//     tests/test_mock.cpp TEST_CASE exercising it end-to-end. Genuinely
+//     implemented and tested, but NOT added as a REQ-WDG-010 entry in this
+//     project's own .fusa-reqs.json here: neither mock.hpp nor
+//     test_mock.cpp carries cpp-FuSa's required literal `// fusa:req`/
+//     `// fusa:test` tag for it (only informal comment mentions and a
+//     Catch2 tag string, which cpp-FuSa's trace tool does not recognize),
+//     and adding the catalog entry without that tag existing somewhere
+//     would fail CI's hard 100%-traced/100%-tested trace gates
+//     (.github/workflows/ci.yml's cpfusa-trace job). Filed to
+//     .fusa-reqs-pending.json instead, with the full citation, for a
+//     future mock.hpp/test_mock.cpp-scoped batch (out of this batch's
+//     watchdog.hpp/test_watchdog.cpp-only file-scope) to tag and migrate.
+//   - c-RCP REQ-WDG-012 (destroy(k) is a null-safe no-op, otherwise closes
+//     then frees) does not transfer: no manual destroy exists here —
+//     StreamWatchdog/Manager are plain value types with ordinary C++
+//     destructors, RAII covers this by construction.
+//   - c-RCP's [c-RCP-17] fixed-capacity conversion of its stream table and
+//     callback list (`RCP_WATCHDOG_MAX_STREAMS`/`RCP_WATCHDOG_MAX_CALLBACKS`,
+//     both 16 — watchdog.h) DOES genuinely transfer as a content gap: prior
+//     to this pass, Manager below stored streams_/callbacks_ in an unbounded
+//     std::map/std::vector, unlike every other Phase 17 table in this
+//     codebase (rcp/loan.hpp's kPoolMaxEntries, rcp/respqueue.hpp's
+//     kMaxEntries, rcp/request.hpp's kMaxTrackedRequests) — exactly the "no
+//     fixed-capacity/no-dynamic-allocation architecture" gap ROADMAP.md's
+//     Phase 17 introduction cites as one of the reasons for this whole
+//     rewrite. Manager::kMaxStreams/kMaxCallbacks below port c-RCP's own
+//     RCP_WATCHDOG_MAX_STREAMS/MAX_CALLBACKS value (16) unchanged, matching
+//     loan.hpp's own "match c-RCP's chosen bound exactly, not inventing a
+//     stricter or looser one" precedent — see Manager's own doc comment.
+//     This is an engineering hardening tracked under issue #129, not a new
+//     numbered REQ-WDG-* behavior (c-RCP's own bound isn't tied to a
+//     REQ-WDG-* id in its catalog either — see [c-RCP-17]'s own citation
+//     style), so no new fusa:req/fusa:test tag is added for it, matching
+//     loan.hpp's and respqueue.hpp's own fixed-capacity tests (untagged
+//     Catch2 [watchdog] tests only).
+
 // Per-request-stream watchdog driver — the embedding-application wiring
 // layer that turns "any inbound request accepted on a stream" into the
 // OPEN Alliance TC18 Remote Control Protocol Specification v0.5.1_RC's
@@ -55,14 +153,13 @@
 #include <rcp/regmap.hpp>
 #include <rcp/request.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <map>
 #include <optional>
 #include <string>
 #include <system_error>
-#include <vector>
 
 namespace rcp {
 namespace watchdog {
@@ -70,7 +167,13 @@ namespace watchdog {
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 enum class WatchdogErrc : int {
-    stream_not_registered = 1, // target stream key was never passed to Manager::register_stream
+    stream_not_registered    = 1, // target stream key was never passed to Manager::register_stream
+    // [Phase 17 c-RCP-reference pass, cpp-RCP issue #129] Ported from
+    // c-RCP's RCP_WATCHDOG_MAX_STREAMS/MAX_CALLBACKS fixed-capacity bound
+    // (watchdog.h) — see Manager::kMaxStreams/kMaxCallbacks's own doc
+    // comment below.
+    stream_capacity_exceeded = 2, // Manager already tracks kMaxStreams distinct streams
+    callback_capacity_exceeded = 3, // Manager already holds kMaxCallbacks subscribers
 };
 
 inline const std::error_category& watchdog_category() noexcept {
@@ -80,6 +183,10 @@ inline const std::error_category& watchdog_category() noexcept {
             switch (static_cast<WatchdogErrc>(ev)) {
             case WatchdogErrc::stream_not_registered:
                 return "rcp/watchdog: stream key was not registered with this Manager";
+            case WatchdogErrc::stream_capacity_exceeded:
+                return "rcp/watchdog: Manager already tracks its fixed maximum number of streams";
+            case WatchdogErrc::callback_capacity_exceeded:
+                return "rcp/watchdog: Manager already holds its fixed maximum number of subscribers";
             default:
                 return "rcp/watchdog: unknown error";
             }
@@ -178,28 +285,65 @@ private:
 // timeout detection itself.
 class Manager {
 public:
+    // [Phase 17 c-RCP-reference pass, cpp-RCP issue #129] Ported from
+    // c-RCP's include/rcp/watchdog.h RCP_WATCHDOG_MAX_STREAMS/
+    // RCP_WATCHDOG_MAX_CALLBACKS (both 16) — c-RCP's own doc comment there
+    // rationalizes 16 as "matches e2e.h's own
+    // RCP_E2E_STREAM_FAULT_TRACKER_MAX_STREAMS precedent... rather than
+    // inventing an unrelated number"; ported unchanged here for the same
+    // reason rcp/loan.hpp's kPoolMaxEntries matches c-RCP's own
+    // RCP_LOAN_POOL_MAX_ENTRIES exactly rather than this port choosing a
+    // stricter or looser bound of its own. Backs the fixed std::array
+    // storage below (streams_keys_/streams_, callbacks_), not
+    // std::map/std::vector growable without bound — this class previously
+    // had no capacity ceiling at all, unlike every other Phase 17 table in
+    // this codebase (see this file's own header comment).
+    static constexpr size_t kMaxStreams   = 16;
+    static constexpr size_t kMaxCallbacks = 16;
+
     using HealthCallback = std::function<void(const HealthEvent&)>;
 
-    // register_stream begins tracking a stream; a harmless no-op if
-    // stream_key is already registered (existing watchdog state, including
-    // any latched safe state, is left untouched).
-    void register_stream(uint64_t stream_key) { streams_.try_emplace(stream_key); }
-
-    // unregister_stream stops tracking a stream and discards its state.
-    void unregister_stream(uint64_t stream_key) noexcept { streams_.erase(stream_key); }
-
-    bool is_registered(uint64_t stream_key) const noexcept {
-        return streams_.find(stream_key) != streams_.end();
+    // register_stream begins tracking a stream; a harmless no-op (returns
+    // no error) if stream_key is already registered (existing watchdog
+    // state, including any latched safe state, is left untouched). Returns
+    // stream_capacity_exceeded, unchanged, once kMaxStreams distinct
+    // streams are already tracked — see kMaxStreams's own doc comment
+    // above; the fixed-capacity table is not silently grown past it,
+    // matching c-RCP's own rcp_watchdog_keeper_new()/RCP_WATCHDOG_MAX_STREAMS
+    // "rejected, not silently truncated" contract.
+    std::error_code register_stream(uint64_t stream_key) {
+        if (find_index(stream_key) != kNotFound) return {};
+        if (streams_len_ >= kMaxStreams) return make_error_code(WatchdogErrc::stream_capacity_exceeded);
+        streams_keys_[streams_len_] = stream_key;
+        streams_[streams_len_]      = StreamWatchdog{};
+        ++streams_len_;
+        return {};
     }
+
+    // unregister_stream stops tracking a stream and discards its state —
+    // swap-with-last removal (same O(1) technique rcp/loan.hpp's
+    // BufferPool::loan() free-list release already uses): the vacated slot
+    // is filled from the table's last live entry, so streams_len_ shrinks
+    // by exactly one with no gap. A harmless no-op for an unregistered key.
+    void unregister_stream(uint64_t stream_key) noexcept {
+        size_t idx = find_index(stream_key);
+        if (idx == kNotFound) return;
+        size_t last          = streams_len_ - 1;
+        streams_keys_[idx]   = streams_keys_[last];
+        streams_[idx]        = std::move(streams_[last]);
+        --streams_len_;
+    }
+
+    bool is_registered(uint64_t stream_key) const noexcept { return find_index(stream_key) != kNotFound; }
 
     // on_request_received is the driver hook the embedding transport calls
     // once per accepted inbound request — see StreamWatchdog::
     // kick_from_request. Returns stream_not_registered, unchanged, for a
     // key never passed to register_stream.
     std::error_code on_request_received(uint64_t stream_key, uint64_t now_ms) noexcept {
-        auto it = streams_.find(stream_key);
-        if (it == streams_.end()) return make_error_code(WatchdogErrc::stream_not_registered);
-        it->second.kick_from_request(now_ms);
+        size_t idx = find_index(stream_key);
+        if (idx == kNotFound) return make_error_code(WatchdogErrc::stream_not_registered);
+        streams_[idx].kick_from_request(now_ms);
         return {};
     }
 
@@ -210,34 +354,60 @@ public:
     // unaffected by that failure.
     std::error_code poll(uint64_t stream_key, const regmap::RequestStreamConfig& cfg,
                           request::RequestLedger& ledger, uint64_t now_ms) {
-        auto it = streams_.find(stream_key);
-        if (it == streams_.end()) return make_error_code(WatchdogErrc::stream_not_registered);
-        auto ev = it->second.check(stream_key, cfg, ledger, now_ms);
+        size_t idx = find_index(stream_key);
+        if (idx == kNotFound) return make_error_code(WatchdogErrc::stream_not_registered);
+        auto ev = streams_[idx].check(stream_key, cfg, ledger, now_ms);
         if (ev.has_value()) {
-            for (auto& cb : callbacks_) cb(*ev);
+            for (size_t i = 0; i < callbacks_len_; ++i) callbacks_[i](*ev);
         }
         return {};
     }
 
     bool in_safe_state(uint64_t stream_key) const noexcept {
-        auto it = streams_.find(stream_key);
-        return it != streams_.end() && it->second.in_safe_state();
+        size_t idx = find_index(stream_key);
+        return idx != kNotFound && streams_[idx].in_safe_state();
     }
 
     std::error_code clear_safe_state(uint64_t stream_key) noexcept {
-        auto it = streams_.find(stream_key);
-        if (it == streams_.end()) return make_error_code(WatchdogErrc::stream_not_registered);
-        it->second.clear_safe_state();
+        size_t idx = find_index(stream_key);
+        if (idx == kNotFound) return make_error_code(WatchdogErrc::stream_not_registered);
+        streams_[idx].clear_safe_state();
         return {};
     }
 
     // subscribe registers a callback fired, in registration order, on
-    // every HealthEvent poll() produces for any registered stream.
-    void subscribe(HealthCallback cb) { callbacks_.push_back(std::move(cb)); }
+    // every HealthEvent poll() produces for any registered stream. Returns
+    // callback_capacity_exceeded, unchanged, once kMaxCallbacks subscribers
+    // are already registered — c-RCP's own rcp_watchdog_keeper_subscribe()
+    // has the identical bound and the identical "rejected, not silently
+    // grown" contract (RCP_WATCHDOG_MAX_CALLBACKS, watchdog.h/.c).
+    std::error_code subscribe(HealthCallback cb) {
+        if (callbacks_len_ >= kMaxCallbacks) return make_error_code(WatchdogErrc::callback_capacity_exceeded);
+        callbacks_[callbacks_len_] = std::move(cb);
+        ++callbacks_len_;
+        return {};
+    }
+
+    // Introspection for tests, not part of the register/subscribe contract
+    // itself — always <= kMaxStreams/kMaxCallbacks, by construction.
+    size_t stream_count() const noexcept { return streams_len_; }
+    size_t callback_count() const noexcept { return callbacks_len_; }
 
 private:
-    std::map<uint64_t, StreamWatchdog> streams_;
-    std::vector<HealthCallback>        callbacks_;
+    static constexpr size_t kNotFound = static_cast<size_t>(-1);
+
+    size_t find_index(uint64_t stream_key) const noexcept {
+        for (size_t i = 0; i < streams_len_; ++i)
+            if (streams_keys_[i] == stream_key) return i;
+        return kNotFound;
+    }
+
+    std::array<uint64_t, kMaxStreams>       streams_keys_{};
+    std::array<StreamWatchdog, kMaxStreams> streams_{};
+    size_t                                   streams_len_ = 0; // always <= kMaxStreams
+
+    std::array<HealthCallback, kMaxCallbacks> callbacks_{};
+    size_t                                     callbacks_len_ = 0; // always <= kMaxCallbacks
 };
 
 } // namespace watchdog

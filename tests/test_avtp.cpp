@@ -4,6 +4,13 @@
 // fusa:test REQ-WIRE-007
 // fusa:test REQ-WIRE-011
 // fusa:test REQ-WIRE-013
+// fusa:test REQ-AVTP-013
+// fusa:test REQ-AVTP-014
+// fusa:test REQ-AVTP-015
+// fusa:test REQ-AVTP-021
+// fusa:test REQ-AVTP-022
+// fusa:test REQ-AVTP-023
+// fusa:test REQ-AVTP-031
 
 // Tests for rcp/avtp.hpp — the TC18 AVTPDU header-framing half of the wire
 // codec (ROADMAP.md milestone 44, "Wire Format Core", v2.0.0; split from a
@@ -224,4 +231,225 @@ TEST_CASE("decode_tscf_header rejects a buffer shorter than the fixed header", "
     TscfHeader tscf_out;
     std::vector<uint8_t> too_short(kTscfHeaderLen - 1, 0);
     REQUIRE(decode_tscf_header(too_short.data(), too_short.size(), tscf_out));
+}
+
+// ── Phase 17 (c-RCP port): sv/version/mr/tu/reserved0/reserved1 ──────────────
+// Additive fields ported from c-RCP's rcp_avtp_ntscf_header_t/
+// rcp_avtp_tscf_header_t; defaults reproduce this codec's own pre-existing
+// hardcoded encode behavior (sv=1, version=0, mr=0) exactly.
+
+TEST_CASE("NTSCF header round-trips sv/version", "[avtp]") {
+    NtscfHeader hdr;
+    hdr.sv               = true;
+    hdr.version          = 3; // TC18 fixes this at 0 for this spec revision, but the wire
+                               // codec itself must round-trip whatever value it is given.
+    hdr.stream_id        = make_stream_id(0x02, 1);
+
+    auto buf = encode_ntscf_header(hdr);
+    NtscfHeader out;
+    REQUIRE_FALSE(decode_ntscf_header(buf.data(), buf.size(), out));
+    REQUIRE(out.sv == hdr.sv);
+    REQUIRE(out.version == hdr.version);
+}
+
+TEST_CASE("TSCF header round-trips sv/version/mr/tu", "[avtp]") {
+    TscfHeader hdr;
+    hdr.sv               = true;
+    hdr.version          = 3; // same round-trip-whatever-given rationale as the NTSCF test above
+    hdr.timestamp_valid  = true;
+    hdr.tu               = false;
+    hdr.mr               = true;
+    hdr.sequence_num     = 0x99;
+    hdr.stream_id        = make_stream_id(0x02, 2);
+    hdr.avtp_timestamp   = 0x12345678;
+
+    auto buf = encode_tscf_header(hdr);
+    TscfHeader out;
+    REQUIRE_FALSE(decode_tscf_header(buf.data(), buf.size(), out));
+    REQUIRE(out.sv == hdr.sv);
+    REQUIRE(out.version == hdr.version);
+    REQUIRE(out.mr == hdr.mr);
+    REQUIRE(out.timestamp_valid == hdr.timestamp_valid);
+    REQUIRE(out.tu == hdr.tu);
+    REQUIRE(out.sequence_num == hdr.sequence_num);
+    REQUIRE(out.avtp_timestamp == hdr.avtp_timestamp);
+    REQUIRE(out.stream_id == hdr.stream_id);
+}
+
+// ── §13.3 tu=1/tu=0 equivalence (REQ-AVTP-023) ────────────────────────────────
+
+TEST_CASE("TSCF header decode reports tu=1 and tu=0 faithfully", "[avtp][REQ-AVTP-023]") {
+    TscfHeader hdr;
+    hdr.stream_id = make_stream_id(0x02, 1);
+    hdr.tu        = true;
+
+    auto buf = encode_tscf_header(hdr);
+    TscfHeader out;
+    REQUIRE_FALSE(decode_tscf_header(buf.data(), buf.size(), out));
+    REQUIRE(out.tu == true);
+
+    hdr.tu = false;
+    buf    = encode_tscf_header(hdr);
+    REQUIRE_FALSE(decode_tscf_header(buf.data(), buf.size(), out));
+    REQUIRE(out.tu == false);
+}
+
+// ── REQ-TIMED-012: TSCF avtp_timestamp -> gPTP-domain reconstruction
+// (ported from c-RCP's rcp_avtp_extend_timestamp()) ───────────────────────────
+
+TEST_CASE("extend_timestamp: wire_ts's low bits already equal reference_now's own", "[avtp]") {
+    uint64_t now = 0x0000123456789ABCull;
+    REQUIRE(extend_timestamp(static_cast<uint32_t>(now), now) == now);
+}
+
+TEST_CASE("extend_timestamp: near-future value within half a period needs no wraparound", "[avtp]") {
+    uint64_t now     = 0x0000000100000000ull; // low 32 bits == 0
+    uint32_t wire_ts = 1000u;
+    REQUIRE(extend_timestamp(wire_ts, now) == now + 1000u);
+}
+
+TEST_CASE("extend_timestamp: near-past value within half a period needs no wraparound", "[avtp]") {
+    uint64_t now     = 0x0000000100001000ull; // low 32 bits == 0x1000
+    uint32_t wire_ts = 0x1000u - 500u;
+    REQUIRE(extend_timestamp(wire_ts, now) == now - 500u);
+}
+
+TEST_CASE("extend_timestamp wraps forward when wire_ts is just past a 2^32 boundary", "[avtp]") {
+    // reference_now sits just below a 2^32 boundary; wire_ts's own low bits
+    // are numerically small (just above 0), which naive zero-extension
+    // would misread as ~4.29 seconds in the past. The correct
+    // reconstruction recognizes wire_ts is actually ~100ns in the FUTURE,
+    // one period up from the naive candidate.
+    uint64_t now     = (uint64_t{1} << 32) - 100u; // 100ns before the boundary
+    uint32_t wire_ts = 0u; // the boundary itself, i.e. now + 100
+    REQUIRE(extend_timestamp(wire_ts, now) == now + 100u);
+}
+
+TEST_CASE("extend_timestamp wraps backward when wire_ts is just before a 2^32 boundary", "[avtp]") {
+    // Symmetric case: reference_now sits just above a 2^32 boundary;
+    // wire_ts's own low bits are numerically large (near 2^32-1), which
+    // naive zero-extension would misread as ~4.29 seconds in the future.
+    uint64_t now     = (uint64_t{1} << 32) + 100u; // 100ns after the boundary
+    uint32_t wire_ts = 0xFFFFFFFFu; // the boundary minus 1, i.e. now - 101
+    REQUIRE(extend_timestamp(wire_ts, now) == now - 101u);
+}
+
+TEST_CASE("extend_timestamp: exactly half a period ahead prefers the un-wrapped candidate", "[avtp]") {
+    // The tie-break condition is "> half", not ">=", so exactly half stays
+    // with the un-wrapped (forward) candidate.
+    uint64_t now     = 0x0000000200000000ull; // low 32 bits == 0
+    uint32_t wire_ts = static_cast<uint32_t>((uint64_t{1} << 32) / 2); // 2^31
+    REQUIRE(extend_timestamp(wire_ts, now) == now + (uint64_t{1} << 31));
+}
+
+TEST_CASE("extend_timestamp: exactly half a period behind prefers the un-wrapped candidate", "[avtp]") {
+    uint64_t now     = 0x0000000300000000ull | (uint64_t{1} << 31); // low 32 bits == 2^31
+    uint32_t wire_ts = 0u;
+    REQUIRE(extend_timestamp(wire_ts, now) == now - (uint64_t{1} << 31));
+}
+
+// ── Subtype dispatch & the TSCF-without-time-sync drop rule (ported from
+// c-RCP's rcp_avtp_peek_subtype()/_should_drop_tscf()/_tscf_reserved_all_zero()) ──
+
+TEST_CASE("peek_subtype reads the first byte", "[avtp][REQ-AVTP-013]") {
+    NtscfHeader hdr;
+    hdr.stream_id = make_stream_id(0x02, 1);
+    auto buf = encode_ntscf_header(hdr);
+
+    uint8_t subtype = 0;
+    REQUIRE_FALSE(peek_subtype(buf.data(), buf.size(), subtype));
+    REQUIRE(subtype == kSubtypeNtscf);
+}
+
+TEST_CASE("peek_subtype rejects an empty buffer", "[avtp][REQ-AVTP-013]") {
+    uint8_t subtype = 0;
+    REQUIRE(peek_subtype(nullptr, 0, subtype));
+}
+
+TEST_CASE("should_drop_tscf drops a TSCF frame when time sync is unsupported and the policy is Drop",
+          "[avtp][REQ-AVTP-014]") {
+    // TC18 §11.1's own unconditional wording, and this codec's original
+    // (still default) disposition.
+    REQUIRE(should_drop_tscf(false, kSubtypeTscf, TscfFallback::Drop));
+}
+
+TEST_CASE("should_drop_tscf never drops a TSCF frame when time sync is supported", "[avtp]") {
+    REQUIRE_FALSE(should_drop_tscf(true, kSubtypeTscf, TscfFallback::Drop));
+}
+
+TEST_CASE("should_drop_tscf never drops an NTSCF frame regardless of policy or time sync", "[avtp]") {
+    REQUIRE_FALSE(should_drop_tscf(false, kSubtypeNtscf, TscfFallback::Drop));
+    REQUIRE_FALSE(should_drop_tscf(true, kSubtypeNtscf, TscfFallback::Drop));
+    REQUIRE_FALSE(should_drop_tscf(false, kSubtypeNtscf, TscfFallback::Ignore));
+    REQUIRE_FALSE(should_drop_tscf(true, kSubtypeNtscf, TscfFallback::Ignore));
+}
+
+TEST_CASE("should_drop_tscf with TscfFallback::Ignore does not drop an unsupported-time-sync TSCF frame",
+          "[avtp][REQ-AVTP-021]") {
+    // TC18 §13.3's own configurable alternative to §11.1's unconditional
+    // wording — same inputs as the Drop-policy test above, only the policy
+    // differs, isolating this behavior from every other case.
+    REQUIRE_FALSE(should_drop_tscf(false, kSubtypeTscf, TscfFallback::Ignore));
+}
+
+TEST_CASE("should_drop_tscf: Ignore policy is irrelevant once time sync is supported", "[avtp][REQ-AVTP-021]") {
+    REQUIRE_FALSE(should_drop_tscf(true, kSubtypeTscf, TscfFallback::Ignore));
+}
+
+TEST_CASE("tscf_reserved_all_zero is true for a freshly decoded conformant header", "[avtp][REQ-AVTP-031]") {
+    TscfHeader hdr;
+    hdr.stream_id = make_stream_id(0x02, 1);
+    auto buf = encode_tscf_header(hdr);
+
+    // encode_tscf_header always zero-fills the reserved octets regardless
+    // of hdr's own (here default, but irrelevant) reserved0/reserved1 — see
+    // TscfHeader's own doc comment — so a conformant round trip always
+    // decodes all-zero.
+    TscfHeader decoded;
+    REQUIRE_FALSE(decode_tscf_header(buf.data(), buf.size(), decoded));
+    REQUIRE(tscf_reserved_all_zero(decoded));
+}
+
+TEST_CASE("tscf_reserved_all_zero is false when reserved0 or reserved1 is nonzero", "[avtp][REQ-AVTP-031]") {
+    TscfHeader hdr;
+    hdr.reserved0 = 1;
+    REQUIRE_FALSE(tscf_reserved_all_zero(hdr));
+
+    TscfHeader hdr2;
+    hdr2.reserved1 = 1;
+    REQUIRE_FALSE(tscf_reserved_all_zero(hdr2));
+}
+
+TEST_CASE("decode_tscf_header reads nonzero reserved bytes off the wire", "[avtp][REQ-AVTP-022]") {
+    // Decoding a hand-built wire frame whose own bytes 16-19 are nonzero
+    // (simulating a non-conformant or future-revision sender) proves decode
+    // actually reads the reserved octets off the wire, not merely that a
+    // hand-set struct field round-trips.
+    std::vector<uint8_t> b(kTscfHeaderLen, 0);
+    b[0] = kSubtypeTscf;
+    b[1] = static_cast<uint8_t>(1u << 7); // sv=1
+    b[16] = 0xDE; b[17] = 0xAD; b[18] = 0xBE; b[19] = 0xEF; // reserved0
+    b[22] = 0xAA; b[23] = 0xBB; // reserved1
+
+    TscfHeader decoded;
+    REQUIRE_FALSE(decode_tscf_header(b.data(), b.size(), decoded));
+    REQUIRE(decoded.reserved0 == 0xDEADBEEFu);
+    REQUIRE(decoded.reserved1 == 0xAABBu);
+    REQUIRE_FALSE(tscf_reserved_all_zero(decoded));
+}
+
+// ── avtp_category() unique-message-per-errc (ported from c-RCP's
+// rcp_avtp_strerror()) ────────────────────────────────────────────────────
+
+TEST_CASE("avtp_category() returns a unique, non-empty message per AvtpErrc value", "[avtp][REQ-AVTP-015]") {
+    const auto& cat = avtp_category();
+    const std::string short_buffer    = cat.message(static_cast<int>(AvtpErrc::short_buffer));
+    const std::string bad_subtype     = cat.message(static_cast<int>(AvtpErrc::bad_subtype));
+    const std::string length_mismatch = cat.message(static_cast<int>(AvtpErrc::length_mismatch));
+    REQUIRE_FALSE(short_buffer.empty());
+    REQUIRE_FALSE(bad_subtype.empty());
+    REQUIRE_FALSE(length_mismatch.empty());
+    REQUIRE(short_buffer != bad_subtype);
+    REQUIRE(bad_subtype != length_mismatch);
+    REQUIRE(short_buffer != length_mismatch);
 }

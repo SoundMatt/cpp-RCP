@@ -17,8 +17,22 @@
 // (ROADMAP.md milestone 57, "Native Transport Rebuild — UDP/IP (Annex J)",
 // v2.13.0). See that header's own comment for why no legacy-shim split file
 // was needed for this rebuild, unlike rcp/mock.hpp's at v2.12.0.
+//
+// This file also covers cpp-RCP issue #129 Phase 5 wave 1's own
+// dispatch-wiring fix: udp::Server::Handler is now FRAME-level (raw
+// ACF-region bytes in, std::vector<FrameResponse> out — matching
+// rcp::mock::Server::dispatch_frame()/dispatch_frame_e2e()'s own shared
+// shape) rather than the old single-already-isolated-message shape that
+// matched rcp::mock::Server::dispatch() alone. The "Server wired to
+// mock::Server::..." tests below (search that string) are the NEW coverage
+// this fix adds — proving a multi-member, Table-24-suppressed, conditional-
+// opcode, or E2E-CRC-protected request arriving over real UDP now gets
+// EXACTLY the behavior dispatching it directly against rcp::mock::Server
+// would, not a silently downgraded default. Every other TEST_CASE below is
+// pre-existing coverage, ported onto the new frame-level Handler shape.
 
 #include <catch2/catch_test_macros.hpp>
+#include <rcp/mock.hpp>
 #include <rcp/udp.hpp>
 
 #include <algorithm>
@@ -26,6 +40,7 @@
 
 using namespace rcp;
 using namespace rcp::udp;
+using rcp::endpoint::WriteSemantics;
 
 namespace {
 
@@ -70,6 +85,51 @@ acf::AcfMessageInfo standard_request(avtp::ByteBusId bus_id, uint8_t transaction
                                       bool write = false, uint16_t read_size = 0) {
     return acf::make_standard_request(bus_id, transaction_num, write, read_size);
 }
+
+#if defined(RCP_UDP_POSIX)
+// make_echo_handler builds a udp::Server::Handler that decodes every ACF
+// member out of the raw frame bytes Server::serve() now hands it
+// (acf::decode_acf_messages — this file's own helper tests use, not any
+// mock.hpp dispatch machinery) and calls `build` once per member to
+// produce its FrameResponse — the generic "decode, respond per member"
+// shape several of the pre-existing tests below reuse instead of the old
+// single-message Handler contract udp::Server::Handler used to have.
+template <typename BuildFn>
+Server::Handler make_echo_handler(BuildFn build) {
+    return [build](size_t /*client*/, avtp::StreamId /*stream_id*/, uint8_t /*sequence_num*/,
+                    const std::vector<uint8_t>& frame, std::vector<FrameResponse>& out) -> size_t {
+        std::vector<acf::AcfEntry> members;
+        if (acf::decode_acf_messages(frame.data(), frame.size(), members)) return 0;
+        out.reserve(members.size());
+        for (auto& m : members) out.push_back(build(m.info, m.payload));
+        return out.size();
+    };
+}
+
+// forward_to_mock builds a udp::Server::Handler that hands `frame` straight
+// to `dispatch` (typically a lambda closing over an rcp::mock::Server and
+// calling its own dispatch_frame()/dispatch_frame_e2e()) and translates
+// each rcp::mock::FrameMemberResult it gets back into a udp::FrameResponse
+// — exactly the "small glue lambda" this file's own udp.hpp header comment
+// (Server::Handler's own doc comment) describes as the intended way to
+// wire an in-process rcp::mock::Server as this transport's handler.
+template <typename DispatchFn>
+Server::Handler forward_to_mock(DispatchFn dispatch) {
+    return [dispatch](size_t client, avtp::StreamId stream_id, uint8_t sequence_num,
+                       const std::vector<uint8_t>& frame, std::vector<FrameResponse>& out) -> size_t {
+        std::vector<mock::FrameMemberResult> results;
+        size_t n = dispatch(client, stream_id, sequence_num, frame, results);
+        out.reserve(results.size());
+        for (auto& r : results) {
+            FrameResponse fr;
+            fr.info    = std::move(r.response);
+            fr.payload = std::move(r.response_payload);
+            out.push_back(std::move(fr));
+        }
+        return n;
+    };
+}
+#endif
 
 } // namespace
 
@@ -291,13 +351,12 @@ TEST_CASE("Server dispatches a decoded request through its handler and answers t
     Server server(make_stream_id(0x02, 1), "127.0.0.1", 0);
     REQUIRE(server.ok());
 
-    server.set_handler([](size_t, const acf::AcfMessageInfo& req,
-                           const std::vector<uint8_t>& req_payload,
-                           acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload) {
-        out_resp_payload = req_payload;
-        out_resp         = acf::make_response(req, acf::ResponseKind::ReadResponse);
-        return std::error_code{};
-    });
+    server.set_handler(make_echo_handler([](const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload) {
+        FrameResponse r;
+        r.payload = payload;
+        r.info    = acf::make_response(req, acf::ResponseKind::ReadResponse);
+        return r;
+    }));
 
     Client client(make_stream_id(0x03, 1), "127.0.0.1", server.port());
     REQUIRE(client.ok());
@@ -328,14 +387,13 @@ TEST_CASE("Server handles multiple requests packed into a single datagram indivi
     REQUIRE(server.ok());
 
     std::vector<size_t> seen_bus_ids;
-    server.set_handler([&](size_t, const acf::AcfMessageInfo& req,
-                            const std::vector<uint8_t>& req_payload,
-                            acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload) {
+    server.set_handler(make_echo_handler([&](const acf::AcfMessageInfo& req, const std::vector<uint8_t>& payload) {
         seen_bus_ids.push_back(req.byte_bus_id);
-        out_resp_payload = req_payload;
-        out_resp         = acf::make_response(req, acf::ResponseKind::ReadResponse);
-        return std::error_code{};
-    });
+        FrameResponse r;
+        r.payload = payload;
+        r.info    = acf::make_response(req, acf::ResponseKind::ReadResponse);
+        return r;
+    }));
 
     MultiFrame req_frame;
     req_frame.use_tscf     = false;
@@ -419,12 +477,17 @@ TEST_CASE("Server assigns stable per-sender client ids", "[udp][REQ-UDP-009]") {
     REQUIRE(server.ok());
 
     std::vector<size_t> seen;
-    server.set_handler([&](size_t client, const acf::AcfMessageInfo& req,
-                            const std::vector<uint8_t>&,
-                            acf::AcfMessageInfo& out_resp, std::vector<uint8_t>&) {
+    server.set_handler([&](size_t client, avtp::StreamId /*stream_id*/, uint8_t /*sequence_num*/,
+                            const std::vector<uint8_t>& frame, std::vector<FrameResponse>& out) -> size_t {
         seen.push_back(client);
-        out_resp = acf::make_response(req, acf::ResponseKind::Acknowledge);
-        return std::error_code{};
+        std::vector<acf::AcfEntry> members;
+        if (acf::decode_acf_messages(frame.data(), frame.size(), members)) return 0;
+        for (auto& m : members) {
+            FrameResponse r;
+            r.info = acf::make_response(m.info, acf::ResponseKind::Acknowledge);
+            out.push_back(std::move(r));
+        }
+        return out.size();
     });
 
     Client client_a(make_stream_id(0x03, 3), "127.0.0.1", server.port());
@@ -472,17 +535,16 @@ TEST_CASE("Client::request correlates concurrent requests by byte_bus_id/transac
     Server server(make_stream_id(0x02, 5), "127.0.0.1", 0);
     REQUIRE(server.ok());
 
-    server.set_handler([](size_t, const acf::AcfMessageInfo& req,
-                           const std::vector<uint8_t>&,
-                           acf::AcfMessageInfo& out_resp, std::vector<uint8_t>& out_resp_payload) {
-        out_resp         = acf::make_response(req, acf::ResponseKind::ReadResponse);
+    server.set_handler(make_echo_handler([](const acf::AcfMessageInfo& req, const std::vector<uint8_t>&) {
+        FrameResponse r;
+        r.info = acf::make_response(req, acf::ResponseKind::ReadResponse);
         // avtp::ByteBusId widened to uint16_t (rcp/avtp.hpp v2.19.0 wire
         // conformance pass, issue cpp-RCP-04, since byte_bus_id is an
         // 11-bit wire field) — narrow explicitly for this single-byte test
         // payload rather than relying on an implicit narrowing conversion.
-        out_resp_payload = {static_cast<uint8_t>(req.byte_bus_id), req.transaction_num};
-        return std::error_code{};
-    });
+        r.payload = {static_cast<uint8_t>(req.byte_bus_id), req.transaction_num};
+        return r;
+    }));
 
     Client client(make_stream_id(0x03, 5), "127.0.0.1", server.port());
     REQUIRE(client.ok());
@@ -509,12 +571,11 @@ TEST_CASE("Client's Annex J encapsulation sequence number increments monotonical
     Server server(make_stream_id(0x02, 9), "127.0.0.1", 0);
     REQUIRE(server.ok());
 
-    server.set_handler([](size_t, const acf::AcfMessageInfo& req,
-                           const std::vector<uint8_t>&,
-                           acf::AcfMessageInfo& out_resp, std::vector<uint8_t>&) {
-        out_resp = acf::make_response(req, acf::ResponseKind::Acknowledge);
-        return std::error_code{};
-    });
+    server.set_handler(make_echo_handler([](const acf::AcfMessageInfo& req, const std::vector<uint8_t>&) {
+        FrameResponse r;
+        r.info = acf::make_response(req, acf::ResponseKind::Acknowledge);
+        return r;
+    }));
 
     Client client(make_stream_id(0x03, 9), "127.0.0.1", server.port());
     REQUIRE(client.ok());
@@ -574,6 +635,269 @@ TEST_CASE("Server and Client close() are idempotent and requests after close fai
     std::vector<uint8_t>  resp_payload;
     auto ctx = Context::background();
     REQUIRE(client.request(ctx, standard_request(1, 1), {}, resp, resp_payload) == ErrClosed);
+}
+
+// ── Server wired to a real rcp::mock::Server (cpp-RCP issue #129, Phase 5 ──
+//    wave 1: udp.hpp/mock.hpp dispatch-wiring fix) ─────────────────────────
+// Server::Handler used to be shaped to match rcp::mock::Server::dispatch's
+// own single-already-isolated-message contract directly — a caller wiring
+// it straight to mock::Server::dispatch, the obvious, natural thing to do,
+// silently lost Table 24 response suppression, conditional/cancellation-
+// opcode routing, and E2E/fragmentation handling for every request that
+// arrived over UDP, because dispatch() never sees a whole frame, only one
+// already-isolated member. Handler is now frame-level (see udp.hpp's own
+// Server::Handler doc comment) and these four tests prove the fix: each
+// one drives a REAL rcp::mock::Server, wired via forward_to_mock() above
+// (the exact "small glue lambda" pattern Handler's own doc comment
+// describes), over a REAL UDP round trip, and checks for the SAME behavior
+// dispatching directly against that mock::Server would give — not a
+// downgraded default.
+
+TEST_CASE("Server wired to mock::Server::dispatch_frame dispatches a multi-member datagram "
+          "exactly as calling dispatch_frame directly would",
+          "[udp][mock][REQ-UDP-007][REQ-MOCK-019]") {
+    mock::Server sim;
+    gpio::PinMask ignored = 0;
+    (void)sim.gpio().handle_write(WriteSemantics::Reconfigure, 0xFFFF'FFFFu, ignored);
+    REQUIRE_FALSE(sim.advance_to_rcp_configured());
+
+    auto stream_id = make_stream_id(0x02, 0x1010);
+    Server server(stream_id, "127.0.0.1", 0);
+    REQUIRE(server.ok());
+    server.set_handler(forward_to_mock([&](size_t client, avtp::StreamId sid, uint8_t /*sequence_num*/,
+                                            const std::vector<uint8_t>& frame,
+                                            std::vector<mock::FrameMemberResult>& results) {
+        return sim.dispatch_frame(client, sid, frame, results);
+    }));
+
+    MultiFrame req_frame;
+    req_frame.use_tscf     = false;
+    req_frame.stream_id    = stream_id;
+    req_frame.sequence_num = 1;
+
+    acf::AcfEntry write_req;
+    write_req.info        = standard_request(mock::kGpioByteBusId, /*transaction_num=*/1, /*write=*/true);
+    write_req.info.evt_op = static_cast<uint8_t>(WriteSemantics::Or);
+    write_req.payload     = gpio::encode_gpio_payload(0x0000'000F);
+
+    acf::AcfEntry read_req;
+    read_req.info = standard_request(mock::kGpioByteBusId, /*transaction_num=*/2, /*write=*/false);
+
+    req_frame.messages = {write_req, read_req};
+
+    auto req_bytes = encode_annexj_datagram(/*encap_seq=*/1, encode_multi_frame(req_frame));
+
+    int raw_fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+    REQUIRE(raw_fd >= 0);
+    sockaddr_in server_addr{};
+    server_addr.sin_family      = AF_INET;
+    server_addr.sin_port        = htons(server.port());
+    server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    auto sent = ::sendto(raw_fd, req_bytes.data(), req_bytes.size(), 0,
+                          reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr));
+    REQUIRE(sent == static_cast<ssize_t>(req_bytes.size()));
+
+    std::vector<uint8_t> recv_buf(kMaxDatagram);
+    ssize_t n = ::recv(raw_fd, recv_buf.data(), recv_buf.size(), 0);
+    REQUIRE(n > 0);
+    ::close(raw_fd);
+
+    uint32_t       resp_seq = 0;
+    const uint8_t* resp_avtpdu = nullptr;
+    size_t         resp_len = 0;
+    REQUIRE_FALSE(decode_annexj_datagram(recv_buf.data(), static_cast<size_t>(n), resp_seq, resp_avtpdu, resp_len));
+
+    MultiFrame resp;
+    REQUIRE_FALSE(decode_multi_frame(resp_avtpdu, resp_len, resp));
+    REQUIRE(resp.messages.size() == 2);
+    REQUIRE(acf::response_kind_of(resp.messages[0].info) == acf::ResponseKind::WriteResponse);
+    REQUIRE(acf::response_kind_of(resp.messages[1].info) == acf::ResponseKind::ReadResponse);
+
+    gpio::PinMask read_back = 0;
+    REQUIRE_FALSE(gpio::decode_gpio_payload(resp.messages[1].payload.data(), resp.messages[1].payload.size(),
+                                             read_back));
+    REQUIRE(read_back == 0x0000'000F);
+    REQUIRE(sim.gpio().read() == 0x0000'000F); // the second member's own side effect actually landed
+
+    server.close();
+}
+
+TEST_CASE("Server wired to mock::Server::dispatch_frame honors Table 24 response suppression "
+          "end-to-end over UDP — a request stream configured with no ack/response routing "
+          "produces NO reply datagram at all, not a downgraded default response",
+          "[udp][mock][REQ-UDP-007][REQ-RMAP-048][REQ-RMAP-049]") {
+    mock::Server sim;
+    REQUIRE_FALSE(sim.advance_to_rcp_configured());
+
+    auto client_stream_id = make_stream_id(0x05, 0x4242);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id            = client_stream_id;
+    cfg.rx_ack_stream_index  = 0; // REQ-RMAP-048: struct default already 0 ("no acknowledge is to be sent")
+    cfg.rx_resp_stream_index = 0; // REQ-RMAP-049: struct DEFAULT is 1 (regmap.hpp's own "a freshly
+                                   // reset server can answer discovery before any config is written"
+                                   // power-on rationale) — must be set to 0 explicitly here to actually
+                                   // exercise Table 24's "no response is to be sent" encoding, applied by
+                                   // mock::Server's own suppress_response_per_stream_cfg() (mock.hpp)
+                                   // inside dispatch_frame().
+    REQUIRE(sim.set_request_stream_cfg({cfg}));
+
+    Server server(make_stream_id(0x02, 1), "127.0.0.1", 0);
+    REQUIRE(server.ok());
+    server.set_handler(forward_to_mock([&](size_t client, avtp::StreamId sid, uint8_t /*sequence_num*/,
+                                            const std::vector<uint8_t>& frame,
+                                            std::vector<mock::FrameMemberResult>& results) {
+        return sim.dispatch_frame(client, sid, frame, results);
+    }));
+
+    Client client(client_stream_id, "127.0.0.1", server.port());
+    REQUIRE(client.ok());
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ctx = Context::with_timeout(std::chrono::milliseconds(200));
+    auto ec  = client.request(ctx, standard_request(mock::kGpioByteBusId, 1, /*write=*/false), {}, resp, resp_payload);
+
+    // A genuine, successful GPIO ReadResponse was built and then suppressed
+    // at the source (mock::Server's own Table 24 logic) — the client
+    // genuinely gets nothing back, not a default Acknowledge or any other
+    // stand-in response.
+    REQUIRE(ec == ErrTimeout);
+
+    server.close();
+    client.close();
+}
+
+TEST_CASE("Server wired to mock::Server::dispatch_frame routes a Triggered conditional-opcode "
+          "request to Pending admission instead of silently treating it as a Standard request",
+          "[udp][mock][REQ-UDP-007][REQ-SRV-016]") {
+    mock::Server sim;
+    REQUIRE_FALSE(sim.advance_to_rcp_configured());
+
+    auto stream_id = make_stream_id(0x02, 0x7777);
+    Server server(stream_id, "127.0.0.1", 0);
+    REQUIRE(server.ok());
+    server.set_handler(forward_to_mock([&](size_t client, avtp::StreamId sid, uint8_t /*sequence_num*/,
+                                            const std::vector<uint8_t>& frame,
+                                            std::vector<mock::FrameMemberResult>& results) {
+        return sim.dispatch_frame(client, sid, frame, results);
+    }));
+
+    Client client(stream_id, "127.0.0.1", server.port());
+    REQUIRE(client.ok());
+
+    request::TriggeredStep step;
+    step.trigger_source_ep = 1;
+    step.trigger_signal_nr = 0;
+    step.trigger_threshold = 0;
+
+    acf::AcfMessageInfo trig_info;
+    trig_info.acf_msg_type    = acf::kAcfMsgTypeGbb;
+    trig_info.byte_bus_id     = mock::kGpioByteBusId;
+    trig_info.transaction_num = 3;
+    trig_info.evt_ack         = true; // request an Acknowledge so this is observable over the wire
+    // mtv left at its own default (false) — a conditional-opcode GBB
+    // message's message_timestamp field is repurposed to carry the opcode/
+    // params instead of a real timestamp (mock::Server's own
+    // peek_conditional_request_type()); mtv must stay clear for that peek
+    // to recognize this as one at all.
+
+    const uint64_t ts = request::encode_request_type(request::RequestTypeOpcode::Triggered,
+                                                       request::encode_triggered_step_params(step));
+
+    acf::AcfMessageInfo   resp;
+    std::vector<uint8_t>  resp_payload;
+    auto ctx = Context::with_timeout(std::chrono::seconds(2));
+    auto ec  = client.request(ctx, trig_info, {}, resp, resp_payload, /*use_tscf=*/false,
+                               /*avtp_timestamp=*/0, /*message_timestamp=*/ts);
+
+    REQUIRE_FALSE(ec);
+    // A Pending admission's own Acknowledge shape (REQ-SRV-016) — NOT a
+    // WriteResponse/ReadResponse, which would mean the raw opcode/param
+    // bytes were misread as an ordinary Standard request's own
+    // message_timestamp and dispatched straight to GpioEndpoint instead of
+    // being stored as a conditional request.
+    REQUIRE(acf::response_kind_of(resp) == acf::ResponseKind::Acknowledge);
+    REQUIRE(sim.pending_count(mock::kGpioByteBusId) == 1);
+
+    server.close();
+    client.close();
+}
+
+TEST_CASE("Server wired to mock::Server::dispatch_frame_e2e validates a genuine E2E CRC and "
+          "dispatches the unwrapped request over UDP exactly as dispatch_frame_e2e() would directly",
+          "[udp][mock][REQ-UDP-007][REQ-E2E-021]") {
+    mock::Server sim;
+    gpio::PinMask ignored = 0;
+    (void)sim.gpio().handle_write(WriteSemantics::Reconfigure, 0xFFFF'FFFFu, ignored);
+    REQUIRE_FALSE(sim.advance_to_rcp_configured());
+    sim.registers().generic_configs[mock::kGpioEndpointId - 1].ep_req_crc_enable = true;
+
+    const auto stream_id = make_stream_id(0x02, 0x9999);
+    regmap::RequestStreamConfig cfg;
+    cfg.stream_id      = stream_id;
+    cfg.rx_enforce_e2e = true;
+    REQUIRE(sim.set_request_stream_cfg({cfg}));
+
+    Server server(make_stream_id(0x03, 1), "127.0.0.1", 0);
+    REQUIRE(server.ok());
+    server.set_handler(forward_to_mock([&](size_t client, avtp::StreamId sid, uint8_t sequence_num,
+                                            const std::vector<uint8_t>& frame,
+                                            std::vector<mock::FrameMemberResult>& results) {
+        return sim.dispatch_frame_e2e(client, sid, sequence_num, frame, results);
+    }));
+
+    acf::AcfMessageInfo gpio_info;
+    gpio_info.byte_bus_id     = mock::kGpioByteBusId;
+    gpio_info.transaction_num = 7;
+    gpio_info.op              = true;
+    gpio_info.evt_op          = static_cast<uint8_t>(WriteSemantics::Or);
+    auto payload = gpio::encode_gpio_payload(0x0000'00F0);
+    // e2e::wrap_framed() (rcp/e2e.hpp) builds the real, CRC32-protected ACF
+    // region bytes — Client::request() has no CRC-wrapping option of its
+    // own (this is transport-independent wire content mock::Server's own
+    // E2E layer produces/consumes, not something udp.hpp's Frame codec
+    // knows about), so this frame is assembled and sent over a raw socket
+    // instead, the same pattern the multi-member test above already uses.
+    auto wrapped = e2e::wrap_framed(/*is_ntscf_framed=*/true, /*header_octet1=*/0x00, /*tu=*/false, stream_id,
+                                     /*avtp_timestamp=*/std::nullopt, gpio_info,
+                                     /*message_timestamp=*/std::nullopt, payload);
+
+    avtp::NtscfHeader hdr;
+    hdr.stream_id           = stream_id;
+    hdr.sequence_num        = 0;
+    hdr.control_data_length = static_cast<uint16_t>(wrapped.size());
+    auto avtpdu = avtp::encode_ntscf_header(hdr);
+    avtpdu.insert(avtpdu.end(), wrapped.begin(), wrapped.end());
+
+    auto req_bytes = encode_annexj_datagram(/*encap_seq=*/1, avtpdu);
+
+    int raw_fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+    REQUIRE(raw_fd >= 0);
+    sockaddr_in server_addr{};
+    server_addr.sin_family      = AF_INET;
+    server_addr.sin_port        = htons(server.port());
+    server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    auto sent = ::sendto(raw_fd, req_bytes.data(), req_bytes.size(), 0,
+                          reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr));
+    REQUIRE(sent == static_cast<ssize_t>(req_bytes.size()));
+
+    std::vector<uint8_t> recv_buf(kMaxDatagram);
+    ssize_t n = ::recv(raw_fd, recv_buf.data(), recv_buf.size(), 0);
+    REQUIRE(n > 0);
+    ::close(raw_fd);
+
+    uint32_t       resp_seq = 0;
+    const uint8_t* resp_avtpdu = nullptr;
+    size_t         resp_len = 0;
+    REQUIRE_FALSE(decode_annexj_datagram(recv_buf.data(), static_cast<size_t>(n), resp_seq, resp_avtpdu, resp_len));
+
+    MultiFrame resp;
+    REQUIRE_FALSE(decode_multi_frame(resp_avtpdu, resp_len, resp));
+    REQUIRE(resp.messages.size() == 1);
+    REQUIRE(acf::response_kind_of(resp.messages[0].info) == acf::ResponseKind::WriteResponse);
+    REQUIRE(sim.gpio().read() == 0x0000'00F0); // the CRC-unwrapped request's own side effect landed
+
+    server.close();
 }
 
 #else // !RCP_UDP_POSIX

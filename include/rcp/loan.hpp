@@ -4,6 +4,8 @@
 // fusa:req REQ-LOAN-004
 // fusa:req REQ-LOAN-005
 // fusa:req REQ-LOAN-006
+// fusa:req REQ-LOAN-008
+// fusa:req REQ-LOAN-009
 
 // BufferPool — zero-copy payload loaning for AVTPDU-framed request/response
 // construction, via a pool of pre-allocated byte vectors.
@@ -30,10 +32,56 @@
 // Zone/Command/Controller/Registry model rcp/rcp.hpp's own header comment
 // warns against building on) returns its buffer to the pool automatically
 // once it goes out of scope, or immediately via its own ret() method.
+//
+// ── Phase 17 fixed-capacity conversion (cpp-RCP issue #129) ─────────────────
+//
+// Ported from c-RCP's include/rcp/loan.h + src/loan.c, this project's
+// RC5-spec-conformant reference implementation for this module: c-RCP's own
+// rcp_loan_pool_t bounds its free-list bookkeeping to a fixed
+// RCP_LOAN_POOL_MAX_ENTRIES (64) array embedded directly in the pool
+// struct, not a realloc()-grown container — "once the free list already
+// holds this many returned buffers, a further release simply frees the
+// returned buffer outright instead of pooling it" (c-RCP's own loan.h
+// comment). Only the ENTRY-COUNT bound is fixed on the c-RCP side; each
+// individual pooled buffer's own payload bytes stay heap-allocated (sized
+// by the caller's own runtime `size` argument, not a compile-time protocol
+// constant) — c-RCP does not additionally cap payload size.
+//
+// This header previously diverged from that design in the one dimension
+// that matters most for an ASIL-D-oriented no-dynamic-allocation-growth
+// posture: BufferPool's own free list (`pool_`) was a plain
+// `std::vector<std::unique_ptr<std::vector<uint8_t>>>` with no capacity
+// ceiling at all — unlike every other fixed-capacity table this codebase
+// now uses (rcp/respqueue.hpp's kMaxEntries, this same phase), it could
+// grow without bound as buffers were returned. Fixed below: `entries_` is
+// now a `std::array<PoolEntry, kPoolMaxEntries>` of exactly
+// c-RCP's own RCP_LOAN_POOL_MAX_ENTRIES (64) — matching c-RCP's chosen
+// entry-count bound exactly, not inventing a stricter or looser one — with
+// each individual buffer's own payload bytes still heap-allocated exactly
+// as c-RCP's own design leaves them (matching, not tightening, that half of
+// the design). Once the free list already holds kPoolMaxEntries returned
+// buffers, a further release() call frees the returned buffer outright
+// (see loan()'s own release closure below) instead of growing the free
+// list further — the same degradation c-RCP's own pool_append() documents,
+// never a leak or corruption, only a forfeited reuse opportunity.
+//
+// ── Phase 17 allocation fault-injection seam (cpp-RCP issue #129) ───────────
+// loan()'s cache-miss branch below (`new std::vector<uint8_t>(size, 0)`) is
+// a genuine heap allocation this codebase previously had no way to
+// deterministically fail in a test -- unlike this file's own kPoolMaxEntries
+// bound above, which is a size_ >= Capacity comparison with nothing to
+// allocate at all. BufferPool now optionally accepts an rcp::alloc::
+// FaultInjector* (default nullptr -- fully backward compatible; every
+// existing construction site, including new_buffer_pool(), is unaffected)
+// so that call site can be exercised via fault injection. See rcp/
+// alloc.hpp's own header comment for why this is an opt-in, instance-owned
+// seam rather than a global allocator hook.
 #pragma once
 
+#include "alloc.hpp"
 #include "rcp.hpp"
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -42,56 +90,107 @@
 namespace rcp {
 namespace loan {
 
+// Ported from c-RCP's RCP_LOAN_POOL_MAX_ENTRIES — see this file's own
+// header comment for the fixed-capacity conversion this bound closes.
+constexpr size_t kPoolMaxEntries = 64;
+
 class BufferPool {
 public:
-    ~BufferPool() { close(); }
+    BufferPool() = default;
+
+    // fault_injector, when non-null, is consulted (should_fail()) before
+    // this pool's one genuine allocation call site — the cache-miss branch
+    // of loan() below — actually allocates. Optional and defaulted to
+    // nullptr so every pre-existing construction site (including
+    // new_buffer_pool()) is unaffected; see this file's own header comment.
+    // fault_injector is not owned by this pool and must outlive it.
+    explicit BufferPool(alloc::FaultInjector* fault_injector) : fault_injector_(fault_injector) {}
+
+    ~BufferPool() {
+        close();
+        for (size_t i = 0; i < entries_len_; i++) delete entries_[i];
+    }
 
     // loan returns a zeroed buffer of exactly size bytes, drawn from the
     // pool if a same-or-larger buffer is available for reuse, or freshly
-    // allocated otherwise.
+    // allocated otherwise. Returns alloc::AllocErrc::simulated_allocation_
+    // failure, unchanged, if a cache-miss allocation would be needed and
+    // this pool's fault_injector (if any) reports it should fail —
+    // the pool's own state is left exactly as it was before the call in
+    // that case (no partial buffer taken from the free list is lost: the
+    // free-list search below only removes an entry on a cache *hit*, which
+    // never reaches the fault-injection check at all).
     std::error_code loan(int size, std::unique_ptr<rcp::Loan>& out) {
         if (closed_.load(std::memory_order_acquire)) return ErrClosed;
         if (size < 0) return std::make_error_code(std::errc::invalid_argument);
 
-        std::vector<uint8_t> buf;
+        std::vector<uint8_t>* raw = nullptr;
         {
             std::lock_guard<std::mutex> lk(pool_mu_);
-            if (!pool_.empty()) {
-                buf = std::move(*pool_.back());
-                pool_.pop_back();
+            for (size_t i = 0; i < entries_len_; i++) {
+                if (entries_[i]->size() >= static_cast<size_t>(size)) {
+                    raw = entries_[i];
+                    entries_[i] = entries_[entries_len_ - 1];
+                    entries_len_--;
+                    break;
+                }
             }
         }
-        buf.assign(static_cast<size_t>(size), 0); // re-zero: no stale data leaks across reuse
 
-        auto* raw = new std::vector<uint8_t>(std::move(buf));
+        if (raw) {
+            raw->assign(static_cast<size_t>(size), 0); // re-zero: no stale data leaks across reuse
+        } else {
+            if (fault_injector_ && fault_injector_->should_fail())
+                return alloc::make_error_code(alloc::AllocErrc::simulated_allocation_failure);
+            raw = new std::vector<uint8_t>(static_cast<size_t>(size), 0);
+        }
+
         out = std::make_unique<rcp::Loan>(
-            *raw,
+            *raw, // Loan owns its own copy of the payload (rcp::Loan's own by-value contract)
             [this, raw]() mutable {
                 std::lock_guard<std::mutex> lk(pool_mu_);
-                pool_.push_back(std::unique_ptr<std::vector<uint8_t>>(raw));
+                if (entries_len_ < kPoolMaxEntries) {
+                    entries_[entries_len_] = raw;
+                    entries_len_++;
+                    return;
+                }
+                // Free list already at c-RCP's own RCP_LOAN_POOL_MAX_ENTRIES
+                // bound (see this file's header comment): no reuse
+                // possible, free the buffer outright rather than growing
+                // entries_ past its fixed capacity.
+                delete raw;
             });
         return {};
     }
 
     // close is idempotent — safe to call more than once, including while
     // Loans obtained before the call are still alive (their eventual
-    // release simply grows a pool nobody will draw from again).
+    // release simply grows a pool nobody will draw from again, up to
+    // kPoolMaxEntries).
     void close() { closed_.store(true, std::memory_order_release); }
 
     bool ok() const noexcept { return !closed_.load(std::memory_order_acquire); }
 
     // pooled_count reports how many released buffers are currently held
     // for reuse — introspection for tests, not part of the loan/release
-    // contract itself.
+    // contract itself. Always <= kPoolMaxEntries, by construction.
     size_t pooled_count() const {
         std::lock_guard<std::mutex> lk(pool_mu_);
-        return pool_.size();
+        return entries_len_;
     }
 
 private:
     std::atomic<bool> closed_{false};
     mutable std::mutex pool_mu_;
-    std::vector<std::unique_ptr<std::vector<uint8_t>>> pool_;
+    // Fixed-capacity free list (ported from c-RCP's RCP_LOAN_POOL_MAX_ENTRIES
+    // — see this file's own header comment): entries_ is a plain
+    // std::array of raw pointers, not a realloc()/std::vector-grown
+    // container — the SLOTS are static, each individual buffer's own bytes
+    // are not (matching c-RCP's own design exactly).
+    std::array<std::vector<uint8_t>*, kPoolMaxEntries> entries_{};
+    size_t                                              entries_len_ = 0; // always <= kPoolMaxEntries
+
+    alloc::FaultInjector* fault_injector_ = nullptr; // not owned; see constructor doc comment
 };
 
 inline std::unique_ptr<BufferPool> new_buffer_pool() {

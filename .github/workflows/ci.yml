@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, rewrite/v3-from-c-rcp]
   pull_request:
-    branches: [main]
+    branches: [main, rewrite/v3-from-c-rcp]
   workflow_dispatch:
 
 concurrency:
@@ -84,6 +84,83 @@ jobs:
         with:
           name: compile-commands
           path: build/compile_commands.json
+
+  # ── Version sources agree ────────────────────────────────────────────────────
+  # Ported from c-RCP's own version-sources-agree job, adapted for cpp-RCP's
+  # real version.hpp syntax: c-RCP's version.h uses a preprocessor
+  # `#define RCP_VERSION "X.Y.Z"`, while cpp-RCP's version.hpp (this being a
+  # C++17 header-only port) instead declares a
+  # `constexpr std::string_view kVersion = "X.Y.Z";`, so the grep pattern
+  # below matches that syntax rather than c-RCP's #define form.
+  version-sources-agree:
+    name: CMakeLists.txt / version.hpp / .fusa.json versions agree
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare the three version sources
+        run: |
+          cmake_version=$(grep -m1 -oE '^\s*VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | awk '{print $2}')
+          header_version=$(grep -m1 -oE 'kVersion[[:space:]]*=[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"' include/rcp/version.hpp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          fusa_version=$(grep -m1 -oE '"version": *"[0-9]+\.[0-9]+\.[0-9]+"' .fusa.json | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+
+          echo "CMakeLists.txt project() VERSION : ${cmake_version:-<not found>}"
+          echo "include/rcp/version.hpp kVersion  : ${header_version:-<not found>}"
+          echo ".fusa.json \"version\"             : ${fusa_version:-<not found>}"
+
+          fail=0
+          [ -n "$cmake_version" ]  || { echo "::error file=CMakeLists.txt::Could not parse project() VERSION"; fail=1; }
+          [ -n "$header_version" ] || { echo "::error file=include/rcp/version.hpp::Could not parse kVersion"; fail=1; }
+          [ -n "$fusa_version" ]   || { echo "::error file=.fusa.json::Could not parse \"version\""; fail=1; }
+          [ "$fail" -eq 0 ] || exit 1
+
+          if [ "$cmake_version" != "$header_version" ] || [ "$cmake_version" != "$fusa_version" ]; then
+            echo "::error::Version sources disagree -- CMakeLists.txt=$cmake_version, version.hpp=$header_version, .fusa.json=$fusa_version. Bump all three together (see version.hpp's header comment); a mismatch here silently mislabels every SBOM/provenance/compliance-report artifact release.yml generates from .fusa.json's stale value."
+            exit 1
+          fi
+
+  # ── TLA+ formal verification (TLC model checking) ────────────────────────────
+  # Independent of the C++ build (tla/*.tla model the safety-relevant state
+  # machines rcp/lifecycle.hpp and rcp/e2e.hpp implement, not the C++ code
+  # itself), so this job carries no `needs:` on build-and-test, matching
+  # c-RCP's own identically-named formal-verification job. Each spec's
+  # like-named .cfg file in tla/ supplies TLC's CONSTANTS/SPECIFICATION/
+  # INVARIANTS/PROPERTIES — TLC loads it automatically when invoked without
+  # -config (see FORMAL_VERIFICATION.md). TLC itself exits non-zero on any
+  # invariant/property violation or deadlock, so a plain `java -jar ...` per
+  # spec is already a real pass/fail gate — no output-scraping needed.
+  formal-verification:
+    name: formal verification (TLC model checking)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Download TLC (tla2tools.jar)
+        run: curl -sSL -o "$RUNNER_TEMP/tla2tools.jar" https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar
+
+      - name: Model-check WatchdogSafeState.tla
+        working-directory: tla
+        run: java -jar "$RUNNER_TEMP/tla2tools.jar" -workers 4 WatchdogSafeState.tla
+
+      - name: Model-check RxSequenceGuard.tla
+        working-directory: tla
+        run: java -jar "$RUNNER_TEMP/tla2tools.jar" -workers 4 RxSequenceGuard.tla
+
+      - name: Model-check CrcSafeStateLatch.tla
+        working-directory: tla
+        run: java -jar "$RUNNER_TEMP/tla2tools.jar" -workers 4 CrcSafeStateLatch.tla
+
+      - name: Model-check LifecycleStateMachine.tla
+        working-directory: tla
+        run: java -jar "$RUNNER_TEMP/tla2tools.jar" -workers 4 LifecycleStateMachine.tla
+
+      - name: Model-check E2ESafePoint.tla
+        working-directory: tla
+        run: java -jar "$RUNNER_TEMP/tla2tools.jar" -workers 4 E2ESafePoint.tla
 
   # ── rcp/l2.hpp real-socket round trip (Linux, needs CAP_NET_RAW/root) ────────
   # Exercises rcp::l2::Server/Client over a real veth pair — real AF_PACKET
@@ -327,6 +404,198 @@ jobs:
           name: coverage-info
           path: coverage.info
 
+  # ── LLVM MC/DC (real condition/decision coverage, ratchet-gated) ─────────────
+  #
+  # Phase 7 batch 2 (cpp-RCP #129): real MC/DC evidence per ISO 26262-6:2018
+  # Table 12 (MC/DC is "++" recommended at ASIL-C/D), distinct from the
+  # `cpfusa coverage --mcdc`/`--dal DAL-B` branch-coverage fallback used in
+  # cpfusa-report below, which is NOT verified MC/DC evidence (see
+  # AUDIT_PACK.md §3).
+  #
+  # `cpfusa coverage --mcdc-file` (the mechanism this job would otherwise
+  # feed) cannot be used here: confirmed by direct local reproduction that
+  # cpp-FuSa v0.18.0's parser (src/coverage/coverage.cpp's apply_mcdc)
+  # scans for `mcdc_records[].conditions[].covered_true_count`/
+  # `covered_false_count` object fields, while real `llvm-cov export
+  # -format=text` emits `mcdc_records` as positional arrays (LineStart/
+  # ColumnStart/LineEnd/ColumnEnd/.../a bool TestVectors array) with no such
+  # keys anywhere in the schema, at any LLVM version — the same bug class
+  # sibling repo c-RCP hit and filed as SoundMatt/c-FuSa#129. This job does
+  # not wait on an upstream fix — it reads `llvm-cov export`'s own
+  # `totals.mcdc` block directly instead of routing through cpfusa's
+  # mismatched parser, so the number below is genuine, tool-independent
+  # MC/DC evidence today.
+  #
+  # Landed ratchet-gated from the start (not informational-only): unlike
+  # c-RCP's mcdc job, which shipped informational before a later issue
+  # added its gate, this job ships its regression floor in the same PR that
+  # introduces it, mirroring this file's own "Coverage regression gate
+  # (line floor, not DAL-B)" step further down in cpfusa-report — a
+  # ratchet against regression, not a claim of 100% (or even 80%) MC/DC.
+  # See the "MC/DC regression gate" step at the end of this job for the
+  # floor itself and its provenance comment.
+  mcdc:
+    name: MC/DC coverage (LLVM, ratchet-gated)
+    runs-on: ubuntu-22.04
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 18 (clang/llvm-cov/llvm-profdata with MC/DC support)
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 18
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Configure (MC/DC-instrumented build)
+        env:
+          CXX: clang++-18
+        run: |
+          cmake -B build-mcdc \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DCMAKE_CXX_FLAGS="-fprofile-instr-generate -fcoverage-mapping -fcoverage-mcdc -O0" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate -fcoverage-mapping" \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build-mcdc --parallel
+
+      - name: Test (profiled; one .profraw per test binary, %p/%m-namespaced)
+        env:
+          LLVM_PROFILE_FILE: mcdc-profiles/%p-%16m.profraw
+        run: |
+          mkdir -p build-mcdc/tests/mcdc-profiles
+          ctest --test-dir build-mcdc --output-on-failure -j1
+
+      - name: Merge profile data
+        run: |
+          llvm-profdata-18 merge -sparse \
+            build-mcdc/tests/mcdc-profiles/*.profraw \
+            -o mcdc.profdata
+
+      - name: Export real MC/DC totals (llvm-cov, not cpfusa --mcdc-file -- see job header)
+        run: |
+          bins=()
+          while IFS= read -r f; do bins+=("$f"); done < <(find build-mcdc/tests -maxdepth 1 -type f -perm -u+x -name 'test_*')
+          primary="${bins[0]}"
+          objargs=()
+          for b in "${bins[@]:1}"; do objargs+=(-object "$b"); done
+          # Header-only: the real implementation lives in include/rcp/*.hpp,
+          # not in any src/ dir (cpp-RCP has none) -- scope -sources there,
+          # not to tests/*.cpp, so this measures whether the implementation's
+          # own conditions/decisions are independently exercised by the test
+          # suite, matching c-RCP's own src/*.c-scoped intent.
+          srcs=()
+          while IFS= read -r f; do srcs+=("$f"); done < <(find include/rcp -name '*.hpp')
+          llvm-cov-18 export "$primary" "${objargs[@]}" \
+            -instr-profile=mcdc.profdata -format=text \
+            -sources "${srcs[@]}" \
+            > mcdc-export.json
+
+      - name: Summarize MC/DC totals
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          d = json.load(open("mcdc-export.json"))
+          totals = d["data"][0]["totals"]
+          mcdc = totals.get("mcdc", {})
+          branch = totals.get("branches", {})
+          summary = {
+              "mcdc_condition_pairs_covered": mcdc.get("covered"),
+              "mcdc_condition_pairs_total": mcdc.get("count"),
+              "mcdc_percent": mcdc.get("percent"),
+              "branch_percent_for_comparison": branch.get("percent"),
+          }
+          json.dump(summary, open("mcdc-summary.json", "w"), indent=2)
+          print(json.dumps(summary, indent=2))
+          note = (
+              f"Real LLVM MC/DC (condition/decision) coverage: "
+              f"{mcdc.get('percent', 0):.2f}% "
+              f"({mcdc.get('covered')}/{mcdc.get('count')} condition "
+              f"independence pairs) across include/rcp/*.hpp -- "
+              f"ratchet-gated (regression-only, not a 100% gate; see the "
+              f"gate step below). For comparison, branch coverage over the "
+              f"same instrumented binaries: "
+              f"{branch.get('percent', 0):.2f}%. See job header for why "
+              f"this is measured directly via llvm-cov rather than "
+              f"cpfusa coverage --mcdc-file."
+          )
+          print(f"::notice title=MC/DC Coverage::{note}")
+          with open("mcdc-summary.md", "w") as f:
+              f.write("### MC/DC coverage (ratchet-gated, not a 100% gate)\n\n")
+              f.write(note + "\n")
+          PYEOF
+          cat mcdc-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Uploaded *before* the gate step below so a failing gate still
+      # leaves this diagnostic artifact inspectable -- matching how this
+      # file's own cpfusa-report job uploads its compliance-report artifact
+      # ahead of any of its own non-gating steps failing.
+      - name: Upload MC/DC report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcdc-report
+          path: |
+            mcdc-summary.json
+            mcdc-export.json
+
+      # The real gate: hard-fails if MC/DC condition/decision coverage
+      # drops below a floor set with real margin under the currently-
+      # measured percentage, mirroring this file's own "Coverage
+      # regression gate (line floor, not DAL-B)" step in cpfusa-report --
+      # a ratchet against regression, not a claim of complete MC/DC (see
+      # AUDIT_PACK.md §3). Reads mcdc-summary.json already written by the
+      # step above rather than recomputing anything.
+      #
+      # Floor set at 60% (Phase 7 batch 2 / cpp-RCP #129): cpp-RCP had ZERO
+      # MC/DC infrastructure before this PR, so there is no prior
+      # measurement to ratchet against -- this is the first one. Local
+      # instrumented build+test+export (same mechanism and flags as this
+      # job) run twice: Homebrew LLVM 18.1.8 (matching this job's own
+      # clang-18 major version) measured 313/466 = 67.17% over
+      # include/rcp/*.hpp with all 58 tests passing under instrumentation;
+      # a second run on Homebrew LLVM 22.1.8 measured 426/629 = 67.73%,
+      # close agreement despite a 4-major-version toolchain gap, which is
+      # itself evidence the percentage is a stable property of the test
+      # suite rather than a toolchain artifact. 60% keeps ~7 points of
+      # margin below the clang-18-matched 67.17% figure -- wider than
+      # would be needed for gcc/clang version drift alone, because this
+      # measurement also crosses macOS/arm64 (local) vs Ubuntu 22.04/x86_64
+      # (this job) and Homebrew's clang-18 build vs apt.llvm.org's, either
+      # of which could plausibly shift condition-pair counts on a
+      # header-only codebase (many decisions live in platform-conditional
+      # code, e.g. rcp/l2.hpp's raw-socket paths) more than a same-OS
+      # version bump would. Raise this floor deliberately, with an updated
+      # provenance comment, once a fresh re-measurement on this job's own
+      # runner confirms real headroom -- do not raise it from a
+      # locally-measured number alone.
+      - name: MC/DC regression gate (ratchet floor, not 100% -- Phase 7 batch 2 / cpp-RCP #129)
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import sys
+
+          floor = 60.0  # see step name's comment above for provenance
+
+          summary = json.load(open("mcdc-summary.json"))
+          actual = summary["mcdc_percent"]
+
+          if actual is None or actual < floor:
+              print(f"::error::MC/DC coverage regression: {actual}% < floor {floor}% "
+                    f"({summary['mcdc_condition_pairs_covered']}/"
+                    f"{summary['mcdc_condition_pairs_total']} condition "
+                    f"independence pairs). This is a ratchet floor (Phase 7 "
+                    f"batch 2 / cpp-RCP #129), not a 100% gate -- if this drop "
+                    f"is an intentional tradeoff, lower the floor explicitly "
+                    f"with a provenance comment matching this step's own "
+                    f"convention; do not just delete or skip this step.")
+              sys.exit(1)
+
+          print(f"OK: {actual:.2f}% >= floor {floor}%")
+          PYEOF
+
   # ── Build cpp-FuSa binary (shared by all cpfusa-* jobs) ──────────────────────
   cpfusa-build:
     name: Build cpp-FuSa
@@ -441,12 +710,61 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
+      # Real root cause of the `|| true` this replaces: `cpfusa analyze`
+      # (both its clang-tidy and cppcheck integrations) recursively scans
+      # whatever directory tree it is pointed at with no awareness of
+      # .fusa.json's excludePatterns. Left as `build/`, that tree contains
+      # Catch2's own vendored source (FetchContent-populated
+      # build/_deps/catch2-src/), including Catch2's own SelfTest suite —
+      # cppcheck chokes on that third-party test code's BDD macros
+      # (SECTION/GIVEN/CHECKED_IF/...) and reports them as first-party
+      # ERROR findings (e.g. "unknownMacro", intentional ODR violations in
+      # Catch2's own test fixtures), which is what was actually keeping this
+      # job red, not a real defect in cpp-RCP's own code. Separately,
+      # `cpfusa analyze` looks for compile_commands.json directly under the
+      # directory it scans (the repo root here) — since it was left inside
+      # build/ with no copy at the root, clang-tidy has never actually run
+      # in this job at all (silently falling back to its
+      # "compile_commands.json not found" info finding).
+      #
+      # Fixed by copying compile_commands.json to the root (so clang-tidy
+      # finally runs for real) and then deleting build/ (and the vendored
+      # sources inside it) before invoking analyze, so the scan only ever
+      # sees this project's own first-party sources. With both fixed,
+      # cpp-RCP's own code has 0 ERROR-severity findings, so this can be a
+      # real, ungated `|| true`-free hard gate.
+      - name: Isolate compile_commands.json from vendored build tree
+        run: |
+          cp build/compile_commands.json .
+          rm -rf build
+
       - name: Static analysis
-        run: /tmp/cpfusa/build/cpfusa analyze || true
+        run: /tmp/cpfusa/build/cpfusa analyze
 
   # ── cpp-FuSa: 20 CWE-mapped cybersecurity rules (ISO 21434) ─────────────────
+  # Job renamed from its previous "cpfusa cyber --strict" name, which never
+  # matched its `run:` line below (plain `cpfusa cyber`, no --strict). --strict
+  # is a real flag (`cpfusa cyber --help`: "Exit 1 on warnings too"), but
+  # cpp-RCP does not cleanly pass under it today: a real run surfaces 838
+  # WARNING-severity findings (613 CYBER009 "integer narrowing conversion",
+  # 189 CYBER017 "hardcoded IP address", plus smaller CYBER004/012/019
+  # counts), overwhelmingly the expected, reviewed shape of a wire-protocol
+  # library (masking/shifting a wider integer down to a byte for
+  # serialization, and loopback/RFC5737 test addresses in the test suite) —
+  # not defects, but also not sites that can be responsibly mass-remediated
+  # or blanket-waived in this batch. Critically, `.fusa-dispositions.json`
+  # cannot fix this either way: unlike gated_exit_code() (used by
+  # check/lint/analyze), the `cyber` subcommand's --strict check
+  # (`cyber_strict && warnings > 0`) never consults dispositions at all, so
+  # no waiver entry changes its outcome. Turning --strict on today would
+  # therefore require either fixing several hundred call sites sight-unseen
+  # or sprinkling `// fusa:suppress CYBERxxx` at each one purely to satisfy
+  # the flag — the "soften a gate to make CI pass" move this batch is
+  # explicitly not supposed to make. So the job keeps running plain `cyber`
+  # (a real gate on ERROR-severity findings, of which cpp-RCP has none) and
+  # is named to match.
   cpfusa-cyber:
-    name: cpfusa cyber --strict
+    name: cpfusa cyber
     runs-on: ubuntu-22.04
     needs: [build-and-test, cpfusa-build]
     steps:
@@ -523,11 +841,13 @@ jobs:
           echo "OK: $tested/$total tested"
 
       # Genuine security-test coverage: CYBERSECURITY.md's own six security
-      # layers cite exactly 64 requirement ids as security-relevant
-      # (REQ-TLS-001..010, REQ-AUTH-001..008, REQ-E2E-001..014,
-      # REQ-RL-001..008, REQ-DISC-001..009, REQ-REGMAP-001..015), each now
-      # marked `"severity": "cybersecurity"` in `.fusa-reqs.json` -- the
-      # field cpp-FuSa's own trace.cpp already reads to compute
+      # layers cite requirement ids as security-relevant (REQ-TLS-001..010,
+      # REQ-AUTH-001..008, REQ-E2E-001..014, REQ-RL-001..008,
+      # REQ-DISC-001..009, REQ-REGMAP-001..015, plus the 8 Table-30 Row-2
+      # evt[2:0]-classification ids added after that doc's count was last
+      # written -- 72 total as of Phase 5), each marked
+      # `"severity": "cybersecurity"` in `.fusa-reqs.json` -- the field
+      # cpp-FuSa's own trace.cpp already reads to compute
       # `secTestedRequirements` (a test annotation on a cybersecurity-marked
       # requirement), previously never populated so this metric was always
       # zero. Deliberately NOT using cpfusa's own `--sec-tested` CLI flag:
@@ -536,24 +856,42 @@ jobs:
       # sec_tested/total) -- the exact same bug class SoundMatt/c-FuSa#147
       # fixed in c-FuSa, filed upstream as SoundMatt/cpp-FuSa#64, not yet
       # fixed. Parses `--format json`'s already-correct
-      # `secTestedRequirements` field directly instead, at a 17% floor
-      # (64/376 = 17.02%) -- NOT a claim that only 17% of this codebase is
-      # security-relevant, a regression floor against the exact,
-      # CYBERSECURITY.md-enumerated subset. Once cpp-FuSa#64 is fixed
-      # upstream, this step can switch to `cpfusa trace --sec-tested 17`
-      # directly.
-      - name: Enforce security-test coverage (17% floor, real CYBERSECURITY.md subset)
+      # `secTestedRequirements` field directly instead.
+      #
+      # Gated on an ABSOLUTE COUNT (>= 72), not a percentage of the total
+      # catalog: this step was originally a 17% floor (64/376 at the time),
+      # but its own comment already stated the actual intent was "a
+      # regression floor against the exact, CYBERSECURITY.md-enumerated
+      # subset" losing test coverage -- not a claim about what fraction of
+      # the codebase is security-relevant. A percentage-of-total
+      # implementation is the wrong shape for that intent: Phase 6 (cpp-RCP
+      # #129) is deliberately growing `.fusa-reqs.json` from 412 toward
+      # something closer to c-RCP's 1282-entry catalog by re-deriving
+      # entries for already-ported, non-cybersecurity-relevant content
+      # (wire framing, per-endpoint register semantics, etc.) -- exactly
+      # the kind of correct, intentional growth a percentage floor
+      # penalizes as if it were a regression. Found when Phase 6 batch 1
+      # (PR #155) legitimately added 36 REQ-ACF-*/REQ-AVTP-*/REQ-WIREERR-*
+      # entries and the previously-passing ratio (72/412 = 17.5%) dropped
+      # to 72/448 = 16.1%, failing a floor that was never meant to track
+      # total-catalog size. An absolute-count floor at the current
+      # enumerated total (72) still catches the real regression this step
+      # exists for -- one of the enumerated ids losing its test tag, or an
+      # id being removed from the `severity: cybersecurity` set -- without
+      # being diluted by legitimate catalog growth elsewhere. Update this
+      # number (never lower it silently) if CYBERSECURITY.md's own
+      # enumerated set genuinely grows or shrinks.
+      - name: Enforce security-test coverage (absolute floor, real CYBERSECURITY.md subset)
         run: |
           cov="$(/tmp/cpfusa/build/cpfusa trace --format json | jq '.coverage')"
           echo "$cov"
           total=$(echo "$cov" | jq '.totalRequirements')
           sec=$(echo "$cov" | jq '.secTestedRequirements')
-          pct=$(( sec * 100 / total ))
-          if [ "$pct" -lt 17 ]; then
-            echo "::error::sec-tested gate failed: ${pct}% ($sec/$total) < required 17%"
+          if [ "$sec" -lt 72 ]; then
+            echo "::error::sec-tested gate failed: $sec/$total security-tested < required floor of 72 (CYBERSECURITY.md-enumerated subset)"
             exit 1
           fi
-          echo "OK: ${pct}% ($sec/$total) security-tested"
+          echo "OK: $sec/$total security-tested (floor: 72)"
 
   # ── cpp-FuSa: ctest integration → .fusa-evidence.json ────────────────────────
   cpfusa-verify:

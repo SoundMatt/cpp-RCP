@@ -86,11 +86,13 @@ public:
     watchdog::Manager&  watchdog() noexcept { return watchdog_mgr_; }
 
     // register_stream begins watchdog tracking for a request stream —
-    // forwards to rcp::watchdog::Manager::register_stream (v2.10.0). Call
-    // once per stream a scenario wants watchdog-miss detection for; a
-    // stream dispatch() is never called for simply never has its watchdog
-    // kicked or polled.
-    void register_stream(uint64_t stream_key) { watchdog_mgr_.register_stream(stream_key); }
+    // forwards to rcp::watchdog::Manager::register_stream (v2.10.0),
+    // including its fixed-capacity result (Phase 17 c-RCP-reference pass,
+    // cpp-RCP issue #129: Manager::kMaxStreams) rather than silently
+    // discarding it. Call once per stream a scenario wants watchdog-miss
+    // detection for; a stream dispatch() is never called for simply never
+    // has its watchdog kicked or polled.
+    std::error_code register_stream(uint64_t stream_key) { return watchdog_mgr_.register_stream(stream_key); }
 
     // fault injects `err` on every subsequent dispatch() call until
     // recover() is called — the same Fault/Recover scenario-testing

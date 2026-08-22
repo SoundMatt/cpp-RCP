@@ -3,6 +3,25 @@
 // fusa:req REQ-RELAY-003
 // fusa:req REQ-RELAY-004
 // fusa:req REQ-RELAY-005
+// fusa:req REQ-RELAY-006
+// fusa:req REQ-RELAY-008
+// fusa:req REQ-RELAY-009
+// fusa:req REQ-RELAY-010
+// fusa:req REQ-RELAY-012
+//
+// REQ-RELAY-014/016/017 (Phase 6 batch 12): genuinely implemented, but in
+// include/relay/relay.hpp (relay::relay_category()/Channel::is_closed()) and
+// include/rcp/rcp.hpp (rcp::ErrClosed/ErrTimeout/ErrBusy/ErrNotFound/
+// ErrAlreadyExists's std::error_condition equivalence to relay::Errc) rather
+// than in this file -- tagged here anyway, matching this codebase's own
+// pre-existing convention of concentrating every REQ-RELAY-* //fusa:req tag
+// in this one header regardless of which file the behavior actually lives
+// in (see REQ-RELAY-001..005 above, whose own real implementations already
+// span clock.c/relay.c/rcp.c-equivalent territory in c-RCP terms). Tests
+// live in tests/test_relay.cpp, the file that actually exercises them.
+// fusa:req REQ-RELAY-014
+// fusa:req REQ-RELAY-016
+// fusa:req REQ-RELAY-017
 
 // RELAY application interface adapter for cpp-RCP (§10.3, §18.2).
 //
@@ -52,6 +71,28 @@
 // this file encoded "<stream_key as 16 lowercase hex digits>:<byte_bus_id>"
 // into Message.id, which does not match the spec's plain decimal-string
 // form and would have broken interop with anything expecting it.
+//
+// ── Phase 4 rewrite (cpp-RCP issue #129) — genuine content-drift fix found ──
+// A prior scoping pass characterized this header's generic RequestFn
+// passthrough design as fully behaviorally equivalent to c-RCP's much
+// richer per-endpoint-type rcp_adapt_op_t/field-table model
+// (c-RCP's include/rcp/adapt.h + src/adapt.c, this project's content
+// source of truth for this module). A line-by-line behavioral comparison
+// against every one of that file's 13 endpoint-type op-mappings confirmed
+// the *shape* of that claim — this header's op/evt_op meta fields and raw
+// `payload` passthrough do correctly generalize c-RCP's per-op GPIO/SPI/
+// PWM_OUT channel-and-write-semantics handling (evt[2:0] is one shared ACF
+// wire field regardless of which endpoint type is using it) — but found
+// one real, load-bearing omission: this header never threaded the ACF
+// header's own read_size_or_segment_num field through message_to_request()/
+// response_to_message() at all, silently defaulting it to 0 for every
+// relay::Message. c-RCP's own adapt.c threads the identical wire field
+// through this same bridging layer via rcp.uart.read_size/rcp.spi.
+// read_size/rcp.adc.read_size/rcp.i2c.read_size/rcp.iseled.read_size —
+// five of its per-op table's rows depend on it, and for I2C/ISELED it is
+// the ONLY thing that selects the read vs. write direction. Fixed below
+// via a single generic "rcp.read_size" meta key (read_size_from_meta()) —
+// see that function's own doc comment for the full citation trail.
 #pragma once
 
 #include <rcp/acf.hpp>
@@ -116,6 +157,51 @@ inline uint8_t evt_op_from_meta(const std::map<std::string, std::string>& meta) 
     return static_cast<uint8_t>(v);
 }
 
+// read_size_from_meta parses the "rcp.read_size" meta key (decimal 0-4095;
+// default 0) — the ACF header's own 12-bit read_size_or_segment_num field
+// (rcp/acf.hpp's AcfMessageInfo::read_size_or_segment_num).
+//
+// FIX (found during the cpp-RCP issue #129 c-RCP adapt.c/.h behavioral
+// comparison): this helper, and the two call sites below that use it, were
+// missing entirely before this pass — message_to_request() populated only
+// op and evt_op from meta, silently leaving read_size_or_segment_num at
+// AcfMessageInfo's own default of 0 for every relay::Message, with no way
+// for a caller to override it. That is a real, load-bearing gap, not a
+// cosmetic one: read_size_or_segment_num is the wire field a standard
+// request's own read length rides on for every endpoint type that needs
+// one — rcp/uart.hpp's encode_read_request ("read_size rides the ACF
+// header's own read_size_or_segment_num field", uart.hpp kMaxReadSize =
+// 0x0FFFu), rcp/spi.hpp's encode_transfer_request (read_size combines with
+// the payload length via transfer_length()), rcp/adc.hpp's
+// encode_read_request, and rcp/i2c.hpp's encode_transfer_request (where
+// read_size == 0 IS the write direction and read_size != 0 selects the
+// read direction — i.e. without this fix an I2C_TRANSFER built via Adapt()
+// could never select the read direction at all). c-RCP's own adapt.c
+// (this project's content source of truth for this module) threads the
+// exact same wire field through this same bridging layer under distinct
+// per-endpoint-type meta keys — rcp.uart.read_size (required, src/adapt.c
+// rcp_message_to_request()'s RCP_ADAPT_OP_UART_READ case),
+// rcp.spi.read_size (default = payload length, RCP_ADAPT_OP_SPI_TRANSFER
+// case), rcp.adc.read_size (default = one value's worth,
+// RCP_ADAPT_OP_ADC_READ case), and rcp.i2c.read_size /
+// rcp.iseled.read_size (default 0 = write direction, RCP_ADAPT_OP_I2C_
+// TRANSFER / _ISELED_COMMAND cases) — because, unlike this generic
+// passthrough design, c-RCP's own per-op field table needs one key per
+// endpoint-type family. A single generic "rcp.read_size" key is enough
+// here because read_size_or_segment_num is one wire field shared by every
+// endpoint type that has one, not a per-type concept — matching how
+// "rcp.evt_op" above already covers GPIO_WRITE's evt, PWM_OUT_WRITE's evt,
+// and SPI_TRANSFER's channel select generically, since all three are the
+// same evt[2:0] wire field too.
+inline uint16_t read_size_from_meta(const std::map<std::string, std::string>& meta) {
+    auto it = meta.find("rcp.read_size");
+    if (it == meta.end()) return 0;
+    unsigned v = 0;
+    auto [p, ec] = std::from_chars(it->second.data(), it->second.data() + it->second.size(), v, 10);
+    if (ec != std::errc{} || p != it->second.data() + it->second.size() || v > 0x0FFFu) return 0;
+    return static_cast<uint16_t>(v);
+}
+
 // ── ToMessage / FromMessage (§15.7.5) ────────────────────────────────────────
 
 // response_to_message converts an ACF response (rcp/acf.hpp) into a
@@ -129,6 +215,11 @@ inline relay::Message response_to_message(const acf::AcfMessageInfo& resp,
     msg.timestamp = std::chrono::system_clock::now();
     msg.meta["rcp.response_kind"] = std::to_string(static_cast<int>(acf::response_kind_of(resp)));
     msg.meta["rcp.err"]           = resp.err ? "true" : "false";
+    // rcp.read_size echoes resp.read_size_or_segment_num — see
+    // read_size_from_meta()'s own doc comment for why this field matters
+    // (UART/SPI/ADC/I2C/ISELED read length and, for I2C/ISELED, direction
+    // selection) and why a request-side omission of it was a real bug.
+    msg.meta["rcp.read_size"]     = std::to_string(resp.read_size_or_segment_num);
     return msg;
 }
 
@@ -143,6 +234,10 @@ inline bool message_to_request(const relay::Message& msg,
     out_info.byte_bus_id = byte_bus_id;
     out_info.op          = op_from_meta(msg.meta);
     out_info.evt_op       = evt_op_from_meta(msg.meta);
+    // read_size_or_segment_num — see read_size_from_meta()'s own doc
+    // comment for why this was missing before this pass and why that was a
+    // genuine behavioral gap, not a cosmetic one.
+    out_info.read_size_or_segment_num = read_size_from_meta(msg.meta);
     out_payload           = msg.payload;
     return true;
 }

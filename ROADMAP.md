@@ -137,7 +137,31 @@ work, since every endpoint type's functional config block depends on it.
 | **Phase 16** | v2.21.0 | L2 (native Ethernet) transport + UDP Annex J conformance fix | New `l2.hpp` raw-Ethernet transport (EtherType 0x22F0); `udp.hpp` gains Annex J's 4-byte encapsulation sequence number and port 17221 default |
 | **Phase 16** | v2.22.0 | ACF_GBB `message_timestamp` wire-position fix | The 64-bit `message_timestamp` is spliced *between* the ACF Message Info header's two quadlets (octet 4), not appended after both (octet 8); `e2e.hpp` CRC coverage follows; wire-breaking for ACF_GBB only |
 | **Phase 16** | v2.23.0 | §13.1 config-block privilege separation + fault-injection use-after-free | `regmap::Ep0` generic config is root-client-only (owning an endpoint grants the *functional* block only); `faultinject::pick_rule` no longer hands `send()` a pointer to an erased vector element; ASan/UBSan CI job extended to `test_faultinject` |
-| **Phase 16** | v3.0.0 | **TC18 RCP — General Availability** | First release where cpp-RCP *is* the OPEN Alliance TC18 Remote Control Protocol |
+| **Phase 16** | v3.0.0 | **TC18 RCP — General Availability, via full rewrite from c-RCP** | See "Phase 17 — v3.0.0" below: the incremental path above never reached RC5 conformance, so v3.0.0 is reached by a ground-up rewrite instead |
+
+---
+
+## Phase 17 — v3.0.0: Ground-Up Rewrite Ported From c-RCP
+
+**Why this isn't Phase 16's organic conclusion.** A 2026-08-21 audit found this codebase was never rebaselined to TC18 v0.5.1_RC5 — every phase above through v2.23.0 was built and "conformance-fixed" against the *pre-RC5* baseline (the same one c-RCP itself started from, before a real multi-issue program — c-RCP #96, #339, #341, #434 — reconciled it to RC5). Confirmed as a real wire-format defect, not a citation nit: `spi.hpp` is missing RC5's `spi_nr_cs` 4-bit `(count-1)` re-encoding and its new `deassert_cs_pause` bit (ticket NXP_100) entirely. The gap isn't isolated to SPI — it also carries no MC/DC coverage, no requirement-atomicity audit, no fixed-capacity/no-dynamic-allocation architecture, and a replay-detection mechanism (`RxSequenceGuard`) implemented but never wired into `mock.hpp`'s dispatch, among other findings. Patching all of that in place was considered and rejected as the wrong shape of effort — see cpp-RCP issue #129 for the full rationale and c-RCP cross-references.
+
+**Approach.** c-RCP is now RC5-conformant, requirement-atomicity-audited, and ASIL-D-hardened (MC/DC ratchet gate, CI-automated TLA+ with liveness properties, fixed-capacity dispatch path, CAN XL fragmentation with its oversized-reassembly error path fixed). Rather than re-derive all of that a second time from the spec PDF, v3.0.0 re-derives cpp-RCP's implementation from c-RCP's current content, module by module, translated into idiomatic C++ (not transliterated C) — preserving what's genuinely good about this codebase's existing design (the `request.hpp` unification, the dependency-injected non-singleton pattern, Catch2, the C-ABI/`dyndata`/`redundancy`/`sim`/`tls` modules that have no c-RCP equivalent) rather than discarding it wholesale.
+
+**Where it happens.** Branch `rewrite/v3-from-c-rcp`, not `main` — `main` and the `v2.19.0` tag remain a rollback point for however many sessions this takes. Each module is rebuilt in its own PR (old content removed and new content added together, so the branch stays buildable and CI-green throughout rather than broken for the whole effort). Tracked at cpp-RCP issue #129, one comment per phase batch.
+
+**Phases:**
+0. Branch setup, issue cleanup, this ROADMAP section (done).
+1. Core wire/protocol: `acf`, `avtp`, `request` (+sequencer+scheduler folded into this codebase's existing unified shape), `fragment` (new — CAN XL multi-segment support this codebase never had), `respqueue` (new — TC18 §12.7.9 TX queue, no prior equivalent), `loan`.
+2. Safety layer: `e2e`, `lifecycle`, `watchdog`, a fresh allocation seam (dependency-injected/`std::pmr`-style, not a global hook table) with fault-injection tests from day one.
+3. Per-endpoint modules, batched: `can`, `lin`, `iseled`, `i2c`, `adc`, `pwm`, `gpio`, `spi` (incl. the confirmed missing `nr_cs`/`deassert_cs_pause` delta), `uart`, `mdio`, `wakeup`.
+4. Server/dispatch: `regmap` (c-RCP's is ~7x more complete — a real content gap, not style), `mock` (wire in the response classifier, Table 30/33 evt validation, the `RxSequenceGuard` E2E replay guard, and fragmentation dispatch from day one), `server`/`endpoint.hpp`, `discovery`, `adapt`.
+5. Transport: `udp`, `l2`, `shmem`, `admin`; re-verify `tls`/`capi` against the new core.
+6. Requirement catalog: re-derive `.fusa-reqs.json` from c-RCP's current 1282-entry catalog (already RC5-correct, atomicity-audited, `status`/`scope`/`tc18`/`tc18_master_id` populated), authored fresh with per-function tags and c-RCP's id-prefix conventions (e.g. `REQ-RMAP-*` over this codebase's current `REQ-REGMAP-*`) — no separate atomicity/retagging pass needed since it's new authorship.
+7. Formal verification + MC/DC + release-pipeline hardening, built in per-module rather than retrofitted at the end.
+8. Remaining modules (`record`, `observe`, `config`, `cli`, `tsn`, `powerstate`, `faultinject`, `ratelimit`, `mdns`, `authz`, live bridges, `relay/relay.hpp`) + re-integrate `dyndata`/`redundancy`/`sim`.
+9. Cutover: full verification (build, full Catch2 suite, `cpfusa check`/`trace` at 0 errors/100%/100%, TLC, MC/DC gate, `release.yml` dry run), merge to `main`, tag `v3.0.0`, update RELAY's `docs/RCP-ARCHITECTURE.md`.
+
+**Scale, honestly.** Comparable to building c-RCP's current maturity from scratch — standing up infrastructure c-RCP itself took many dedicated efforts to build (fragmentation, respqueue, MC/DC, fixed-capacity architecture, formal-verification CI automation), and more than tripling this codebase's test count (730 `TEST_CASE`s today vs. c-RCP's 2351 tests' worth of coverage to port). Multi-session by design — see Phase sequencing above.
 
 ---
 

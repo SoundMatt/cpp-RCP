@@ -12,6 +12,24 @@
 // fusa:test REQ-PWR-012
 // fusa:test REQ-PWR-013
 // fusa:test REQ-PWR-014
+// fusa:test REQ-PWRMODE-001
+// fusa:test REQ-PWRMODE-002
+// fusa:test REQ-PWRMODE-003
+// fusa:test REQ-PWRMODE-005
+// fusa:test REQ-PWRMODE-006
+// fusa:test REQ-PWRMODE-007
+// fusa:test REQ-PWRMODE-008
+// fusa:test REQ-PWRMODE-009
+// fusa:test REQ-PWRMODE-010
+// fusa:test REQ-PWRMODE-011
+// fusa:test REQ-PWRMODE-013
+// fusa:test REQ-PWRMODE-014
+// fusa:test REQ-PWRMODE-015
+// fusa:test REQ-PWRMODE-016
+// fusa:test REQ-PWRMODE-018
+// fusa:test REQ-PWRMODE-020
+// fusa:test REQ-PWRMODE-024
+// fusa:test REQ-PWRMODE-025
 
 // Tests for rcp/powerstate.hpp — the TC18 power-mode model, entry-refusal
 // conditions, and hot-start-from-Sleep handshake (ROADMAP.md milestone 53,
@@ -279,4 +297,62 @@ TEST_CASE("PowerErrc reports a non-empty message in its own category", "[powerst
     auto ec = make_error_code(PowerErrc::invalid_transition);
     REQUIRE(ec.category() == power_category());
     REQUIRE_FALSE(ec.message().empty());
+}
+
+// ── cold_start_lifecycle_target (REQ-PWRMODE-003/014) ───────────────────────
+
+TEST_CASE("cold_start_lifecycle_target returns a valid recovered_state unchanged",
+          "[powerstate][REQ-PWRMODE-003][REQ-PWRMODE-014]") {
+    REQUIRE(cold_start_lifecycle_target(rcp::lifecycle::ServerState::HwUnconfigured) ==
+            rcp::lifecycle::ServerState::HwUnconfigured);
+    REQUIRE(cold_start_lifecycle_target(rcp::lifecycle::ServerState::HwConfigured) ==
+            rcp::lifecycle::ServerState::HwConfigured);
+    REQUIRE(cold_start_lifecycle_target(rcp::lifecycle::ServerState::RcpConfigured) ==
+            rcp::lifecycle::ServerState::RcpConfigured);
+}
+
+TEST_CASE("cold_start_lifecycle_target falls back to HwUnconfigured for an unrecognized value",
+          "[powerstate][REQ-PWRMODE-003][REQ-PWRMODE-014]") {
+    auto bogus = static_cast<rcp::lifecycle::ServerState>(0xFF);
+    REQUIRE(cold_start_lifecycle_target(bogus) == rcp::lifecycle::ServerState::HwUnconfigured);
+}
+
+// ── begin_wake_from_sleep's network_available gate (REQ-PWRMODE-016) ────────
+
+TEST_CASE("begin_wake_from_sleep defaults to network_available=true, preserving every "
+          "pre-existing caller's exact behavior",
+          "[powerstate][REQ-PWRMODE-016]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    int reenable_calls = 0;
+    PowerManager::Hooks hooks;
+    hooks.reenable_network_interface = [&] { ++reenable_calls; };
+    PowerManager mgr(wep, hooks);
+
+    REQUIRE_FALSE(mgr.enter_sleep());
+    REQUIRE_FALSE(mgr.begin_wake_from_sleep()); // no explicit argument — defaults to true
+    REQUIRE(reenable_calls == 1);
+    REQUIRE(mgr.wake_stage() == WakeStage::HandshakeActive);
+}
+
+TEST_CASE("begin_wake_from_sleep(false) is a free, uncounted retry that leaves wake_stage() at "
+          "Idle and never touches the network-reenable hook",
+          "[powerstate][REQ-PWRMODE-016]") {
+    rcp::wakeup::WakeupEndpoint wep;
+    int reenable_calls = 0;
+    PowerManager::Hooks hooks;
+    hooks.reenable_network_interface = [&] { ++reenable_calls; };
+    PowerManager mgr(wep, hooks);
+
+    REQUIRE_FALSE(mgr.enter_sleep());
+
+    auto ec = mgr.begin_wake_from_sleep(/*network_available=*/false);
+    REQUIRE(ec == make_error_code(PowerErrc::network_not_available));
+    REQUIRE(mgr.wake_stage() == WakeStage::Idle); // still Idle, not HandshakeActive
+    REQUIRE(reenable_calls == 0);                 // network hook never fired
+    REQUIRE(mgr.wake_attempts() == 0);             // not counted against the repeat limit
+
+    // A later retry once the network comes up succeeds normally.
+    REQUIRE_FALSE(mgr.begin_wake_from_sleep(/*network_available=*/true));
+    REQUIRE(reenable_calls == 1);
+    REQUIRE(mgr.wake_stage() == WakeStage::HandshakeActive);
 }
