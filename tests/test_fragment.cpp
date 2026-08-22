@@ -12,6 +12,7 @@
 // fusa:test REQ-FRAG-012
 // fusa:test REQ-FRAG-013
 // fusa:test REQ-FRAG-014
+// fusa:test REQ-FRAG-010
 // fusa:test REQ-FRAG-015
 // fusa:test REQ-FRAG-017
 // fusa:test REQ-FRAG-018
@@ -20,16 +21,19 @@
 // generic primitive underlying TC18 §13.7.11.3 (Phase 17, cpp-RCP issue
 // #129). Ported from c-RCP's tests/test_fragment.c.
 //
-// REQ-FRAG-010/016 (rcp_fragment_reassembler_destroy() /
-// RCP_FRAGMENT_REASM_ERR_ALLOC) have no direct C++ analog here: this
+// REQ-FRAG-016 (RCP_FRAGMENT_REASM_ERR_ALLOC) has no direct C++ analog
+// here and no catalog entry -- see fragment.hpp's own header comment for
+// why this is a documented judgment call, not a gap. REQ-FRAG-010
+// (rcp_fragment_reassembler_destroy()) DOES have a catalog entry: this
 // module's Reassembler is backed by a fixed std::array member (see
 // fragment.hpp's own "Fixed-capacity from day one" comment) rather than
 // c-RCP's realloc()-grown heap buffer, so there is no separate
-// destroy()/free step (RAII handles it) and no allocation-failure outcome
-// to report -- any attempt to grow past the fixed capacity is folded into
-// kErrTooLarge instead, exercised below by
-// "feed() rejects a payload exceeding this Reassembler's own fixed
-// capacity".
+// destroy()/free step of its own -- RAII satisfies the "releases internal
+// storage without leaking" requirement instead, exercised below by
+// "a Reassembler can be destroyed mid-collection without leaking (RAII)".
+// Any attempt to grow past the fixed capacity is folded into kErrTooLarge
+// instead, exercised below by "feed() rejects a payload exceeding this
+// Reassembler's own fixed capacity".
 
 #include <catch2/catch_test_macros.hpp>
 #include <rcp/fragment.hpp>
@@ -216,6 +220,19 @@ TEST_CASE("Reassembler starts empty and not collecting", "[fragment][REQ-FRAG-00
     REQUIRE_FALSE(r.is_collecting());
     REQUIRE(r.size() == 0);
     REQUIRE(r.data() == nullptr);
+}
+
+// ── Reassembler: destruction releases internal storage without leaking ─────
+
+TEST_CASE("a Reassembler can be destroyed mid-collection without leaking (RAII)",
+          "[fragment][REQ-FRAG-010]") {
+    const uint8_t seg0[4] = {1, 2, 3, 4};
+    {
+        Reassembler r(1024);
+        REQUIRE(r.feed(true, 0, seg0, sizeof(seg0)) == ReasmResult::kContinue);
+        REQUIRE(r.is_collecting());
+    } // destructor runs here, mid-sequence; ASan-checked in CI
+    SUCCEED();
 }
 
 // ── Reassembler: single-segment (never fragmented) messages ────────────────
