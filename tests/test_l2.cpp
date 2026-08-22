@@ -5,6 +5,8 @@
 // fusa:test REQ-L2-005
 // fusa:test REQ-L2-006
 // fusa:test REQ-L2-007
+// fusa:test REQ-L2-009
+// fusa:test REQ-L2-010
 
 // Tests for rcp/l2.hpp — the native IEEE 1722-over-Ethernet (raw L2)
 // transport added alongside the rcp/udp.hpp Annex J conformance fix. Every
@@ -20,9 +22,20 @@
 // tests/l2_veth_roundtrip.cpp, run only by the dedicated "l2-veth" CI job
 // (.github/workflows/ci.yml) against a real `veth` pair — not part of this
 // file or the normal `ctest` run.
+//
+// The "── FrameHandler dispatch-wiring gap ──" section below (Phase 5 Wave 1,
+// cpp-RCP issue #129) additionally includes <rcp/mock.hpp> — still no socket,
+// still privilege-free — to prove the FrameHandler entry point this batch
+// adds actually reaches rcp::mock::Server's own Table 24 suppression,
+// conditional/cancellation-opcode routing, and E2E dispatch, none of which
+// rcp::l2::Server::Handler's pre-existing single-message signature could
+// ever reach (it carries no stream_id parameter at all, and always routes
+// through mock::Server::dispatch() rather than decode_and_dispatch()/
+// dispatch_frame()/dispatch_frame_e2e()).
 
 #include <catch2/catch_test_macros.hpp>
 #include <rcp/l2.hpp>
+#include <rcp/mock.hpp>
 
 using namespace rcp;
 using namespace rcp::l2;
@@ -222,6 +235,345 @@ TEST_CASE("encode_l2_multi_frame/decode_l2_multi_frame round-trip two ACF_ABB me
     REQUIRE(out.messages[0].payload == a.payload);
     REQUIRE(out.messages[1].info.byte_bus_id == 2);
     REQUIRE(out.messages[1].payload == b.payload);
+}
+
+// ── is_unicast_mac (content gap vs. c-RCP's rcp_l2_mac_is_unicast(), REQ-L2-011) ──
+
+TEST_CASE("is_unicast_mac reports true for a unicast MAC (I/G bit clear)", "[l2][REQ-L2-010]") {
+    MacAddress mac = make_mac(0x02); // 0x02 & 0x01 == 0
+    REQUIRE(is_unicast_mac(mac));
+}
+
+TEST_CASE("is_unicast_mac reports false for a multicast MAC (I/G bit set)", "[l2][REQ-L2-010]") {
+    MacAddress mac = make_mac(0x01); // 0x01 & 0x01 == 1
+    REQUIRE_FALSE(is_unicast_mac(mac));
+}
+
+TEST_CASE("is_unicast_mac reports false for the all-ones broadcast address", "[l2][REQ-L2-010]") {
+    MacAddress mac;
+    mac.fill(0xFF);
+    REQUIRE_FALSE(is_unicast_mac(mac));
+}
+
+// ── AVTP envelope-only decode (decode_avtp_frame_header/decode_l2_frame_header) ──
+
+TEST_CASE("decode_avtp_frame_header decodes an NTSCF envelope and reports the raw ACF offset",
+          "[l2][REQ-L2-009]") {
+    MultiFrame f;
+    f.use_tscf     = false;
+    f.stream_id    = make_stream_id(0x02, 0x1234);
+    f.sequence_num = 7;
+    acf::AcfEntry m;
+    m.info    = standard_request(/*bus_id=*/3, /*transaction_num=*/9, /*write=*/true);
+    m.payload = {0x01, 0x02, 0x03, 0x04};
+    f.messages = {m};
+
+    auto bytes = encode_multi_frame(f);
+
+    AvtpFrameHeader hdr;
+    REQUIRE_FALSE(decode_avtp_frame_header(bytes.data(), bytes.size(), hdr));
+    REQUIRE_FALSE(hdr.use_tscf);
+    REQUIRE(hdr.stream_id == f.stream_id);
+    REQUIRE(hdr.sequence_num == f.sequence_num);
+    REQUIRE(hdr.acf_offset == avtp::kNtscfHeaderLen);
+
+    // The raw bytes at acf_offset must decode identically to what
+    // decode_multi_frame() (the full parse) itself produces for the same
+    // wire bytes -- this is the exact raw span Server::serve()'s
+    // FrameHandler path hands to a caller.
+    std::vector<acf::AcfEntry> parsed;
+    REQUIRE_FALSE(acf::decode_acf_messages(bytes.data() + hdr.acf_offset,
+                                            bytes.size() - hdr.acf_offset, parsed));
+    REQUIRE(parsed.size() == 1);
+    REQUIRE(parsed[0].info.byte_bus_id == 3);
+    REQUIRE(parsed[0].payload == m.payload);
+}
+
+TEST_CASE("decode_avtp_frame_header decodes a TSCF envelope with its timestamp fields",
+          "[l2][REQ-L2-009]") {
+    Frame f;
+    f.use_tscf        = true;
+    f.stream_id       = make_stream_id(0xAA, 0x0001);
+    f.sequence_num    = 42;
+    f.timestamp_valid = true;
+    f.avtp_timestamp  = 0xCAFEBABE;
+    f.info            = standard_request(/*bus_id=*/1, /*transaction_num=*/5);
+    f.payload         = {0xFF};
+
+    auto bytes = encode_frame(f);
+
+    AvtpFrameHeader hdr;
+    REQUIRE_FALSE(decode_avtp_frame_header(bytes.data(), bytes.size(), hdr));
+    REQUIRE(hdr.use_tscf);
+    REQUIRE(hdr.timestamp_valid);
+    REQUIRE(hdr.avtp_timestamp == 0xCAFEBABE);
+    REQUIRE(hdr.acf_offset == avtp::kTscfHeaderLen);
+}
+
+TEST_CASE("decode_avtp_frame_header rejects a truncated buffer the same way decode_multi_frame does",
+          "[l2][REQ-L2-009]") {
+    MultiFrame f;
+    f.stream_id = make_stream_id(0x01, 1);
+    acf::AcfEntry m;
+    m.info = standard_request(1, 1);
+    f.messages = {m};
+    auto bytes = encode_multi_frame(f);
+
+    AvtpFrameHeader hdr;
+    REQUIRE(decode_avtp_frame_header(bytes.data(), avtp::kNtscfHeaderLen - 1, hdr));
+}
+
+TEST_CASE("decode_l2_frame_header combines the Ethernet header decode with the AVTP envelope decode",
+          "[l2][REQ-L2-009]") {
+    MacAddress dst = make_mac(0x10);
+    MacAddress src = make_mac(0x20);
+
+    MultiFrame f;
+    f.use_tscf     = false;
+    f.stream_id    = make_stream_id(0x02, 0x5555);
+    f.sequence_num = 3;
+    acf::AcfEntry m;
+    m.info    = standard_request(/*bus_id=*/4, /*transaction_num=*/12, /*write=*/true);
+    m.payload = {0xAA, 0xBB, 0xCC, 0xDD};
+    f.messages = {m};
+
+    auto bytes = encode_l2_multi_frame(dst, src, f);
+
+    EthHeader       eth_hdr;
+    AvtpFrameHeader avtp_hdr;
+    REQUIRE_FALSE(decode_l2_frame_header(bytes.data(), bytes.size(), eth_hdr, avtp_hdr));
+    REQUIRE(eth_hdr.dst == dst);
+    REQUIRE(eth_hdr.src == src);
+    REQUIRE(eth_hdr.ethertype == kEtherType);
+    REQUIRE(avtp_hdr.stream_id == f.stream_id);
+    REQUIRE(avtp_hdr.sequence_num == 3);
+
+    const size_t acf_off = kEthHeaderLen + avtp_hdr.acf_offset;
+    std::vector<acf::AcfEntry> parsed;
+    REQUIRE_FALSE(acf::decode_acf_messages(bytes.data() + acf_off, bytes.size() - acf_off, parsed));
+    REQUIRE(parsed.size() == 1);
+    REQUIRE(parsed[0].info.byte_bus_id == 4);
+    REQUIRE(parsed[0].payload == m.payload);
+}
+
+TEST_CASE("decode_l2_frame_header rejects a frame whose EtherType is not 0x22F0, same as decode_l2_multi_frame",
+          "[l2][REQ-L2-009]") {
+    MacAddress dst = make_mac(0x10);
+    MacAddress src = make_mac(0x20);
+
+    MultiFrame f;
+    f.stream_id = make_stream_id(0x01, 1);
+    acf::AcfEntry m;
+    m.info = standard_request(1, 1);
+    f.messages = {m};
+    auto bytes = encode_l2_multi_frame(dst, src, f);
+    bytes[12] = 0x08;
+    bytes[13] = 0x00;
+
+    EthHeader       eth_hdr;
+    AvtpFrameHeader avtp_hdr;
+    auto ec = decode_l2_frame_header(bytes.data(), bytes.size(), eth_hdr, avtp_hdr);
+    REQUIRE(ec);
+    REQUIRE(ec == make_error_code(L2Errc::bad_ethertype));
+}
+
+// ── FrameHandler dispatch-wiring gap (Phase 5 Wave 1, cpp-RCP issue #129) ────
+// The tests below prove rcp::l2::Server::FrameHandler (set via
+// set_frame_handler()) reaches the rcp::mock::Server behaviors the OLD
+// per-message rcp::l2::Server::Handler could never reach: Table 24 response
+// suppression, conditional/cancellation-opcode routing, multi-member frame
+// dispatch, and E2E dispatch. No socket is opened anywhere below — these
+// exercise the pure decode_avtp_frame_header()/decode_l2_frame_header() split
+// plus rcp::mock::Server's own frame-level entry points directly, the exact
+// shape rcp::l2::Server::serve()'s own FrameHandler branch drives.
+
+TEST_CASE("mock::Server::dispatch_frame(), reached via decode_l2_frame_header()'s own "
+          "wire stream_id, applies Table 24 response suppression that the old "
+          "rcp::l2::Server::Handler signature (no stream_id parameter at all) could never reach",
+          "[l2][mock][REQ-L2-009]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    const auto stream_id = make_stream_id(0x02, 0xABCD);
+
+    // Table 24 (REQ-RMAP-048/049): rx_resp_stream_index == 0 means "no
+    // response is to be sent" for every non-Acknowledge response kind on
+    // this request stream.
+    regmap::RequestStreamConfig cfg{};
+    cfg.stream_id            = stream_id;
+    cfg.rx_ack_stream_index  = 1;
+    cfg.rx_resp_stream_index = 0;
+    REQUIRE(server.set_request_stream_cfg({cfg}));
+
+    MultiFrame req_frame;
+    req_frame.use_tscf     = false;
+    req_frame.stream_id    = stream_id;
+    req_frame.sequence_num = 1;
+    acf::AcfEntry read_req;
+    read_req.info = standard_request(mock::kGpioByteBusId, /*transaction_num=*/1, /*write=*/false);
+    req_frame.messages = {read_req};
+
+    auto wire = encode_multi_frame(req_frame);
+    AvtpFrameHeader hdr;
+    REQUIRE_FALSE(decode_avtp_frame_header(wire.data(), wire.size(), hdr));
+    REQUIRE(hdr.stream_id == stream_id);
+    std::vector<uint8_t> acf_bytes(wire.begin() + static_cast<long>(hdr.acf_offset), wire.end());
+
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame(/*client=*/0, hdr.stream_id, acf_bytes, results) == 1);
+    REQUIRE(results.size() == 1);
+    REQUIRE_FALSE(results[0].response.rsp); // suppressed -- Table 24 correctly reached via stream_id
+
+    // Contrast: the same GPIO read dispatched through mock::Server::dispatch()
+    // with the default (unconfigured) stream_id -- the only stream_id an old
+    // rcp::l2::Server::Handler could ever have supplied, since its signature
+    // carried none at all -- is NOT suppressed.
+    acf::AcfMessageInfo   unsuppressed_resp;
+    std::vector<uint8_t>  unsuppressed_payload;
+    server.dispatch(0, read_req.info, {}, unsuppressed_resp, unsuppressed_payload);
+    REQUIRE(unsuppressed_resp.rsp);
+}
+
+TEST_CASE("A conditional/cancellation-opcode GBB request is correctly queued when routed through "
+          "mock::Server::decode_and_dispatch() (what FrameHandler-wired dispatch_frame() calls per "
+          "member), not silently executed as an ordinary Standard write the way dispatching it "
+          "straight through mock::Server::dispatch() -- the old rcp::l2::Server::Handler's only "
+          "reachable entry point -- would",
+          "[l2][mock][REQ-L2-009]") {
+    mock::Server server;
+    REQUIRE_FALSE(server.advance_to_rcp_configured());
+
+    // A genuine conditional request (request::RequestTypeOpcode::Timed) addressed to GPIO,
+    // whose ordinary evt/op header bits ALSO look like a completely valid immediate GPIO
+    // Reconfigure write -- exactly the shape a real conditional/cancellation request has on
+    // the wire (rcp/request.hpp's own header comment: the repurposing trick touches only
+    // message_timestamp, never the shared evt/op header bits decode_acf_gbb() also decodes).
+    acf::AcfMessageInfo hdr = request::make_conditional_request(/*bus_id=*/mock::kGpioByteBusId,
+                                                                  /*transaction_num=*/1, /*cs=*/false);
+    hdr.op     = true;
+    hdr.evt_op = static_cast<uint8_t>(endpoint::WriteSemantics::Reconfigure);
+    const uint64_t repurposed_ts = request::encode_request_type(request::RequestTypeOpcode::Timed, {});
+    auto payload = gpio::encode_gpio_payload(0x0000'000F);
+    auto raw      = acf::encode_acf_gbb(hdr, repurposed_ts, payload);
+
+    // Path A -- the OLD/naive wiring this batch fixes: decode as if it were an ordinary GBB
+    // Standard request (message_timestamp's real repurposed meaning discarded), then hand the
+    // decoded req straight to mock::Server::dispatch() -- exactly what rcp::l2::Server::Handler's
+    // own single-message signature did before set_frame_handler() existed.
+    acf::AcfMessageInfo   naive_req;
+    uint64_t              naive_ts = 0;
+    std::vector<uint8_t>  naive_payload;
+    REQUIRE_FALSE(acf::decode_acf_gbb(raw.data(), raw.size(), naive_req, naive_ts, naive_payload));
+    acf::AcfMessageInfo   naive_resp;
+    std::vector<uint8_t>  naive_resp_payload;
+    server.dispatch(0, naive_req, naive_payload, naive_resp, naive_resp_payload);
+    REQUIRE(naive_resp.rsp); // wrongly executed immediately, as an ordinary write
+
+    // Path B -- the CORRECT wiring: mock::Server::dispatch_frame() (what a FrameHandler wires
+    // to) routes each member through decode_and_dispatch() internally, which peeks the
+    // repurposed opcode FIRST (peek_conditional_request_type()) and routes to admission
+    // instead of dispatch()'s ordinary ABB-oriented path.
+    std::vector<mock::FrameMemberResult> results;
+    REQUIRE(server.dispatch_frame(0, avtp::StreamId{}, raw, results) == 1);
+    REQUIRE(results.size() == 1);
+    REQUIRE_FALSE(results[0].response.rsp); // queued, not executed immediately
+}
+
+TEST_CASE("FrameHandler wired to mock::Server::dispatch_frame() dispatches every member of a "
+          "multi-member L2 frame independently, exactly the adapter pattern documented in "
+          "rcp/l2.hpp's own FrameHandler comment",
+          "[l2][mock][REQ-L2-009]") {
+    mock::Server mock_server;
+    REQUIRE_FALSE(mock_server.advance_to_rcp_configured());
+
+    FrameHandler fh = [&](size_t client, avtp::StreamId sid, uint8_t /*seq*/,
+                           const std::vector<uint8_t>& acf,
+                           std::vector<FrameMemberResult>& out) -> size_t {
+        std::vector<mock::FrameMemberResult> mres;
+        size_t n = mock_server.dispatch_frame(client, sid, acf, mres);
+        out.reserve(mres.size());
+        for (auto& m : mres) {
+            FrameMemberResult r;
+            r.result            = m.result;
+            r.byte_bus_id       = m.byte_bus_id;
+            r.response          = m.response;
+            r.response_payload  = std::move(m.response_payload);
+            out.push_back(std::move(r));
+        }
+        return n;
+    };
+
+    // Two-member frame: a plain GPIO read (answered normally) and an
+    // unmapped byte_bus_id (answered with an ErrorResponse) -- both must
+    // come back, in order, as separate FrameMemberResults.
+    MultiFrame req_frame;
+    req_frame.use_tscf     = false;
+    req_frame.stream_id    = make_stream_id(0x02, 1);
+    req_frame.sequence_num = 5;
+    acf::AcfEntry gpio_read;
+    gpio_read.info = standard_request(mock::kGpioByteBusId, /*transaction_num=*/1, /*write=*/false);
+    acf::AcfEntry bad_bus;
+    bad_bus.info = standard_request(/*bus_id=*/200, /*transaction_num=*/2, /*write=*/false);
+    req_frame.messages = {gpio_read, bad_bus};
+
+    auto wire = encode_multi_frame(req_frame);
+    AvtpFrameHeader hdr;
+    REQUIRE_FALSE(decode_avtp_frame_header(wire.data(), wire.size(), hdr));
+    std::vector<uint8_t> raw(wire.begin() + static_cast<long>(hdr.acf_offset), wire.end());
+
+    std::vector<FrameMemberResult> results;
+    size_t n = fh(/*client=*/0, hdr.stream_id, hdr.sequence_num, raw, results);
+    REQUIRE(n == 2);
+    REQUIRE(results.size() == 2);
+    REQUIRE(results[0].byte_bus_id == mock::kGpioByteBusId);
+    REQUIRE(results[0].response.rsp);
+    REQUIRE(acf::response_kind_of(results[0].response) == acf::ResponseKind::ReadResponse);
+    REQUIRE(results[1].response.rsp);
+    REQUIRE(acf::response_kind_of(results[1].response) == acf::ResponseKind::ErrorResponse);
+}
+
+TEST_CASE("FrameHandler wired to mock::Server::dispatch_frame_e2e() is reachable through the same "
+          "adapter pattern, correctly dispatching a member on an endpoint with E2E CRC not enabled",
+          "[l2][mock][REQ-L2-009]") {
+    mock::Server mock_server;
+    REQUIRE_FALSE(mock_server.advance_to_rcp_configured());
+
+    FrameHandler fh = [&](size_t client, avtp::StreamId sid, uint8_t seq,
+                           const std::vector<uint8_t>& acf,
+                           std::vector<FrameMemberResult>& out) -> size_t {
+        std::vector<mock::FrameMemberResult> mres;
+        size_t n = mock_server.dispatch_frame_e2e(client, sid, seq, acf, mres);
+        out.reserve(mres.size());
+        for (auto& m : mres) {
+            FrameMemberResult r;
+            r.result           = m.result;
+            r.byte_bus_id       = m.byte_bus_id;
+            r.response          = m.response;
+            r.response_payload  = std::move(m.response_payload);
+            out.push_back(std::move(r));
+        }
+        return n;
+    };
+
+    MultiFrame req_frame;
+    req_frame.use_tscf     = false;
+    req_frame.stream_id    = make_stream_id(0x03, 1);
+    req_frame.sequence_num = 1;
+    acf::AcfEntry gpio_read;
+    gpio_read.info = standard_request(mock::kGpioByteBusId, /*transaction_num=*/1, /*write=*/false);
+    req_frame.messages = {gpio_read};
+
+    auto wire = encode_multi_frame(req_frame);
+    AvtpFrameHeader hdr;
+    REQUIRE_FALSE(decode_avtp_frame_header(wire.data(), wire.size(), hdr));
+    std::vector<uint8_t> raw(wire.begin() + static_cast<long>(hdr.acf_offset), wire.end());
+
+    std::vector<FrameMemberResult> results;
+    size_t n = fh(/*client=*/0, hdr.stream_id, hdr.sequence_num, raw, results);
+    REQUIRE(n == 1);
+    REQUIRE(results.size() == 1);
+    REQUIRE(results[0].response.rsp);
+    REQUIRE(acf::response_kind_of(results[0].response) == acf::ResponseKind::ReadResponse);
 }
 
 // ── Non-Linux stub surface (Windows/macOS — see rcp/l2.hpp's own comment) ───
