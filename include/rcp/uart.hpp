@@ -7,6 +7,46 @@
 // fusa:req REQ-UART-007
 // fusa:req REQ-UART-008
 // fusa:req REQ-UART-009
+// fusa:req REQ-UART-010
+// fusa:req REQ-UART-011
+// fusa:req REQ-UART-012
+// fusa:req REQ-UART-013
+// fusa:req REQ-UART-014
+// fusa:req REQ-UART-015
+// fusa:req REQ-UART-016
+// fusa:req REQ-UART-017
+// fusa:req REQ-UART-018
+// fusa:req REQ-UART-019
+// fusa:req REQ-UART-020
+// fusa:req REQ-UART-021
+// fusa:req REQ-UART-022
+// fusa:req REQ-UART-023
+// fusa:req REQ-UART-024
+// fusa:req REQ-UART-025
+// fusa:req REQ-UART-026
+// fusa:req REQ-UART-027
+// fusa:req REQ-UART-028
+// fusa:req REQ-UART-029
+// fusa:req REQ-UART-030
+// fusa:req REQ-UART-031
+// fusa:req REQ-UART-032
+// fusa:req REQ-UART-033
+// fusa:req REQ-UART-034
+// fusa:req REQ-UART-035
+// fusa:req REQ-UART-036
+// fusa:req REQ-UART-037
+// fusa:req REQ-UART-038
+// fusa:req REQ-UART-039
+// fusa:req REQ-UART-040
+// fusa:req REQ-UART-041
+// fusa:req REQ-UART-042
+// fusa:req REQ-UART-043
+// fusa:req REQ-UART-044
+// fusa:req REQ-UART-045
+// fusa:req REQ-UART-046
+// fusa:req REQ-UART-047
+// fusa:req REQ-UART-048
+// fusa:req REQ-UART-049
 
 // UART endpoint (ep_type 0x05) — independent TX/RX request families sharing
 // one functional-config block (baud rate, word format, flow control), its
@@ -869,6 +909,24 @@ inline std::error_code decode_read_response(const uint8_t* b, size_t len, avtp::
     out_transaction_num    = txn;
     return {};
 }
+
+// ── Compound-wait against a UART endpoint (REQ-UART-035) ────────────────────
+// c-RCP's own REQ-UART-035 disposition (v0.110.0/v0.111.0): acf.h's
+// rcp_acf_compound_wait_match() is a universal TC18 §13.5.1 comparison
+// surface for every endpoint type, UART included — no UART-specific
+// comparison logic is needed. §13.7.8.1's own "compared length bounded above
+// by uart_rx_fifo_size" rule follows directly from §13.5.1's shared length
+// rule (status capped to the request's own byte_msg_payload length) once the
+// RX FIFO's real contents — which can never exceed uart_rx_fifo_size octets —
+// are supplied as the comparison's own "status" buffer: an expected
+// byte_msg_payload longer than the FIFO could ever hold never matches, since
+// a status shorter than payload never matches. This header carries no
+// compound-wait logic of its own, exactly like rcp/spi.hpp's own identical
+// disclaimer for the same generic mechanism — a caller evaluating a
+// compound-wait request against this endpoint goes through
+// rcp/acf.hpp's own endpoint-type-independent compound_wait_evt_valid()/
+// compound_wait_match() directly, using this endpoint's own RX FIFO contents
+// as the comparison buffer.
 
 // ── Read-completion arbitration (REQ-UART-033) ──────────────────────────────
 // TC18 §13.7.8.1's own three read-completion triggers, verbatim: a read
