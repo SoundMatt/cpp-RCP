@@ -562,18 +562,39 @@ TEST_CASE("writer_ctx plumbs via_discovery_stream straight through", "[regmap][R
     REQUIRE_FALSE(writer_ctx(map, nullptr, 3, false, true, false, 0, nullptr, 0).via_discovery_stream);
 }
 
-// TODO(phase4-batch-b): c-RCP's own writer_ctx() grants
-// via_valid_stream_association for a real, matching EP-ID/byte_bus_id
-// association when no root client is configured (REQ-LIFECYCLE-025/031).
-// This port's own writer_ctx() cannot yet evaluate that (see its own doc
-// comment) and always returns false -- pinned here as the current,
-// documented, fail-closed behavior rather than left unverified.
-TEST_CASE("writer_ctx's via_valid_stream_association is fail-closed (always false) pending batch B",
+// REQ-LIFECYCLE-025/031 (issue #341 lineage, batch B): writer_ctx() now
+// evaluates a real, matching EP-ID/byte_bus_id association via
+// ep_id_map::is_valid_association() (batch A's own fail-closed stub is
+// gone) -- see writer_ctx()'s own doc comment.
+TEST_CASE("writer_ctx grants via_valid_stream_association for a real, matching association when no root client",
           "[regmap][REQ-LIFECYCLE-025]") {
     GeneralMap map; // no root client configured
-    EpIdMappingEntry entries[1] = {{1, 0x100}};
+    EpIdMappingEntry entries[1] = {{1, 0x100, 2}}; // ep 1, bbid 0x100, stream 2
 
     auto ctx = writer_ctx(map, nullptr, 2, false, true, false, 0x100, entries, 1);
+    REQUIRE(ctx.via_valid_stream_association);
+    REQUIRE_FALSE(ctx.via_root_client_ep0); // independent axis, not conflated
+}
+
+TEST_CASE("writer_ctx denies via_valid_stream_association once a root client is configured",
+          "[regmap][REQ-LIFECYCLE-025]") {
+    GeneralMap map;
+    map.svr_root_client_index = 7; // a root client IS configured
+    EpIdMappingEntry entries[1] = {{1, 0x100, 2}};
+
+    // Same otherwise-valid (stream 2, bbid 0x100) association as the test
+    // above -- denied purely because a root client now exists.
+    auto ctx = writer_ctx(map, nullptr, 2, false, true, false, 0x100, entries, 1);
+    REQUIRE_FALSE(ctx.via_valid_stream_association);
+}
+
+TEST_CASE("writer_ctx denies via_valid_stream_association for an unrecognized pair",
+          "[regmap][REQ-LIFECYCLE-025]") {
+    GeneralMap map; // no root client
+    EpIdMappingEntry entries[1] = {{1, 0x100, 2}};
+
+    // Right stream, wrong byte_bus_id -- not a real association.
+    auto ctx = writer_ctx(map, nullptr, 2, false, true, false, 0x200, entries, 1);
     REQUIRE_FALSE(ctx.via_valid_stream_association);
 }
 
@@ -583,21 +604,22 @@ TEST_CASE("writer_ctx explicitly assigns every member of the returned WriterCtx"
     EpClient owner;
     owner.has_owning_stream   = true;
     owner.owning_stream_index = 7;
+    EpIdMappingEntry entries[1] = {{1, 0x100, 2}};
 
-    auto ctx = writer_ctx(map, &owner, 7, true, false, true, 0x100, nullptr, 0);
+    auto ctx = writer_ctx(map, &owner, 7, true, false, true, 0x100, entries, 1);
     REQUIRE(ctx.via_root_client_ep0);
     REQUIRE(ctx.via_owning_stream);
     REQUIRE(ctx.via_non_unicast_frame);
     REQUIRE(ctx.via_discovery_stream);
-    REQUIRE_FALSE(ctx.via_valid_stream_association);
+    REQUIRE_FALSE(ctx.via_valid_stream_association); // deterministically false: a root client IS configured
 
     GeneralMap no_root; // svr_root_client_index == kNoRootClient
-    auto ctx2 = writer_ctx(no_root, nullptr, 2, false, true, false, 0x100, nullptr, 0);
+    auto ctx2 = writer_ctx(no_root, nullptr, 2, false, true, false, 0x100, entries, 1);
     REQUIRE_FALSE(ctx2.via_root_client_ep0);
     REQUIRE_FALSE(ctx2.via_owning_stream);
     REQUIRE_FALSE(ctx2.via_non_unicast_frame);
     REQUIRE_FALSE(ctx2.via_discovery_stream);
-    REQUIRE_FALSE(ctx2.via_valid_stream_association);
+    REQUIRE(ctx2.via_valid_stream_association); // the one member Call A couldn't exercise as true
 }
 
 // ── RC Server's own functional-configuration content (SvrEpCfg) ──────────────────
@@ -865,7 +887,7 @@ TEST_CASE("ep_generic_cfg::apply_reconfig rejects a zero-length write and an out
             make_error_code(EpGenericCfgReconfigErrc::out_of_range));
 }
 
-// ── EP-ID / byte_bus_id mapping table (batch B, pre-existing) ────────────────────
+// ── EP-ID / byte_bus_id mapping table ────────────────────────────────────────────
 
 TEST_CASE("EP-ID mapping table preserves client insertion order without re-sorting it",
           "[regmap][REQ-REGMAP-010]") {
@@ -879,16 +901,22 @@ TEST_CASE("EP-ID mapping table preserves client insertion order without re-sorti
     REQUIRE(m.ep_id_mapping[0].ep_id == 3);
     REQUIRE(m.ep_id_mapping[1].ep_id == 1);
     REQUIRE(m.ep_id_mapping[2].ep_id == 2);
+
+    // The two-element positional init above still compiles and zero-defaults
+    // the two fields batch B appended (REQ-RMAP-052/053) — this is the exact
+    // compatibility batch B's own EpIdMappingEntry doc comment relies on.
+    REQUIRE(m.ep_id_mapping[0].request_stream_index == 0);
+    REQUIRE_FALSE(m.ep_id_mapping[0].crc_required);
 }
 
-// ── Response / ack queue config (batch B, pre-existing) ──────────────────────────
+// ── Response / ack queue config (TC18 §12.7.9 Table 27) ──────────────────────────
 
 TEST_CASE("ResponseQueueConfig fields exist and are settable", "[regmap][REQ-REGMAP-011]") {
     ResponseQueueConfig rqc;
-    rqc.response_queue_size = 6;
-    rqc.ack_queue_size = 6;
-    REQUIRE(rqc.response_queue_size == 6);
-    REQUIRE(rqc.ack_queue_size == 6);
+    rqc.queue_size     = 6;
+    rqc.flush_on_count = 6;
+    REQUIRE(rqc.queue_size == 6);
+    REQUIRE(rqc.flush_on_count == 6);
 }
 
 // ── Sequencer-state persistence (batch B, pre-existing) ──────────────────────────
@@ -1102,4 +1130,775 @@ TEST_CASE("EpGenericCfgReconfigErrc values are distinct and carry non-empty mess
     REQUIRE(short_write != out_of_range);
     REQUIRE_FALSE(short_write.message().empty());
     REQUIRE_FALSE(out_of_range.message().empty());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 4 batch B (cpp-RCP issue #129, ROADMAP.md "Phase 17") — ported from
+// c-RCP's tests/test_regmap.c and the relevant slice of
+// tests/test_tc18_gaps_regmap.c:
+// fusa:test REQ-RMAP-017
+// fusa:test REQ-RMAP-040
+// fusa:test REQ-RMAP-041
+// fusa:test REQ-RMAP-042
+// fusa:test REQ-RMAP-044
+// fusa:test REQ-RMAP-045
+// fusa:test REQ-RMAP-047
+// fusa:test REQ-RMAP-048
+// fusa:test REQ-RMAP-049
+// fusa:test REQ-RMAP-050
+// fusa:test REQ-RMAP-051
+// fusa:test REQ-RMAP-052
+// fusa:test REQ-RMAP-053
+// fusa:test REQ-RMAP-054
+// fusa:test REQ-RMAP-056
+// fusa:test REQ-RMAP-057
+// fusa:test REQ-RMAP-058
+// fusa:test REQ-RMAP-060
+// fusa:test REQ-RMAP-061
+// fusa:test REQ-RMAP-063
+// fusa:test REQ-RMAP-065
+// fusa:test REQ-RMAP-071
+// fusa:test REQ-RMAP-083
+// fusa:test REQ-RMAP-084
+// fusa:test REQ-WAKEUP-020
+// fusa:test REQ-E2E-029
+// fusa:test REQ-E2E-030
+// fusa:test REQ-E2E-045
+// fusa:test REQ-E2E-046
+// fusa:test REQ-LIFECYCLE-025
+// fusa:test REQ-LIFECYCLE-031
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── EpFunctionalCfg (content-modeling only) ──────────────────────────────────
+
+TEST_CASE("EpFunctionalCfg default-constructs zeroed and is independently settable",
+          "[regmap][REQ-RMAP-017]") {
+    EpFunctionalCfg cfg;
+    REQUIRE_FALSE(cfg.ep_enable);
+    REQUIRE_FALSE(cfg.ep_clear_req_storage);
+    REQUIRE_FALSE(cfg.ep_req_crc_enable);
+    REQUIRE_FALSE(cfg.ep_response_ts_enable);
+    REQUIRE_FALSE(cfg.ep_suppress_response);
+
+    cfg.ep_enable         = true;
+    cfg.ep_req_crc_enable = true;
+    REQUIRE(cfg.ep_enable);
+    REQUIRE(cfg.ep_req_crc_enable);
+    REQUIRE_FALSE(cfg.ep_clear_req_storage);
+}
+
+// ── HW pin mapping (TC18 §12.7.6 Tables 21/22) ───────────────────────────────
+
+TEST_CASE("HwPinMapEntry defaults to all-zero and matches c-RCP's row shape", "[regmap][REQ-RMAP-042]") {
+    HwPinMapEntry e;
+    REQUIRE(e.hw_ep_nr == 0);
+    REQUIRE(e.hw_ep_pin_nr == 0);
+    REQUIRE(e.hw_pin_type == 0);
+}
+
+TEST_CASE("hw_pin bit-layout constants are non-overlapping within their own sub-field",
+          "[regmap][REQ-RMAP-042]") {
+    REQUIRE((hw_pin::kPullMask & hw_pin::kStageMask) == 0);
+    REQUIRE((hw_pin::kStageMask & hw_pin::kDriveMask) == 0);
+    REQUIRE((hw_pin::kDriveMask & hw_pin::kSchmittTrigger) == 0);
+    REQUIRE(hw_pin::kStageInput == 0);
+    REQUIRE(hw_pin::kStagePushPull == hw_pin::kStageMask);
+}
+
+TEST_CASE("hw_pin_map::render places each row at its own 3-octet stride", "[regmap][REQ-RMAP-040]") {
+    HwPinMapEntry rows[2];
+    rows[0].hw_ep_nr     = 1;
+    rows[0].hw_ep_pin_nr = 2;
+    rows[0].hw_pin_type  = hw_pin::kStagePushPull | hw_pin::kPullUp;
+    rows[1].hw_ep_nr     = 3;
+    rows[1].hw_ep_pin_nr = 4;
+    rows[1].hw_pin_type  = hw_pin::kSchmittTrigger;
+
+    uint8_t out[6];
+    hw_pin_map::render(rows, 2, out);
+    REQUIRE(out[0] == 1);
+    REQUIRE(out[1] == 2);
+    REQUIRE(out[2] == (hw_pin::kStagePushPull | hw_pin::kPullUp));
+    REQUIRE(out[3] == 3);
+    REQUIRE(out[4] == 4);
+    REQUIRE(out[5] == hw_pin::kSchmittTrigger);
+}
+
+TEST_CASE("hw_pin_map::apply_reconfig patches only the addressed octets", "[regmap][REQ-RMAP-041]") {
+    HwPinMapEntry rows[2];
+    rows[0].hw_ep_nr = 9; // must survive if not addressed
+
+    const uint8_t patch[3] = {1, 2, hw_pin::kPullDown};
+    auto ec = hw_pin_map::apply_reconfig(rows, 2, 3, patch, sizeof(patch));
+    REQUIRE_FALSE(ec);
+    REQUIRE(rows[0].hw_ep_nr == 9); // row 0 untouched
+    REQUIRE(rows[1].hw_ep_nr == 1);
+    REQUIRE(rows[1].hw_ep_pin_nr == 2);
+    REQUIRE(rows[1].hw_pin_type == hw_pin::kPullDown);
+}
+
+TEST_CASE("hw_pin_map::apply_reconfig rejects a zero-length write and an out-of-range write",
+          "[regmap][REQ-RMAP-041]") {
+    HwPinMapEntry row;
+    const uint8_t patch[1] = {0};
+
+    REQUIRE(hw_pin_map::apply_reconfig(&row, 1, 0, patch, 0) ==
+            make_error_code(HwPinMapReconfigErrc::short_write));
+    REQUIRE(hw_pin_map::apply_reconfig(&row, 1, 3, patch, 1) ==
+            make_error_code(HwPinMapReconfigErrc::out_of_range));
+}
+
+TEST_CASE("HwPinMapReconfigErrc values are distinct and carry non-empty messages", "[regmap][REQ-RMAP-041]") {
+    auto short_write  = make_error_code(HwPinMapReconfigErrc::short_write);
+    auto out_of_range = make_error_code(HwPinMapReconfigErrc::out_of_range);
+    REQUIRE(short_write.category() == hw_pin_map_reconfig_category());
+    REQUIRE(short_write != out_of_range);
+    REQUIRE_FALSE(short_write.message().empty());
+    REQUIRE_FALSE(out_of_range.message().empty());
+}
+
+// ── Per-endpoint-type named-signal index (TC18 §12.7.6 Table 23) ────────────
+
+TEST_CASE("named_signal_string never returns an empty string for a valid signal",
+          "[regmap][REQ-RMAP-044]") {
+    for (uint8_t i = 0; i < static_cast<uint8_t>(NamedSignal::Count); ++i) {
+        auto sig = static_cast<NamedSignal>(i);
+        REQUIRE_FALSE(std::string(named_signal_string(sig)).empty());
+    }
+}
+
+TEST_CASE("named_signal_string returns \"unknown\" for an out-of-range value", "[regmap][REQ-RMAP-044]") {
+    REQUIRE(std::string(named_signal_string(NamedSignal::Count)) == "unknown");
+    REQUIRE(std::string(named_signal_string(static_cast<NamedSignal>(0xFF))) == "unknown");
+}
+
+TEST_CASE("named_signal_string names are unique across the whole index", "[regmap][REQ-RMAP-044]") {
+    std::vector<std::string> names;
+    for (uint8_t i = 0; i < static_cast<uint8_t>(NamedSignal::Count); ++i) {
+        names.emplace_back(named_signal_string(static_cast<NamedSignal>(i)));
+    }
+    for (size_t i = 0; i < names.size(); ++i) {
+        for (size_t j = i + 1; j < names.size(); ++j) {
+            REQUIRE(names[i] != names[j]);
+        }
+    }
+}
+
+TEST_CASE("named_signal_ep_signal_nr restarts at 0 for each endpoint type", "[regmap][REQ-RMAP-045]") {
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::Gpio0) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::Gpio31) == 31);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::SpiClk) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::SpiCs5) == 8);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::I2cScl) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::I2cSda) == 1);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::UartTx) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::UartCts) == 3);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::LinTxd) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::PwmOut) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::PwmOutn) == 1);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::PwmIn) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::AdcIn) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::DacOut) == 0);
+    // TC18's own counter-intuitive order: RXD=0, TXD=1.
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::CanRxd) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::CanTxd) == 1);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::IseledIspP) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::IseledIspN) == 1);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::MdioMdc) == 0);
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::MdioData) == 1);
+}
+
+TEST_CASE("named_signal_ep_signal_nr returns 0 for Count or any other invalid value",
+          "[regmap][REQ-RMAP-045]") {
+    REQUIRE(named_signal_ep_signal_nr(NamedSignal::Count) == 0);
+    REQUIRE(named_signal_ep_signal_nr(static_cast<NamedSignal>(0xFF)) == 0);
+}
+
+// ── Request-stream config: appended fields, boundary conversions ────────────
+
+TEST_CASE("RequestStreamConfig's batch-B-appended fields default per TC18's own power-on rule",
+          "[regmap][REQ-RMAP-047]") {
+    RequestStreamConfig cfg;
+    REQUIRE(cfg.rx_secure_channel_index == 0);
+    REQUIRE(cfg.rx_ack_stream_index == 0);
+    REQUIRE(cfg.rx_resp_stream_index == 1); // REQ-RMAP-049: power-on default is 1, not 0
+    REQUIRE(cfg.rx_stream_max_request_size == 0);
+
+    // Pre-existing fields batch A already established are untouched.
+    REQUIRE_FALSE(cfg.rx_wd_enable);
+    REQUIRE(cfg.rx_safety_measure == RxSafetyMeasure::ForceHighImpedance);
+}
+
+TEST_CASE("request_stream_cfg::wd_timeout_ms_to_ticks rounds down and bounds-checks",
+          "[regmap][REQ-RMAP-050]") {
+    uint16_t ticks = 0xFFFF;
+    REQUIRE(request_stream_cfg::wd_timeout_ms_to_ticks(1000, 10, ticks));
+    REQUIRE(ticks == 100);
+
+    // Rounds down: 105ms / 10ms-per-tick = 10.5 -> 10 ticks, never 11.
+    REQUIRE(request_stream_cfg::wd_timeout_ms_to_ticks(105, 10, ticks));
+    REQUIRE(ticks == 10);
+
+    REQUIRE_FALSE(request_stream_cfg::wd_timeout_ms_to_ticks(1000, 0, ticks)); // no zero-length tick
+    REQUIRE(ticks == 10); // untouched on rejection
+
+    REQUIRE_FALSE(request_stream_cfg::wd_timeout_ms_to_ticks(0xFFFFFFFFu, 1, ticks)); // overflows 16 bit
+}
+
+TEST_CASE("request_stream_cfg::wd_timeout_ticks_to_ms round-trips and rejects a zero rate",
+          "[regmap][REQ-RMAP-050]") {
+    uint32_t ms = 0xFFFFFFFFu;
+    REQUIRE(request_stream_cfg::wd_timeout_ticks_to_ms(100, 10, ms));
+    REQUIRE(ms == 1000);
+
+    REQUIRE_FALSE(request_stream_cfg::wd_timeout_ticks_to_ms(100, 0, ms));
+    REQUIRE(ms == 1000); // untouched on rejection
+}
+
+// ── request-stream-cfg wire codec (issue #306/#458) ──────────────────────────
+
+TEST_CASE("request_stream_cfg::render places stream_id, secure channel, and ack/resp indices",
+          "[regmap][REQ-RMAP-047]") {
+    RequestStreamConfig row;
+    row.stream_id.mac    = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
+    row.stream_id.suffix = 0x0102;
+    row.rx_secure_channel_index = 5;
+    row.rx_ack_stream_index     = 2;
+    row.rx_resp_stream_index    = 3;
+
+    uint8_t out[24];
+    request_stream_cfg::render(&row, 1, out, /*watchdog_ms_per_tick=*/0, nullptr);
+
+    REQUIRE(avtp::detail::get_u64(&out[0x0000]) == row.stream_id.to_u64());
+    REQUIRE(out[0x000C] == 5);
+    REQUIRE(out[0x0010] == 2);
+    REQUIRE(out[0x0011] == 3);
+}
+
+TEST_CASE("request_stream_cfg::render saturates an oversized rx_stream_max_request_size",
+          "[regmap][REQ-RMAP-071]") {
+    RequestStreamConfig row;
+    row.rx_stream_max_request_size = 0x1FFFF; // one past 16-bit max
+
+    uint8_t out[24];
+    request_stream_cfg::render(&row, 1, out, 0, nullptr);
+    REQUIRE(avtp::detail::get_u16(&out[0x0008]) == 0xFFFF);
+}
+
+TEST_CASE("request_stream_cfg::render saturates an oversized rx_safestate_sequencer",
+          "[regmap][REQ-RMAP-047]") {
+    RequestStreamConfig row;
+    row.rx_safestate_sequencer = 0x1FF; // one past 8-bit max
+
+    uint8_t out[24];
+    request_stream_cfg::render(&row, 1, out, 0, nullptr);
+    REQUIRE(out[0x000E] == 0xFF);
+}
+
+TEST_CASE("request_stream_cfg::render couples the sequence/watchdog bits with AND, not OR",
+          "[regmap][REQ-RMAP-051]") {
+    uint8_t out[24];
+
+    // Only the "block" dimension set -- must NOT render as if safe-state
+    // were also entered (that would overstate a safety guarantee).
+    RequestStreamConfig only_block;
+    only_block.rx_enforce_seq          = true;
+    only_block.rx_seq_safestate_enable = false;
+    request_stream_cfg::render(&only_block, 1, out, 0, nullptr);
+    REQUIRE((out[0x000D] & 0x02u) == 0x00u);
+
+    RequestStreamConfig both;
+    both.rx_enforce_seq          = true;
+    both.rx_seq_safestate_enable = true;
+    request_stream_cfg::render(&both, 1, out, 0, nullptr);
+    REQUIRE((out[0x000D] & 0x02u) == 0x02u);
+
+    RequestStreamConfig wd_only_block;
+    wd_only_block.rx_wd_enable           = true;
+    wd_only_block.rx_wd_safestate_enable = false;
+    request_stream_cfg::render(&wd_only_block, 1, out, 0, nullptr);
+    REQUIRE((out[0x000D] & 0x04u) == 0x00u);
+
+    RequestStreamConfig wd_both;
+    wd_both.rx_wd_enable           = true;
+    wd_both.rx_wd_safestate_enable = true;
+    request_stream_cfg::render(&wd_both, 1, out, 0, nullptr);
+    REQUIRE((out[0x000D] & 0x04u) == 0x04u);
+}
+
+TEST_CASE("request_stream_cfg::render packs rx_enforce_e2e and rx_ovrflw_safestate_enable directly",
+          "[regmap][REQ-RMAP-051]") {
+    RequestStreamConfig row;
+    row.rx_enforce_e2e            = true;
+    row.rx_ovrflw_safestate_enable = true;
+
+    uint8_t out[24];
+    request_stream_cfg::render(&row, 1, out, 0, nullptr);
+    REQUIRE((out[0x000D] & 0x01u) != 0);
+    REQUIRE((out[0x000D] & 0x08u) != 0);
+    REQUIRE((out[0x000D] & 0x70u) == 0); // bits [6:4] reserved, always 0
+}
+
+TEST_CASE("request_stream_cfg::render wires rx_stream_status from the live-status array",
+          "[regmap][REQ-E2E-046]") {
+    RequestStreamConfig rows[2];
+    const bool blocked[2] = {false, true};
+
+    uint8_t out[48];
+    request_stream_cfg::render(rows, 2, out, 0, blocked);
+    REQUIRE((out[0x000D] & 0x80u) == 0x00u);
+    REQUIRE((out[24 + 0x000D] & 0x80u) == 0x80u);
+
+    // nullptr means "no live status known" -- bit 7 renders 0 for every row.
+    request_stream_cfg::render(rows, 2, out, 0, nullptr);
+    REQUIRE((out[0x000D] & 0x80u) == 0x00u);
+    REQUIRE((out[24 + 0x000D] & 0x80u) == 0x00u);
+}
+
+TEST_CASE("request_stream_cfg::render falls back to 0x0000 when the watchdog tick rate is unconfigured",
+          "[regmap][REQ-RMAP-050]") {
+    RequestStreamConfig row;
+    row.rx_wd_timeout_interval = 1000;
+
+    uint8_t out[24];
+    request_stream_cfg::render(&row, 1, out, /*watchdog_ms_per_tick=*/0, nullptr);
+    REQUIRE(out[0x000A] == 0x00);
+    REQUIRE(out[0x000B] == 0x00);
+
+    request_stream_cfg::render(&row, 1, out, /*watchdog_ms_per_tick=*/10, nullptr);
+    REQUIRE(avtp::detail::get_u16(&out[0x000A]) == 100);
+}
+
+TEST_CASE("request_stream_cfg::apply_reconfig round-trips stream_id and the coupled bit pairs",
+          "[regmap][REQ-RMAP-047]") {
+    RequestStreamConfig row;
+    row.stream_id.mac    = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
+    row.stream_id.suffix = 0x1234;
+    row.rx_wd_timeout_interval = 500;
+
+    uint8_t block[24];
+    request_stream_cfg::render(&row, 1, block, /*watchdog_ms_per_tick=*/10, nullptr);
+    block[0x000D] = 0x0F; // set all 4 real content bits
+
+    RequestStreamConfig out_row;
+    auto ec = request_stream_cfg::apply_reconfig(&out_row, 1, 0, block, sizeof(block),
+                                                  /*watchdog_ms_per_tick=*/10);
+    REQUIRE_FALSE(ec);
+    REQUIRE(out_row.stream_id == row.stream_id);
+    REQUIRE(out_row.rx_wd_timeout_interval == 500);
+    REQUIRE(out_row.rx_enforce_e2e);
+    REQUIRE(out_row.rx_enforce_seq);
+    REQUIRE(out_row.rx_seq_safestate_enable); // both dimensions set together from one bit
+    REQUIRE(out_row.rx_wd_enable);
+    REQUIRE(out_row.rx_wd_safestate_enable);
+    REQUIRE(out_row.rx_ovrflw_safestate_enable);
+}
+
+TEST_CASE("request_stream_cfg::apply_reconfig leaves rx_wd_timeout_interval unchanged when the tick rate is unconfigured",
+          "[regmap][REQ-RMAP-050]") {
+    RequestStreamConfig row;
+    row.rx_wd_timeout_interval = 777; // pre-existing value
+
+    uint8_t block[24];
+    request_stream_cfg::render(&row, 1, block, 0, nullptr);
+
+    auto ec = request_stream_cfg::apply_reconfig(&row, 1, 0, block, sizeof(block),
+                                                  /*watchdog_ms_per_tick=*/0);
+    REQUIRE_FALSE(ec);
+    REQUIRE(row.rx_wd_timeout_interval == 777); // untouched, not zeroed
+}
+
+TEST_CASE("request_stream_cfg::apply_reconfig rejects a zero-length write and an out-of-range write",
+          "[regmap][REQ-RMAP-047]") {
+    RequestStreamConfig row;
+    const uint8_t patch[1] = {0};
+
+    REQUIRE(request_stream_cfg::apply_reconfig(&row, 1, 0, patch, 0, 10) ==
+            make_error_code(RequestStreamCfgReconfigErrc::short_write));
+    REQUIRE(request_stream_cfg::apply_reconfig(&row, 1, 24, patch, 1, 10) ==
+            make_error_code(RequestStreamCfgReconfigErrc::out_of_range));
+}
+
+TEST_CASE("RequestStreamCfgReconfigErrc values are distinct and carry non-empty messages",
+          "[regmap][REQ-RMAP-047]") {
+    auto short_write  = make_error_code(RequestStreamCfgReconfigErrc::short_write);
+    auto out_of_range = make_error_code(RequestStreamCfgReconfigErrc::out_of_range);
+    REQUIRE(short_write.category() == request_stream_cfg_reconfig_category());
+    REQUIRE(short_write != out_of_range);
+    REQUIRE_FALSE(short_write.message().empty());
+    REQUIRE_FALSE(out_of_range.message().empty());
+}
+
+TEST_CASE("request_stream_cfg::resolve_index matches by stream_id and returns a 1-based index",
+          "[regmap][REQ-SEQ-013]") {
+    RequestStreamConfig rows[2];
+    rows[0].stream_id = avtp::StreamId::from_u64(100);
+    rows[1].stream_id = avtp::StreamId::from_u64(200);
+
+    REQUIRE(request_stream_cfg::resolve_index(rows, 2, 100) == 1);
+    REQUIRE(request_stream_cfg::resolve_index(rows, 2, 200) == 2);
+}
+
+TEST_CASE("request_stream_cfg::resolve_index returns the 0 sentinel for no match, null, or empty",
+          "[regmap][REQ-SEQ-013]") {
+    RequestStreamConfig rows[1];
+    rows[0].stream_id = avtp::StreamId::from_u64(100);
+
+    REQUIRE(request_stream_cfg::resolve_index(rows, 1, 999) == 0);
+    REQUIRE(request_stream_cfg::resolve_index(nullptr, 0, 100) == 0);
+    REQUIRE(request_stream_cfg::resolve_index(rows, 0, 100) == 0);
+}
+
+// ── Response / ack queue config wire codec (TC18 §12.7.9 Table 27) ──────────
+
+TEST_CASE("ResponseQueueConfig matches c-RCP's real per-queue row shape", "[regmap][REQ-RMAP-059]") {
+    ResponseQueueConfig cfg;
+    REQUIRE(cfg.stream_uid == 0);
+    REQUIRE(cfg.max_avtpdu_size == 0);
+    REQUIRE(cfg.queue_size == 0);
+    REQUIRE(cfg.flush_on_count == 0);
+    REQUIRE(cfg.flush_time_us == 0);
+}
+
+TEST_CASE("response_queue_stream_id combines stream_uid with the interface's own mac",
+          "[regmap][REQ-RMAP-060]") {
+    ResponseQueueConfig cfg;
+    cfg.stream_uid = 0xABCD;
+    std::array<uint8_t, 6> mac{0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
+
+    auto id = response_queue_stream_id(cfg, mac);
+    REQUIRE(id.mac == mac);
+    REQUIRE(id.suffix == 0xABCD);
+}
+
+TEST_CASE("response_queue_cfg::render places each field at its own TC18-cited byte offset",
+          "[regmap][REQ-RMAP-061]") {
+    ResponseQueueConfig cfg;
+    cfg.stream_uid      = 0x1122;
+    cfg.max_avtpdu_size = 0x3344;
+    cfg.queue_size      = 0x5566;
+    cfg.flush_on_count  = 0x7788;
+    cfg.flush_time_us   = 0x99AA;
+
+    uint8_t out[10];
+    response_queue_cfg::render(&cfg, 1, out);
+    REQUIRE(avtp::detail::get_u16(&out[0]) == 0x1122);
+    REQUIRE(avtp::detail::get_u16(&out[2]) == 0x3344);
+    REQUIRE(avtp::detail::get_u16(&out[4]) == 0x5566);
+    REQUIRE(avtp::detail::get_u16(&out[6]) == 0x7788);
+    REQUIRE(avtp::detail::get_u16(&out[8]) == 0x99AA);
+}
+
+TEST_CASE("response_queue_cfg::render saturates an oversized flush_time_us without wrapping",
+          "[regmap][REQ-RMAP-065]") {
+    ResponseQueueConfig cfg;
+    cfg.flush_time_us = 0x10000; // one past the 16-bit wire register's own max
+
+    uint8_t out[10];
+    response_queue_cfg::render(&cfg, 1, out);
+    REQUIRE(avtp::detail::get_u16(&out[8]) == 0xFFFF); // saturated, not wrapped to 0x0000
+}
+
+TEST_CASE("response_queue_cfg::apply_reconfig patches only the addressed octets",
+          "[regmap][REQ-RMAP-061]") {
+    ResponseQueueConfig rows[2];
+    rows[0].stream_uid = 0xAAAA; // must survive if not addressed
+
+    const uint8_t patch[10] = {0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x05};
+    auto ec = response_queue_cfg::apply_reconfig(rows, 2, 10, patch, sizeof(patch));
+    REQUIRE_FALSE(ec);
+    REQUIRE(rows[0].stream_uid == 0xAAAA);
+    REQUIRE(rows[1].stream_uid == 0x0001);
+    REQUIRE(rows[1].max_avtpdu_size == 0x0002);
+    REQUIRE(rows[1].queue_size == 0x0003);
+    REQUIRE(rows[1].flush_on_count == 0x0004);
+    REQUIRE(rows[1].flush_time_us == 0x0005);
+}
+
+TEST_CASE("response_queue_cfg::apply_reconfig rejects a zero-length write and an out-of-range write",
+          "[regmap][REQ-RMAP-061]") {
+    ResponseQueueConfig row;
+    const uint8_t patch[1] = {0};
+
+    REQUIRE(response_queue_cfg::apply_reconfig(&row, 1, 0, patch, 0) ==
+            make_error_code(ResponseQueueCfgReconfigErrc::short_write));
+    REQUIRE(response_queue_cfg::apply_reconfig(&row, 1, 10, patch, 1) ==
+            make_error_code(ResponseQueueCfgReconfigErrc::out_of_range));
+}
+
+TEST_CASE("ResponseQueueCfgReconfigErrc values are distinct and carry non-empty messages",
+          "[regmap][REQ-RMAP-061]") {
+    auto short_write  = make_error_code(ResponseQueueCfgReconfigErrc::short_write);
+    auto out_of_range = make_error_code(ResponseQueueCfgReconfigErrc::out_of_range);
+    REQUIRE(short_write.category() == response_queue_cfg_reconfig_category());
+    REQUIRE(short_write != out_of_range);
+    REQUIRE_FALSE(short_write.message().empty());
+    REQUIRE_FALSE(out_of_range.message().empty());
+}
+
+// ── EP-ID / byte_bus_id map: appended fields, diagnostics, wire codec ────────
+
+TEST_CASE("EpIdMappingEntry's appended fields default false/0", "[regmap][REQ-RMAP-052]") {
+    EpIdMappingEntry e;
+    REQUIRE(e.request_stream_index == 0);
+    REQUIRE_FALSE(e.crc_required);
+}
+
+TEST_CASE("ep_id_map::is_ascending is true for strictly increasing composite keys",
+          "[regmap][REQ-RMAP-056]") {
+    EpIdMappingEntry entries[3] = {{1, 10, 1, false}, {2, 20, 1, false}, {3, 5, 2, false}};
+    // stream 1: bbid 10 < 20 (ascending); stream 2 > stream 1 (always ascending
+    // regardless of its own bbid, even though 5 < 20).
+    REQUIRE(ep_id_map::is_ascending(entries, 3));
+}
+
+TEST_CASE("ep_id_map::is_ascending is false for an equal or descending byte_bus_id within one stream",
+          "[regmap][REQ-RMAP-056]") {
+    EpIdMappingEntry equal_adjacent[2] = {{1, 10, 1, false}, {2, 10, 1, false}};
+    REQUIRE_FALSE(ep_id_map::is_ascending(equal_adjacent, 2));
+
+    EpIdMappingEntry descending[2] = {{1, 20, 1, false}, {2, 10, 1, false}};
+    REQUIRE_FALSE(ep_id_map::is_ascending(descending, 2));
+}
+
+TEST_CASE("ep_id_map::is_ascending is false for a decreasing request_stream_index",
+          "[regmap][REQ-RMAP-056]") {
+    EpIdMappingEntry entries[2] = {{1, 10, 2, false}, {2, 20, 1, false}};
+    REQUIRE_FALSE(ep_id_map::is_ascending(entries, 2));
+}
+
+TEST_CASE("ep_id_map::is_ascending is vacuously true for zero or one entries", "[regmap][REQ-RMAP-056]") {
+    REQUIRE(ep_id_map::is_ascending(nullptr, 0));
+    EpIdMappingEntry one[1] = {{1, 10, 1, false}};
+    REQUIRE(ep_id_map::is_ascending(one, 1));
+}
+
+TEST_CASE("ep_id_map::effective_count stops at the first request_stream_index==0 sentinel",
+          "[regmap][REQ-RMAP-054]") {
+    EpIdMappingEntry entries[4] = {{1, 1, 1, false}, {2, 2, 1, false}, {0, 0, 0, false}, {4, 4, 1, false}};
+    REQUIRE(ep_id_map::effective_count(entries, 4) == 2);
+}
+
+TEST_CASE("ep_id_map::effective_count returns capacity unchanged when no sentinel exists",
+          "[regmap][REQ-RMAP-054]") {
+    EpIdMappingEntry entries[2] = {{1, 1, 1, false}, {2, 2, 1, false}};
+    REQUIRE(ep_id_map::effective_count(entries, 2) == 2);
+}
+
+TEST_CASE("ep_id_map::row_init_default permits EP0 access before any configuration is written",
+          "[regmap][REQ-RMAP-084]") {
+    EpIdMappingEntry row;
+    row.ep_id                = 99;
+    row.request_stream_index = 0;
+    ep_id_map::row_init_default(row);
+    REQUIRE(row.request_stream_index == 1); // smallest valid index, not the end-of-table sentinel
+    REQUIRE(row.ep_id == kEp0);
+    REQUIRE(row.byte_bus_id == 0);
+}
+
+TEST_CASE("ep_id_map::render packs BBID into bits[15:5] and crc_required into bit 4",
+          "[regmap][REQ-RMAP-053]") {
+    EpIdMappingEntry row;
+    row.request_stream_index = 3;
+    row.ep_id                = 7;
+    row.byte_bus_id          = 0x0100;
+    row.crc_required         = true;
+
+    uint8_t out[4];
+    ep_id_map::render(&row, 1, out);
+    REQUIRE(out[0] == 3);
+    REQUIRE(out[1] == 7);
+    const uint16_t bbid_ctrl = avtp::detail::get_u16(&out[2]);
+    REQUIRE(((bbid_ctrl >> 5) & 0x07FFu) == 0x0100);
+    REQUIRE((bbid_ctrl & 0x10u) != 0);
+    REQUIRE((bbid_ctrl & 0x0Fu) == 0); // Channel_selection always 0
+}
+
+TEST_CASE("ep_id_map::render and apply_reconfig round-trip BBID/crc_required per Table 25/26",
+          "[regmap][REQ-RMAP-053]") {
+    EpIdMappingEntry row;
+    row.request_stream_index = 2;
+    row.ep_id                = 5;
+    row.byte_bus_id          = 0x0234;
+    row.crc_required         = true;
+
+    uint8_t block[4];
+    ep_id_map::render(&row, 1, block);
+
+    EpIdMappingEntry out_row;
+    auto ec = ep_id_map::apply_reconfig(&out_row, 1, 0, block, sizeof(block));
+    REQUIRE_FALSE(ec);
+    REQUIRE(out_row.request_stream_index == 2);
+    REQUIRE(out_row.ep_id == 5);
+    REQUIRE(out_row.byte_bus_id == 0x0234);
+    REQUIRE(out_row.crc_required);
+}
+
+TEST_CASE("ep_id_map::apply_reconfig patches only the addressed octets", "[regmap][REQ-RMAP-052]") {
+    EpIdMappingEntry rows[2];
+    rows[0].ep_id = 42; // must survive if not addressed
+
+    const uint8_t patch[4] = {1, 9, 0x00, 0x00};
+    auto ec = ep_id_map::apply_reconfig(rows, 2, 4, patch, sizeof(patch));
+    REQUIRE_FALSE(ec);
+    REQUIRE(rows[0].ep_id == 42);
+    REQUIRE(rows[1].request_stream_index == 1);
+    REQUIRE(rows[1].ep_id == 9);
+}
+
+TEST_CASE("ep_id_map::apply_reconfig rejects a zero-length write and an out-of-range write",
+          "[regmap][REQ-RMAP-052]") {
+    EpIdMappingEntry row;
+    const uint8_t patch[1] = {0};
+
+    REQUIRE(ep_id_map::apply_reconfig(&row, 1, 0, patch, 0) ==
+            make_error_code(EpIdMapReconfigErrc::short_write));
+    REQUIRE(ep_id_map::apply_reconfig(&row, 1, 4, patch, 1) ==
+            make_error_code(EpIdMapReconfigErrc::out_of_range));
+}
+
+TEST_CASE("EpIdMapReconfigErrc values are distinct and carry non-empty messages",
+          "[regmap][REQ-RMAP-052]") {
+    auto short_write  = make_error_code(EpIdMapReconfigErrc::short_write);
+    auto out_of_range = make_error_code(EpIdMapReconfigErrc::out_of_range);
+    REQUIRE(short_write.category() == ep_id_map_reconfig_category());
+    REQUIRE(short_write != out_of_range);
+    REQUIRE_FALSE(short_write.message().empty());
+    REQUIRE_FALSE(out_of_range.message().empty());
+}
+
+TEST_CASE("ep_id_map::has_single_client_per_ep flags an endpoint mapped under two distinct streams",
+          "[regmap][REQ-RMAP-057]") {
+    EpIdMappingEntry ok[2] = {{1, 10, 1, false}, {1, 20, 1, false}}; // same ep_id, same stream -- fine
+    REQUIRE(ep_id_map::has_single_client_per_ep(ok, 2));
+
+    EpIdMappingEntry multi_client[2] = {{1, 10, 1, false}, {1, 20, 2, false}}; // same ep_id, different stream
+    REQUIRE_FALSE(ep_id_map::has_single_client_per_ep(multi_client, 2));
+}
+
+TEST_CASE("ep_id_map::shared_bus_homogeneous flags a shared bus with differing ep_types",
+          "[regmap][REQ-RMAP-058]") {
+    EpIdMappingEntry entries[2] = {{1, 10, 1, false}, {2, 10, 1, false}}; // shared (stream,bbid)
+    const uint8_t    same_type[2] = {3, 3};
+    REQUIRE(ep_id_map::shared_bus_homogeneous(entries, same_type, 2));
+
+    const uint8_t different_type[2] = {3, 4};
+    REQUIRE_FALSE(ep_id_map::shared_bus_homogeneous(entries, different_type, 2));
+}
+
+TEST_CASE("ep_id_map::ep_type_has_fixed_ep_id checks every row of the target type",
+          "[regmap][REQ-WAKEUP-020]") {
+    EpIdMappingEntry fixed[1] = {{1, 10, 1, false}};
+    const uint8_t    fixed_types[1] = {7};
+    REQUIRE(ep_id_map::ep_type_has_fixed_ep_id(fixed, fixed_types, 1, 7, 1));
+
+    EpIdMappingEntry wrong[1] = {{2, 10, 1, false}};
+    const uint8_t    wrong_types[1] = {7};
+    REQUIRE_FALSE(ep_id_map::ep_type_has_fixed_ep_id(wrong, wrong_types, 1, 7, 1));
+
+    // Vacuously true when no row of that ep_type exists.
+    const uint8_t none_of_type[1] = {9};
+    REQUIRE(ep_id_map::ep_type_has_fixed_ep_id(wrong, none_of_type, 1, 7, 1));
+}
+
+TEST_CASE("ep_id_map::byte_bus_ids_for_stream reports each distinct byte_bus_id once",
+          "[regmap][REQ-E2E-029]") {
+    EpIdMappingEntry entries[3] = {{1, 0x100, 5, false}, {2, 0x100, 5, false}, {3, 0x200, 5, false}};
+    avtp::ByteBusId  out[4]     = {};
+
+    auto found = ep_id_map::byte_bus_ids_for_stream(entries, 3, /*request_stream_index=*/5, out, 4);
+    REQUIRE(found == 2); // 0x100 (twice, deduplicated) and 0x200
+    REQUIRE(out[0] == 0x100);
+    REQUIRE(out[1] == 0x200);
+}
+
+TEST_CASE("ep_id_map::byte_bus_ids_for_stream reports the total count even past out_capacity",
+          "[regmap][REQ-E2E-030]") {
+    EpIdMappingEntry entries[2] = {{1, 0x100, 5, false}, {2, 0x200, 5, false}};
+    avtp::ByteBusId  out[1]     = {};
+
+    auto found = ep_id_map::byte_bus_ids_for_stream(entries, 2, 5, out, /*out_capacity=*/1);
+    REQUIRE(found == 2); // total, not just what fit
+    REQUIRE(out[0] == 0x100);
+}
+
+TEST_CASE("ep_id_map::byte_bus_ids_for_stream ignores rows on a different request stream",
+          "[regmap][REQ-E2E-045]") {
+    EpIdMappingEntry entries[2] = {{1, 0x100, 5, false}, {2, 0x200, 6, false}};
+    avtp::ByteBusId  out[4]     = {};
+
+    auto found = ep_id_map::byte_bus_ids_for_stream(entries, 2, 5, out, 4);
+    REQUIRE(found == 1);
+    REQUIRE(out[0] == 0x100);
+}
+
+TEST_CASE("ep_id_map::is_valid_association matches an exact (stream, byte_bus_id) pair",
+          "[regmap][REQ-LIFECYCLE-025]") {
+    EpIdMappingEntry entries[1] = {{1, 0x100, 2, false}};
+    REQUIRE(ep_id_map::is_valid_association(entries, 1, 2, 0x100));
+    REQUIRE_FALSE(ep_id_map::is_valid_association(entries, 1, 2, 0x200)); // wrong bbid
+    REQUIRE_FALSE(ep_id_map::is_valid_association(entries, 1, 3, 0x100)); // wrong stream
+    REQUIRE_FALSE(ep_id_map::is_valid_association(nullptr, 0, 2, 0x100)); // empty table
+}
+
+// ── Optional-subsystem config sections (REQ-RMAP-039) ────────────────────────
+
+TEST_CASE("OptionalSubsystemCfg default-constructs with len == 0, meaning \"not supported\"",
+          "[regmap][REQ-RMAP-039]") {
+    OptionalSubsystemCfg cfg;
+    REQUIRE(cfg.len == 0);
+}
+
+TEST_CASE("optional_subsystem_cfg::apply_reconfig writes within the section's own current extent",
+          "[regmap][REQ-RMAP-039]") {
+    OptionalSubsystemCfg cfg;
+    cfg.len = 4;
+    const uint8_t patch[2] = {0xAA, 0xBB};
+
+    auto ec = optional_subsystem_cfg::apply_reconfig(cfg, 1, patch, sizeof(patch));
+    REQUIRE_FALSE(ec);
+    REQUIRE(cfg.data[0] == 0x00);
+    REQUIRE(cfg.data[1] == 0xAA);
+    REQUIRE(cfg.data[2] == 0xBB);
+    REQUIRE(cfg.data[3] == 0x00);
+}
+
+TEST_CASE("optional_subsystem_cfg::apply_reconfig rejects a zero-length write and an out-of-range write",
+          "[regmap][REQ-RMAP-039]") {
+    OptionalSubsystemCfg cfg;
+    cfg.len = 2;
+    const uint8_t patch[1] = {0};
+
+    REQUIRE(optional_subsystem_cfg::apply_reconfig(cfg, 0, patch, 0) ==
+            make_error_code(OptionalSubsystemCfgReconfigErrc::short_write));
+    REQUIRE(optional_subsystem_cfg::apply_reconfig(cfg, 2, patch, 1) ==
+            make_error_code(OptionalSubsystemCfgReconfigErrc::out_of_range));
+}
+
+TEST_CASE("optional_subsystem_cfg::apply_reconfig rejects a write past the section's own current"
+          " extent even though kMaxOctets has room",
+          "[regmap][REQ-RMAP-039]") {
+    OptionalSubsystemCfg cfg; // cfg.len == 0 -- "not supported"
+    const uint8_t patch[1] = {0xFF};
+    REQUIRE(optional_subsystem_cfg::apply_reconfig(cfg, 0, patch, 1) ==
+            make_error_code(OptionalSubsystemCfgReconfigErrc::out_of_range));
+}
+
+TEST_CASE("OptionalSubsystemCfgReconfigErrc values are distinct and carry non-empty messages",
+          "[regmap][REQ-RMAP-039]") {
+    auto short_write  = make_error_code(OptionalSubsystemCfgReconfigErrc::short_write);
+    auto out_of_range = make_error_code(OptionalSubsystemCfgReconfigErrc::out_of_range);
+    REQUIRE(short_write.category() == optional_subsystem_cfg_reconfig_category());
+    REQUIRE(short_write != out_of_range);
+    REQUIRE_FALSE(short_write.message().empty());
+    REQUIRE_FALSE(out_of_range.message().empty());
+}
+
+TEST_CASE("RegisterMap carries all four optional-subsystem sections, each defaulting to \"not supported\"",
+          "[regmap][REQ-RMAP-039]") {
+    RegisterMap m;
+    REQUIRE(m.network_interface_cfg.len == 0);
+    REQUIRE(m.physical_layer_cfg.len == 0);
+    REQUIRE(m.time_synch_cfg.len == 0);
+    REQUIRE(m.security_cfg.len == 0);
 }
