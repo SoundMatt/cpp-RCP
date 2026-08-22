@@ -122,6 +122,7 @@
 #include <rcp/discovery.hpp>
 #include <rcp/e2e.hpp>
 #include <rcp/endpoint.hpp>
+#include <rcp/fragment.hpp>
 #include <rcp/gpio.hpp>
 #include <rcp/i2c.hpp>
 #include <rcp/iseled.hpp>
@@ -131,6 +132,7 @@
 #include <rcp/pwm.hpp>
 #include <rcp/regmap.hpp>
 #include <rcp/request.hpp>
+#include <rcp/respqueue.hpp>
 #include <rcp/server.hpp>
 #include <rcp/spi.hpp>
 #include <rcp/uart.hpp>
@@ -281,6 +283,40 @@ enum class DispatchErrc : int {
                     // DOES build a genuine wire ErrorResponse (WireErrorCode::PociFailure) when the
                     // frame was at least long enough to recover a transaction_num from — see
                     // dispatch_e2e()'s own doc comment.
+
+    // Phase 4/Phase 17 batch D1 (cpp-RCP issue #129): dispatch_e2e_fragment()'s
+    // own three additional outcomes — ported from c-RCP's
+    // rcp_mock_server_dispatch_e2e_fragment() (src/mock.c:2175-2504,
+    // REQ-E2E-038/039/046, REQ-ISELED-025).
+    fragment_pending  = 7, // an intermediate (ms=true) fragment was accepted into this stream's own
+                    // fragment::Reassembler; more fragments are expected before anything is
+                    // dispatched. Mirrors c-RCP's RCP_MOCK_DISPATCH_FRAGMENT_PENDING
+                    // (src/mock.c:2272). Same "out_resp left zeroed" no-wire-response contract as
+                    // queued/pending/cancelled/suspended/seq_error above — TC18 leaves a
+                    // still-assembling request unacknowledged, not merely un-executed.
+    fragment_rejected = 8, // a fragment was rejected by the reassembly machinery itself before ever
+                    // reaching a complete, CRC-checked request: an out-of-order segment_num, a
+                    // fragment::ReasmResult::kErrTooLarge (this stream's own fragment::Reassembler
+                    // capacity — a SEPARATE bound from the post-completion oversized-request check
+                    // below), a malformed/undecodable fragment, or a final fragment too short to
+                    // even contain a CRC trailer. Mirrors c-RCP's own RCP_MOCK_DISPATCH_REJECTED as
+                    // returned from every one of dispatch_e2e_fragment()'s own
+                    // `rcp_fragment_reassembler_reset(reasm); return RCP_MOCK_DISPATCH_REJECTED;`
+                    // sites (src/mock.c:2247/2253/2270/2311/2327/2344/2359/2367/2447/2455) — c-RCP
+                    // builds no response body for ANY of these either, the client is left only able
+                    // to time out. Same "out_resp left zeroed" contract as fragment_pending above.
+                    // NOT the same case as regmap::RegMapErrc::request_rejected below, which DOES
+                    // build a genuine wire ErrorResponse — see this batch's own header-comment
+                    // citation of c-RCP issue #614/#616 for why that one case is different.
+    response_fragmented = 9, // maybe_fragment_response()'s own outcome (REQ-RMAP-062, REQ-ISELED-025):
+                    // the reassembled request's own response did not fit within a single ACF frame
+                    // (this mock's own kAcfAbbMaxPayload/kAcfGbbMaxPayload ceiling, further tightened
+                    // by a configured regs_.response_streams[]::max_avtpdu_size when one resolves),
+                    // so it was sliced via fragment::plan() and pushed, fragment by fragment, onto
+                    // resp_queue_for_stream()'s own respqueue::RespQueue instead of being returned
+                    // synchronously. Same "out_resp left zeroed" contract as every other non-wire
+                    // outcome above — the real multi-frame response is sitting in that queue, not in
+                    // out_resp/out_resp_payload; a caller drains it via RespQueue::pop().
 };
 
 inline const std::error_category& dispatch_category() noexcept {
@@ -294,6 +330,9 @@ inline const std::error_category& dispatch_category() noexcept {
             case DispatchErrc::suspended: return "rcp/mock: admission suspended";
             case DispatchErrc::seq_error: return "rcp/mock: E2E sequence-number gate rejected the request";
             case DispatchErrc::stream_faulted: return "rcp/mock: stream already latched faulted by an earlier E2E CRC error";
+            case DispatchErrc::fragment_pending: return "rcp/mock: intermediate fragment accepted, more expected";
+            case DispatchErrc::fragment_rejected: return "rcp/mock: fragment reassembly rejected the request";
+            case DispatchErrc::response_fragmented: return "rcp/mock: response queued as multiple fragments on a RespQueue";
             default:                      return "rcp/mock: unknown dispatch outcome";
             }
         }
@@ -1038,6 +1077,280 @@ public:
         return decode_and_dispatch(client, uw.acf_frame, stream_id, out_resp, out_resp_payload);
     }
 
+    // dispatch_e2e_fragment — Phase 4/Phase 17 batch D1 (cpp-RCP issue #129):
+    // dispatch_e2e()'s own fragment-reassembly counterpart, ported from
+    // c-RCP's rcp_mock_server_dispatch_e2e_fragment() (src/mock.c:2175-2504,
+    // REQ-E2E-038/039/046, REQ-ISELED-025, REQ-FRAG-*). Finally wires
+    // rcp/fragment.hpp's Reassembler into a real dispatch path for E2E
+    // requests that arrive split across multiple ACF ABB/GBB members as CAN
+    // XL-shaped segments (TC18 §13.7.11.3) — the exact deferral rcp/
+    // fragment.hpp's own file header names explicitly ("Wiring this
+    // primitive into rcp/can.hpp/rcp/mock.hpp real dispatch is explicitly
+    // OUT of scope for this pass... left for Phase 3/4").
+    //
+    // Like dispatch_e2e() above, this takes one raw, already-framed,
+    // potentially E2E-wrapped ACF member's own wire bytes (`fragment`) — NOT
+    // a whole reassembled message — and, like dispatch_e2e(), has no
+    // sequence_num parameter: c-RCP's own rcp_mock_server_dispatch_e2e_
+    // fragment() has none either (confirmed by direct source read — no
+    // frame_seq_gate_admits() call anywhere in its body), REQ-E2E-028/029's
+    // own sequence gate is a per-FRAME (not per-fragment) concern that
+    // belongs to batch D2's own future frame-level dispatch_frame_e2e(),
+    // exactly as dispatch_e2e()'s own doc comment already establishes for
+    // itself.
+    //
+    // Every fragment but the last is fed straight into this stream's own
+    // fragment::Reassembler (frag_reassemblers_[], resolved the SAME
+    // regmap::request_stream_cfg::resolve_index() way seq_trackers_/
+    // rx_watchdogs_/stream_status_ already are) and answered with
+    // DispatchErrc::fragment_pending — no wire response, more is expected.
+    // The final (ms=false) fragment carries the whole sequence's own
+    // trailing E2E CRC32 (REQ-E2E-038: computed over the FIRST fragment's
+    // own header, not the last's, followed by the concatenation of every
+    // segment's payload in order — e2e::compute_fragmented_crc(), which
+    // e2e::unwrap()/unwrap_framed()'s own single-frame CRC verdict cannot
+    // express and is therefore deliberately ignored here, mirroring c-RCP's
+    // own identical comment at src/mock.c:2290-2293) — on a mismatch this
+    // builds a genuine WireErrorCode::PociFailure ErrorResponse and latches
+    // stream_fault_tracker_/stream_status_ exactly like dispatch_e2e()'s own
+    // CRC-mismatch branch (duplicated here, not refactored out of that
+    // already-tested function, matching c-RCP's own identical choice,
+    // src/mock.c:2379-2384).
+    //
+    // Once reassembly completes AND the fragmented CRC matches, REQ-E2E-038/
+    // c-RCP issue #614/#616's own lesson applies (see rcp/fragment.hpp's own
+    // file header, "The oversized-reassembly lesson"): the reassembled
+    // total is checked against this ACF variant's own single-frame wire
+    // ceiling (kAcfAbbMaxPayload/kAcfGbbMaxPayload) BEFORE any attempt to
+    // re-encode it — a request whose every fragment AND whose combined CRC
+    // were genuinely valid, but whose reassembled body cannot be
+    // re-expressed as one ACF frame, gets a real Table 27
+    // WireErrorCode::RequestRejected ErrorResponse (regmap::RegMapErrc::
+    // request_rejected), never a silent drop. Otherwise the reassembled
+    // payload is re-encoded as one ordinary ACF_ABB/ACF_GBB frame and handed
+    // to decode_and_dispatch() exactly as dispatch_e2e()'s own CRC-validated
+    // branch does — the SAME single-member admission/handler path
+    // dispatch()/dispatch_e2e() already exercise, not a second, parallel
+    // execution path.
+    //
+    // A message that was never actually fragmented (an ms=false fragment
+    // arriving when this stream's own Reassembler is not currently
+    // collecting) falls back to dispatch_e2e() unchanged — byte-identical to
+    // calling it directly, mirroring c-RCP's own identical fallback
+    // (src/mock.c:2276-2282). An unresolvable stream_id (no
+    // set_request_stream_cfg() row) likewise falls back to dispatch_e2e()
+    // unchanged (mirrors src/mock.c:2223-2232) — there is no per-stream slot
+    // to reassemble into. An endpoint with ep_req_crc_enable not set (or no
+    // operational endpoint at this byte_bus_id at all) delegates straight to
+    // decode_and_dispatch(), the same "plain command mode" bypass
+    // dispatch_e2e() itself already establishes.
+    //
+    // REQ-ISELED-025 (TC18 §13.7.12.1): once decode_and_dispatch() produces
+    // a genuine response, maybe_fragment_response() (below) is given the
+    // chance to slice an over-large response (e.g. a large scripted
+    // set_iseled_response() read) across several respqueue::RespQueue
+    // entries instead of returning it synchronously — see that method's own
+    // doc comment for the full contract.
+    std::error_code dispatch_e2e_fragment(size_t client, avtp::StreamId stream_id,
+                                           const std::vector<uint8_t>& fragment,
+                                           acf::AcfMessageInfo& out_resp,
+                                           std::vector<uint8_t>& out_resp_payload) noexcept {
+        out_resp = acf::AcfMessageInfo{};
+        out_resp_payload.clear();
+
+        // Same watchdog-kick / stream-fault-tracker checks as dispatch_e2e(),
+        // same order, same reasons — see that method's own doc comment.
+        rx_watchdog_kick(stream_id, /*now_ms=*/0);
+
+        if (stream_fault_tracker_.is_faulted(stream_id.to_u64())) {
+            set_error_response_from_frame(fragment, acf::WireErrorCode::PociFailure, out_resp, out_resp_payload);
+            return make_error_code(DispatchErrc::stream_faulted);
+        }
+
+        // A cheap 8-octet peek — format-identical for ACF_ABB and ACF_GBB —
+        // to learn byte_bus_id/ms/read_size_or_segment_num/pad/acf_msg_type
+        // without committing to either variant's own full decode yet.
+        if (fragment.size() < acf::kAcfCommonHeaderLen) {
+            return make_error_code(regmap::RegMapErrc::invalid_parameter);
+        }
+        acf::AcfMessageInfo peek;
+        acf::decode_acf_message_info(fragment.data(), peek);
+        const bool is_gbb = (peek.acf_msg_type == acf::kAcfMsgTypeGbb);
+
+        const bool crc_enabled = (peek.byte_bus_id >= 1 &&
+                                   static_cast<size_t>(peek.byte_bus_id) <= regs_.generic_configs.size())
+                                      ? regs_.generic_configs[peek.byte_bus_id - 1].ep_req_crc_enable
+                                      : false;
+        if (!crc_enabled) {
+            return decode_and_dispatch(client, fragment, stream_id, out_resp, out_resp_payload);
+        }
+
+        const uint8_t stream_index = regmap::request_stream_cfg::resolve_index(
+            regs_.request_streams.data(), regs_.request_streams.size(), stream_id.to_u64());
+        if (stream_index == 0) {
+            return dispatch_e2e(client, stream_id, /*sequence_num=*/0, fragment, out_resp, out_resp_payload);
+        }
+        fragment::Reassembler& reasm         = frag_reassemblers_[stream_index - 1];
+        std::vector<uint8_t>&  first_header  = frag_first_headers_[stream_index - 1];
+        const size_t           header_len    = is_gbb ? acf::kAcfGbbMessageInfoLen : acf::kAcfCommonHeaderLen;
+
+        if (peek.ms) {
+            // Intermediate fragment (REQ-E2E-039): no CRC trailer, safe to
+            // decode fully and directly.
+            acf::AcfMessageInfo   hdr;
+            uint64_t              ignored_ts = 0;
+            std::vector<uint8_t>  payload;
+            std::error_code       dec_ec = decode_acf_frame(fragment, is_gbb, hdr, ignored_ts, payload);
+            if (dec_ec) return make_error_code(DispatchErrc::fragment_rejected);
+            trim_wire_pad(payload, hdr.pad);
+
+            if (!reasm.is_collecting()) {
+                // First fragment of a new sequence: remember its own raw
+                // encoded header bytes for REQ-E2E-038's eventual fragmented
+                // CRC check — header_len <= fragment.size() is already
+                // guaranteed by the successful decode above.
+                first_header.assign(fragment.begin(), fragment.begin() + static_cast<long>(header_len));
+            }
+
+            const fragment::ReasmResult r =
+                reasm.feed(true, peek.read_size_or_segment_num, payload.data(), payload.size());
+            if (r != fragment::ReasmResult::kContinue) {
+                reasm.reset();
+                return make_error_code(DispatchErrc::fragment_rejected);
+            }
+            return make_error_code(DispatchErrc::fragment_pending);
+        }
+
+        // ms == false: final fragment.
+        if (!reasm.is_collecting()) {
+            // Never actually fragmented — byte-identical to calling
+            // dispatch_e2e() directly.
+            return dispatch_e2e(client, stream_id, /*sequence_num=*/0, fragment, out_resp, out_resp_payload);
+        }
+
+        // Real multi-fragment message completing: this final fragment's own
+        // message carries the CRC32 trailer in its raw last
+        // e2e::kCrcLengthAdjustOctets octets, pad-aware per TC18 Figures
+        // 20/21 ([real_len][CRC32][pad], not "always the last N octets") —
+        // e2e::unwrap_framed() is the already-tested tool that strips/
+        // reassembles that; its OWN CRC verdict is wrong for this fragmented
+        // case (single-frame formula) and is deliberately ignored below —
+        // e2e::compute_fragmented_crc() is the real check (REQ-E2E-038).
+        if (fragment.size() < e2e::kCrcLengthAdjustOctets ||
+            static_cast<size_t>(peek.pad) > fragment.size() - e2e::kCrcLengthAdjustOctets) {
+            reasm.reset();
+            return make_error_code(DispatchErrc::fragment_rejected);
+        }
+        const size_t   real_len = fragment.size() - e2e::kCrcLengthAdjustOctets - peek.pad;
+        const uint32_t got      = e2e::detail::get_u32_be(fragment.data() + real_len);
+
+        const e2e::UnwrapResult uw =
+            e2e::unwrap_framed(/*is_ntscf_framed=*/true, kE2eHeaderOctet1Placeholder, /*tu=*/false,
+                                stream_id, /*avtp_timestamp=*/std::nullopt, fragment);
+        if (uw.ec == e2e::make_error_code(e2e::E2eErrc::short_frame)) {
+            reasm.reset();
+            return uw.ec;
+        }
+
+        acf::AcfMessageInfo   final_hdr;
+        uint64_t              final_ts = 0;
+        std::vector<uint8_t>  final_payload;
+        if (decode_acf_frame(uw.acf_frame, is_gbb, final_hdr, final_ts, final_payload)) {
+            reasm.reset();
+            return make_error_code(DispatchErrc::fragment_rejected);
+        }
+        trim_wire_pad(final_payload, final_hdr.pad);
+
+        const fragment::ReasmResult r = reasm.feed(false, 0, final_payload.data(), final_payload.size());
+        if (r != fragment::ReasmResult::kComplete) {
+            reasm.reset();
+            return make_error_code(DispatchErrc::fragment_rejected);
+        }
+
+        const std::vector<uint8_t> reassembled(reasm.data(), reasm.data() + reasm.size());
+        const uint32_t want = e2e::compute_fragmented_crc(avtp::kSubtypeNtscf, kE2eHeaderOctet1Placeholder,
+                                                            /*tu=*/false, stream_id, /*avtp_timestamp=*/std::nullopt,
+                                                            first_header, reassembled);
+        if (got != want) {
+            // Same three consequences dispatch_e2e()'s own CRC-mismatch
+            // branch already applies (REQ-E2E-021/REQ-E2E-045/REQ-E2E-046) —
+            // duplicated here deliberately rather than refactored out of
+            // that already-tested function, matching c-RCP's own identical
+            // choice (src/mock.c:2379-2396).
+            out_resp         = acf::make_response(final_hdr, acf::ResponseKind::ErrorResponse);
+            out_resp_payload = acf::encode_error_payload(acf::WireErrorCode::PociFailure);
+            const bool rx_enforce_e2e = regs_.request_streams[stream_index - 1].rx_enforce_e2e;
+            (void)stream_fault_tracker_.on_crc_error(stream_id.to_u64(), rx_enforce_e2e);
+            stream_status_[stream_index - 1].note_crc_error(rx_enforce_e2e);
+            reasm.reset();
+            return make_error_code(e2e::E2eErrc::crc_error);
+        }
+
+        // REQ-E2E-038/c-RCP issue #614/#616: check the reassembled total
+        // against this ACF variant's own single-frame wire ceiling BEFORE
+        // ever attempting to re-encode it — see this method's own doc
+        // comment above for the full rationale. A well-formed request whose
+        // every fragment and whose combined CRC were both genuinely valid
+        // still gets a real wire ErrorResponse here, never a silent drop.
+        const size_t max_payload = is_gbb ? acf::kAcfGbbMaxPayload : acf::kAcfAbbMaxPayload;
+        if (reassembled.size() > max_payload) {
+            set_error_response(final_hdr, make_error_code(regmap::RegMapErrc::request_rejected),
+                                out_resp, out_resp_payload);
+            reasm.reset();
+            return make_error_code(regmap::RegMapErrc::request_rejected);
+        }
+
+        reasm.reset();
+        final_hdr.pad            = 0;    // re-encoding the FULL, unpadded reassembled payload fresh
+        final_hdr.acf_msg_length = 0;    // 0 triggers encode_acf_abb()/_gbb()'s own auto-fill (cpp-RCP-01)
+        const std::vector<uint8_t> encoded =
+            is_gbb ? acf::encode_acf_gbb(final_hdr, final_ts, reassembled)
+                   : acf::encode_acf_abb(final_hdr, reassembled);
+
+        const std::error_code result_ec = decode_and_dispatch(client, encoded, stream_id, out_resp, out_resp_payload);
+        if (!result_ec) {
+            const std::error_code frag_ec = maybe_fragment_response(stream_index, out_resp, out_resp_payload);
+            if (frag_ec) return frag_ec;
+        }
+        return result_ec;
+    }
+
+    // fragment_reassembler gives direct, mutable access to this Server's own
+    // fragment::Reassembler for stream_id — the same "expose the real
+    // subsystem object, don't wrap every one of its methods" convention
+    // admission()/gpio()/etc. already establish, mirroring c-RCP's own
+    // rcp_mock_server_fragment_reassembler() (mock.h). A caller wanting a
+    // tighter or looser max_total_len than fragment::Reassembler's own
+    // default (fragment::kDefaultReassemblyCapacity) reassigns a
+    // differently-constructed fragment::Reassembler into the returned
+    // pointer directly. Returns nullptr for a stream_id this server has no
+    // configured request stream for (unresolvable via
+    // regmap::request_stream_cfg::resolve_index()) — there is no slot to
+    // return a pointer to.
+    fragment::Reassembler* fragment_reassembler(avtp::StreamId stream_id) noexcept {
+        const uint8_t stream_index = regmap::request_stream_cfg::resolve_index(
+            regs_.request_streams.data(), regs_.request_streams.size(), stream_id.to_u64());
+        if (stream_index == 0) return nullptr;
+        return &frag_reassemblers_[stream_index - 1];
+    }
+
+    // resp_queue_for_stream gives direct, mutable access to the
+    // respqueue::RespQueue a response to a request on stream_id would be
+    // queued on by maybe_fragment_response() below (REQ-RMAP-062,
+    // REQ-ISELED-025) — resolved via stream_id's own
+    // regs_.request_streams[] row and that row's own rx_resp_stream_index
+    // (Table 24, REQ-RMAP-049), the SAME two-step indirection
+    // suppress_response_per_stream_cfg() already applies. Returns nullptr
+    // if stream_id is unresolvable, or resolves to a request stream whose
+    // own rx_resp_stream_index is 0 ("no response is to be sent",
+    // RequestStreamConfig::rx_resp_stream_index's own doc comment) or names
+    // no response-queue slot this class has storage for.
+    respqueue::RespQueue* resp_queue_for_stream(avtp::StreamId stream_id) noexcept {
+        const uint8_t stream_index = regmap::request_stream_cfg::resolve_index(
+            regs_.request_streams.data(), regs_.request_streams.size(), stream_id.to_u64());
+        return resp_queue_for_stream_index(stream_index);
+    }
+
     // stream_fault_tracker gives direct, mutable access to this Server's
     // own e2e::StreamFaultTracker (REQ-E2E-021) — the same "expose the real
     // subsystem object, don't wrap every one of its methods" convention
@@ -1181,6 +1494,187 @@ private:
         return dispatch(client, req, payload, out_resp, out_resp_payload, stream_id);
     }
 
+    // ── D1 fragmentation helpers (Phase 4/Phase 17 batch D1, cpp-RCP issue
+    //    #129) ──────────────────────────────────────────────────────────────
+
+    // decode_acf_frame is dispatch_e2e_fragment()'s own tiny ACF_ABB/ACF_GBB
+    // decode dispatcher — the same is_gbb branch decode_and_dispatch() above
+    // already makes, just parameterized on an already-peeked `is_gbb` rather
+    // than re-peeking acf_msg_type from `frame` itself (dispatch_e2e_fragment()
+    // already knows it from its own leading 8-octet peek). out_message_timestamp
+    // is left at 0 for ACF_ABB (which has no such field).
+    static std::error_code decode_acf_frame(const std::vector<uint8_t>& frame, bool is_gbb,
+                                             acf::AcfMessageInfo& out_hdr, uint64_t& out_message_timestamp,
+                                             std::vector<uint8_t>& out_payload) noexcept {
+        out_message_timestamp = 0;
+        if (is_gbb) return acf::decode_acf_gbb(frame.data(), frame.size(), out_hdr, out_message_timestamp, out_payload);
+        return acf::decode_acf_abb(frame.data(), frame.size(), out_hdr, out_payload);
+    }
+
+    // trim_wire_pad strips `pad` trailing octets off `payload` in place —
+    // acf::decode_acf_abb()/_gbb()'s own deliberately lenient contract
+    // (acf.hpp's own TODO(phase1-followup) note) hands back "everything from
+    // the header to the end of the buffer given" WITHOUT trimming a decoded
+    // header's own `pad` field the way c-RCP's stricter rcp_acf_decode_abb()/
+    // _decode_gbb() already do — harmless for every other dispatch_*() path
+    // in this file (none of them ever feed a decoded payload back into a
+    // byte-exact CRC coverage computation), but load-bearing here:
+    // fragment::Reassembler::feed()'s own payload slices must be the LOGICAL,
+    // unpadded per-fragment payload (fragment::plan()'s own contract — see
+    // fragment.hpp), and e2e::compute_fragmented_crc()'s own reassembled_payload
+    // must byte-for-byte match what the sender concatenated and CRC'd, which
+    // never includes wire padding. Applied locally to both the intermediate-
+    // and final-fragment decode below, rather than fixing acf::decode_acf_abb()/
+    // _gbb() globally (out of this batch's own "fragmentation only" scope —
+    // see this class's own header comment for D1/D2's own scope split).
+    static void trim_wire_pad(std::vector<uint8_t>& payload, uint8_t pad) noexcept {
+        if (pad == 0) return;
+        if (payload.size() < pad) { payload.clear(); return; } // malformed input; fail toward empty, not underflow
+        payload.resize(payload.size() - pad);
+    }
+
+    // resp_queue_for_stream_index is resp_queue_for_stream()'s own private,
+    // already-resolved-index counterpart, shared with maybe_fragment_response()
+    // below so both callers only resolve regs_.request_streams[] once each.
+    // Requires resp_stream_index to name a row regs_.response_streams
+    // ACTUALLY has (checked against its own live .size(), not resp_queues_'s
+    // fixed pool capacity) — the same "0 or out of the table's own current
+    // extent means unconfigured" convention every other Table 20 row lookup
+    // in this file already uses (regmap::request_stream_cfg::resolve_index(),
+    // ep_id_mapping's own effective_count()); resp_queues_ itself is sized to
+    // the fixed pool capacity purely so a later-configured row always has a
+    // real slot waiting, not so an UNconfigured index resolves anyway.
+    respqueue::RespQueue* resp_queue_for_stream_index(uint8_t stream_index) noexcept {
+        if (stream_index == 0 || stream_index > regs_.request_streams.size()) return nullptr;
+        const uint8_t resp_stream_index = regs_.request_streams[stream_index - 1].rx_resp_stream_index;
+        if (resp_stream_index == 0 || resp_stream_index > regs_.response_streams.size() ||
+            resp_stream_index > resp_queues_.size())
+            return nullptr;
+        return &resp_queues_[resp_stream_index - 1];
+    }
+
+    // maybe_fragment_response — Phase 4/Phase 17 batch D1 (REQ-RMAP-062,
+    // REQ-ISELED-025): dispatch_e2e_fragment()'s own encode-side counterpart
+    // to fragment::Reassembler on the decode side, closing this batch's own
+    // "fragmented multi-response" requirement — c-RCP's own equivalent
+    // mechanism (rcp_mock_server_add_endpoint_multi_response()/
+    // _dispatch_multi_response(), mock.c:875/1840, proven against ISELED's
+    // own read-response fragmentation by PR #612/closes-#610) is a
+    // per-endpoint REGISTERED-HANDLER pattern this rewrite's own dispatch()
+    // has no analog for (dispatch() routes ten hardcoded dispatch_<type>()
+    // methods directly, not a caller-registered callback table — see this
+    // class's own header comment) — this is the equivalent TC18 §12.7.9
+    // mechanism instead: when a genuine response does not fit within one ACF
+    // frame, slice it via fragment::plan() and push each resulting fragment
+    // onto the resolved response stream's own respqueue::RespQueue
+    // (resp_queue_for_stream_index() above) rather than returning it
+    // synchronously through out_resp/out_resp_payload.
+    //
+    // A no-op (returns {}, out_resp/out_resp_payload untouched) when out_resp
+    // carries no real response at all (out_resp.rsp == false — e.g. already
+    // suppressed by suppress_response_per_stream_cfg(), or the dispatched
+    // request itself asked for none) or when out_resp_payload already fits
+    // within one frame under the effective ceiling: this ACF variant's own
+    // kAcfAbbMaxPayload/kAcfGbbMaxPayload wire ceiling, further tightened by
+    // a configured regs_.response_streams[]::max_avtpdu_size when
+    // stream_index's own rx_resp_stream_index resolves to one
+    // (respqueue::RespQueue::max_fragment_payload(), the SAME primitive
+    // RespQueue itself documents for this exact purpose) — the common case,
+    // completely unaffected.
+    //
+    // Otherwise, out_resp_payload is sliced via fragment::plan_count()/plan()
+    // (bounded at respqueue::kMaxEntries fragments — a RespQueue can never
+    // hold more entries than that regardless) and each resulting fragment
+    // (a copy of out_resp with ms/read_size_or_segment_num set per
+    // fragment::Segment, pad/acf_msg_length reset for a fresh encode) is
+    // pushed onto the resolved RespQueue. On success, out_resp/out_resp_payload
+    // are reset to the "nothing to send synchronously" shape and
+    // DispatchErrc::response_fragmented is returned — the real multi-frame
+    // response is now sitting in resp_queue_for_stream()'s own queue. If no
+    // response-queue slot resolves, or the split itself cannot be planned
+    // (more fragments than a RespQueue can ever hold, or fragment::plan()'s
+    // own FragmentErrc), or any individual push() fails (e.g. a configured
+    // ResponseQueueConfig::queue_size octet budget), this fails toward a
+    // genuine wire ErrorResponse (WireErrorCode::RequestRejected) rather than
+    // silently dropping the response — the same issue #614/#616 "never
+    // silently drop" lesson dispatch_e2e_fragment()'s own request-side
+    // oversized check already applies, mirrored here on the response side.
+    std::error_code maybe_fragment_response(uint8_t stream_index, acf::AcfMessageInfo& out_resp,
+                                             std::vector<uint8_t>& out_resp_payload) noexcept {
+        if (!out_resp.rsp) return {};
+
+        const bool   is_gbb     = (out_resp.acf_msg_type == acf::kAcfMsgTypeGbb);
+        const size_t header_len = is_gbb ? acf::kAcfGbbMessageInfoLen : acf::kAcfCommonHeaderLen;
+        size_t       ceiling    = is_gbb ? acf::kAcfGbbMaxPayload : acf::kAcfAbbMaxPayload;
+
+        const uint8_t resp_stream_index = (stream_index != 0 && stream_index <= regs_.request_streams.size())
+                                               ? regs_.request_streams[stream_index - 1].rx_resp_stream_index
+                                               : 0;
+        if (resp_stream_index != 0 && resp_stream_index <= regs_.response_streams.size()) {
+            const regmap::ResponseQueueConfig& rq_cfg = regs_.response_streams[resp_stream_index - 1];
+            if (rq_cfg.max_avtpdu_size != 0) {
+                const size_t configured = respqueue::RespQueue::max_fragment_payload(
+                    static_cast<size_t>(rq_cfg.max_avtpdu_size) * 4, header_len); // quadlets -> octets
+                if (configured != 0 && configured < ceiling) ceiling = configured;
+            }
+        }
+
+        if (out_resp_payload.size() <= ceiling) return {}; // fits in one frame — unaffected
+
+        constexpr size_t kMaxFragments = respqueue::kMaxEntries; // a RespQueue can never hold more anyway
+        const size_t     seg_count     = fragment::plan_count(out_resp_payload.size(), ceiling);
+
+        respqueue::RespQueue* queue = resp_queue_for_stream_index(stream_index);
+
+        if (queue == nullptr || seg_count == 0 || seg_count > kMaxFragments) {
+            const acf::AcfMessageInfo saved = out_resp;
+            return set_error_response(saved, make_error_code(regmap::RegMapErrc::request_rejected), out_resp,
+                                       out_resp_payload);
+        }
+
+        std::array<fragment::Segment, kMaxFragments> segs{};
+        if (fragment::plan(out_resp_payload.size(), ceiling, segs.data(), seg_count)) {
+            const acf::AcfMessageInfo saved = out_resp;
+            return set_error_response(saved, make_error_code(regmap::RegMapErrc::request_rejected), out_resp,
+                                       out_resp_payload);
+        }
+
+        bool pushed_all = true;
+        for (size_t i = 0; i < seg_count && pushed_all; ++i) {
+            acf::AcfMessageInfo frag = out_resp;
+            frag.ms                 = segs[i].ms;
+            if (segs[i].ms) frag.read_size_or_segment_num = segs[i].segment_num;
+            frag.pad            = 0;
+            frag.acf_msg_length = 0;
+            const std::vector<uint8_t> slice(
+                out_resp_payload.begin() + static_cast<long>(segs[i].offset),
+                out_resp_payload.begin() + static_cast<long>(segs[i].offset + segs[i].len));
+            const std::vector<uint8_t> encoded =
+                is_gbb ? acf::encode_acf_gbb(frag, /*message_timestamp=*/0, slice) : acf::encode_acf_abb(frag, slice);
+            pushed_all = queue->push(encoded.data(), encoded.size());
+        }
+
+        if (!pushed_all) {
+            // Not atomic: any fragment pushed before the failing one stays
+            // queued (RespQueue has no "undo the last N pushes" operation).
+            // This only fires when a configured ResponseQueueConfig::queue_size
+            // octet budget is tighter than the ceiling this method already
+            // computed from max_avtpdu_size alone — an unusual, deliberately
+            // tightened configuration, not this batch's own default path
+            // (regs_.response_streams starts empty). Reporting the genuine
+            // wire ErrorResponse below still matters more than a perfectly
+            // clean queue: the caller must not believe a synchronous response
+            // is coming when it is not.
+            const acf::AcfMessageInfo saved = out_resp;
+            return set_error_response(saved, make_error_code(regmap::RegMapErrc::request_rejected), out_resp,
+                                       out_resp_payload);
+        }
+
+        out_resp = acf::AcfMessageInfo{};
+        out_resp_payload.clear();
+        return make_error_code(DispatchErrc::response_fragmented);
+    }
+
     // seq_gate_admits is this file's own single-member counterpart to
     // c-RCP's frame_seq_gate_admits() (src/mock.c:3038-3063,
     // REQ-E2E-028/029) — see dispatch_e2e()'s own doc comment for why this
@@ -1242,9 +1736,14 @@ private:
     // through this file's own dispatch_*() below in the first place (see
     // admit_and_classify()'s own comment), so there is no dispatch()
     // caller yet that can exercise it end-to-end; wiring a GBB-carrying
-    // frame in that actually reaches this path is fragment.hpp/AVTPDU
-    // frame-level dispatch_frame() territory (batch D's own scope).
-    // TODO(phase4-batch-d): decode clear-single's own target transaction_num
+    // frame in that actually reaches this path is AVTPDU frame-level
+    // dispatch_frame() territory — batch D2's own scope specifically (D1,
+    // this batch, is fragment reassembly only; D1's own dispatch_e2e_
+    // fragment() above still routes every request it admits through the
+    // SAME admit_and_classify(), so this remains just as unreachable
+    // through it as it was before D1 — see dispatch_e2e_fragment()'s own
+    // doc comment).
+    // TODO(phase4-batch-d2): decode clear-single's own target transaction_num
     // and apply REQ-CANCEL-012's chain cascade once dispatch_frame() can
     // reach this path with a real multi-member frame to derive
     // chain_group/chain_position from.
@@ -2149,6 +2648,68 @@ private:
     std::array<e2e::RxSequenceGuard, regmap::request_stream_cfg::kMaxEntries> seq_trackers_{};
     std::array<e2e::RxWatchdog, regmap::request_stream_cfg::kMaxEntries>      rx_watchdogs_{};
     std::array<e2e::StreamStatus, regmap::request_stream_cfg::kMaxEntries>    stream_status_{};
+    // Phase 4/Phase 17 batch D1 (cpp-RCP issue #129): dispatch_e2e_fragment()'s
+    // own decode-side state — one fragment::Reassembler per resolved
+    // regs_.request_streams[] row, same indexing convention as
+    // seq_trackers_/rx_watchdogs_/stream_status_ immediately above (REQ-E2E-
+    // 038/039). UNLIKE c-RCP's own frag_reasm[] (src/mock.c:175,
+    // RCP_MOCK_FRAG_REASM_DEFAULT_MAX_TOTAL_LEN=65536, requiring an explicit
+    // rcp_fragment_reassembler_init() loop in rcp_mock_server_new() since a
+    // zero-valued max_total_len would reject every nonempty fragment
+    // immediately), every fragment::Reassembler here is already usably
+    // initialized by its own default constructor (max_total_len defaults to
+    // fragment::kDefaultReassemblyCapacity, 4096) — no init loop needed,
+    // matching every sibling std::array<...>{} default-member-initializer
+    // above. Deliberately NOT wired to regs_.request_streams[]'s own
+    // rx_stream_max_request_size — mirrors c-RCP's own explicit choice
+    // (src/mock.c:150-164) to keep that register-sync concern out of this
+    // feature's own scope; fragment_reassembler() above lets a caller
+    // reassign a differently-bounded fragment::Reassembler into a specific
+    // stream's own slot directly. Deliberately no trailing `{}` (unlike
+    // every sibling std::array<...> member in this class): fragment::
+    // Reassembler's own sole constructor is `explicit`, so `{}` here would
+    // list-initialize each element through that explicit constructor from
+    // an empty braced-init-list — legal, but flagged by this codebase's own
+    // build as a pedantic "converting to X from initializer list would use
+    // explicit constructor" warning (0-warnings-clean is this project's own
+    // build gate). Omitting the initializer entirely still leaves every
+    // element genuinely default-constructed (std::array is an aggregate;
+    // default-initializing it default-constructs each element directly, not
+    // through list-initialization) — same real-world result, no explicit-ctor
+    // warning.
+    std::array<fragment::Reassembler, regmap::request_stream_cfg::kMaxEntries> frag_reassemblers_;
+    // frag_first_headers_ remembers the FIRST intermediate fragment's own
+    // raw encoded header bytes for a sequence currently being collected —
+    // e2e::compute_fragmented_crc()'s own first_fragment_header parameter
+    // needs exactly this, and nothing else in this class already keeps it
+    // once later fragments have overwritten frag_reassemblers_[]'s own
+    // state. Mirrors c-RCP's srv->frag_first_header[]/_len[] (src/mock.c:
+    // 176-178), collapsed to one std::vector per slot instead of a fixed
+    // RCP_ACF_GBB_HEADER_LEN-sized byte array + separate length, matching
+    // this same class's own existing i2c_response_/lin_response_/
+    // iseled_response_ std::vector<uint8_t> members below.
+    std::array<std::vector<uint8_t>, regmap::request_stream_cfg::kMaxEntries> frag_first_headers_{};
+    // resp_queues_ backs maybe_fragment_response()'s own encode-side wiring
+    // (Phase 4/Phase 17 batch D1, TC18 §12.7.9/REQ-RMAP-062, REQ-ISELED-025)
+    // — one respqueue::RespQueue per regs_.response_streams[] row (NOT per
+    // request stream: more than one request stream's own rx_resp_stream_index
+    // may legitimately name the same response-stream row, so this is keyed
+    // the same way regs_.response_streams itself is — 1-based resp_stream_
+    // index, regmap::response_queue_cfg::kMaxEntries slots). Every slot is
+    // default-constructed unbounded (capacity_octets == max_avtpdu_size_octets
+    // == 0) regardless of whatever regs_.response_streams[]'s own live
+    // max_avtpdu_size/queue_size say — maybe_fragment_response() itself
+    // already reads that register row directly to size each fragment
+    // correctly (see its own doc comment) without needing this queue's own
+    // internal ceiling to duplicate that enforcement; a caller wanting
+    // RespQueue's own push()-level capacity_octets/max_avtpdu_size_octets
+    // enforcement too reassigns a differently-constructed respqueue::RespQueue
+    // into resp_queue_for_stream()'s own returned slot directly, the same
+    // "reassign the whole object" escape hatch frag_reassemblers_ above
+    // already establishes. Deliberately no trailing `{}` either, same
+    // explicit-constructor build-warning reason as frag_reassemblers_ above
+    // (respqueue::RespQueue's own sole constructor is also `explicit`).
+    std::array<respqueue::RespQueue, regmap::response_queue_cfg::kMaxEntries> resp_queues_;
     std::array<std::vector<uint8_t>, spi::kMaxChannels> spi_poci_{};
     std::vector<uint8_t>       i2c_response_{};
     bool                       i2c_acked_ = true;
