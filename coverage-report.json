@@ -1,42 +1,51 @@
 {
-  "branchPct": 62.8581173260573,
+  "branchPct": 72.50031843077315,
   "dal": "DAL-B",
   "files": [
     {
-      "branchPct": 77.90697674418605,
-      "branchesHit": 67,
-      "branchesTotal": 86,
+      "branchPct": 83.05084745762711,
+      "branchesHit": 147,
+      "branchesTotal": 177,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/acf.hpp",
-      "linePct": 94.90445859872611,
-      "linesHit": 149,
-      "linesTotal": 157
+      "linePct": 97.61092150170649,
+      "linesHit": 286,
+      "linesTotal": 293
     },
     {
-      "branchPct": 50.98039215686274,
-      "branchesHit": 52,
-      "branchesTotal": 102,
+      "branchPct": 62.903225806451616,
+      "branchesHit": 78,
+      "branchesTotal": 124,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/adapt.hpp",
-      "linePct": 97.10144927536231,
-      "linesHit": 67,
-      "linesTotal": 69
+      "linePct": 97.43589743589743,
+      "linesHit": 76,
+      "linesTotal": 78
     },
     {
-      "branchPct": 66.15384615384616,
-      "branchesHit": 43,
-      "branchesTotal": 65,
+      "branchPct": 79.05982905982906,
+      "branchesHit": 185,
+      "branchesTotal": 234,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/adc.hpp",
-      "linePct": 90.3225806451613,
-      "linesHit": 56,
-      "linesTotal": 62
+      "linePct": 99.65034965034965,
+      "linesHit": 285,
+      "linesTotal": 286
     },
     {
-      "branchPct": 54.83870967741935,
-      "branchesHit": 34,
-      "branchesTotal": 62,
+      "branchPct": 57.47126436781609,
+      "branchesHit": 50,
+      "branchesTotal": 87,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/admin.hpp",
-      "linePct": 100.0,
-      "linesHit": 35,
-      "linesTotal": 35
+      "linePct": 86.56716417910448,
+      "linesHit": 58,
+      "linesTotal": 67
+    },
+    {
+      "branchPct": 59.09090909090909,
+      "branchesHit": 13,
+      "branchesTotal": 22,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/alloc.hpp",
+      "linePct": 94.11764705882354,
+      "linesHit": 32,
+      "linesTotal": 34
     },
     {
       "branchPct": 69.56521739130434,
@@ -48,22 +57,22 @@
       "linesTotal": 26
     },
     {
-      "branchPct": 58.69565217391305,
-      "branchesHit": 27,
-      "branchesTotal": 46,
+      "branchPct": 80.55555555555556,
+      "branchesHit": 58,
+      "branchesTotal": 72,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/avtp.hpp",
-      "linePct": 92.04545454545455,
-      "linesHit": 81,
-      "linesTotal": 88
+      "linePct": 98.34710743801652,
+      "linesHit": 119,
+      "linesTotal": 121
     },
     {
-      "branchPct": 66.66666666666667,
-      "branchesHit": 32,
-      "branchesTotal": 48,
+      "branchPct": 72.13622291021672,
+      "branchesHit": 233,
+      "branchesTotal": 323,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/can.hpp",
-      "linePct": 87.3015873015873,
-      "linesHit": 55,
-      "linesTotal": 63
+      "linePct": 97.90697674418605,
+      "linesHit": 421,
+      "linesTotal": 430
     },
     {
       "branchPct": 69.64285714285714,
@@ -75,22 +84,22 @@
       "linesTotal": 49
     },
     {
-      "branchPct": 54.74254742547426,
-      "branchesHit": 404,
+      "branchPct": 56.09756097560975,
+      "branchesHit": 414,
       "branchesTotal": 738,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/cli.hpp",
-      "linePct": 82.96703296703296,
-      "linesHit": 302,
+      "linePct": 84.06593406593407,
+      "linesHit": 306,
       "linesTotal": 364
     },
     {
-      "branchPct": 55.10204081632653,
-      "branchesHit": 54,
-      "branchesTotal": 98,
+      "branchPct": 61.979166666666664,
+      "branchesHit": 119,
+      "branchesTotal": 192,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/config.hpp",
-      "linePct": 98.36065573770492,
-      "linesHit": 60,
-      "linesTotal": 61
+      "linePct": 100.0,
+      "linesHit": 140,
+      "linesTotal": 140
     },
     {
       "branchPct": 0.0,
@@ -111,13 +120,13 @@
       "linesTotal": 39
     },
     {
-      "branchPct": 75.0,
-      "branchesHit": 42,
-      "branchesTotal": 56,
+      "branchPct": 73.88059701492537,
+      "branchesHit": 99,
+      "branchesTotal": 134,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/discovery.hpp",
-      "linePct": 94.91525423728814,
-      "linesHit": 56,
-      "linesTotal": 59
+      "linePct": 97.35449735449735,
+      "linesHit": 184,
+      "linesTotal": 189
     },
     {
       "branchPct": 0.0,
@@ -138,40 +147,49 @@
       "linesTotal": 37
     },
     {
-      "branchPct": 75.75757575757575,
-      "branchesHit": 75,
-      "branchesTotal": 99,
+      "branchPct": 77.45901639344262,
+      "branchesHit": 189,
+      "branchesTotal": 244,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/e2e.hpp",
-      "linePct": 96.66666666666667,
-      "linesHit": 116,
-      "linesTotal": 120
+      "linePct": 97.42647058823529,
+      "linesHit": 265,
+      "linesTotal": 272
     },
     {
-      "branchPct": 67.85714285714286,
-      "branchesHit": 19,
-      "branchesTotal": 28,
+      "branchPct": 71.42857142857143,
+      "branchesHit": 25,
+      "branchesTotal": 35,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/endpoint.hpp",
-      "linePct": 85.1063829787234,
-      "linesHit": 40,
-      "linesTotal": 47
+      "linePct": 87.03703703703704,
+      "linesHit": 47,
+      "linesTotal": 54
     },
     {
-      "branchPct": 65.51724137931035,
-      "branchesHit": 19,
-      "branchesTotal": 29,
+      "branchPct": 58.53658536585366,
+      "branchesHit": 24,
+      "branchesTotal": 41,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/faultinject.hpp",
       "linePct": 90.47619047619048,
       "linesHit": 38,
       "linesTotal": 42
     },
     {
-      "branchPct": 72.72727272727273,
-      "branchesHit": 32,
-      "branchesTotal": 44,
+      "branchPct": 91.52542372881356,
+      "branchesHit": 54,
+      "branchesTotal": 59,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/fragment.hpp",
+      "linePct": 98.7012987012987,
+      "linesHit": 76,
+      "linesTotal": 77
+    },
+    {
+      "branchPct": 77.5330396475771,
+      "branchesHit": 176,
+      "branchesTotal": 227,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/gpio.hpp",
-      "linePct": 93.93939393939394,
-      "linesHit": 62,
-      "linesTotal": 66
+      "linePct": 98.55072463768116,
+      "linesHit": 272,
+      "linesTotal": 276
     },
     {
       "branchPct": 0.0,
@@ -183,58 +201,67 @@
       "linesTotal": 10
     },
     {
-      "branchPct": 76.66666666666667,
-      "branchesHit": 23,
-      "branchesTotal": 30,
+      "branchPct": 78.70967741935483,
+      "branchesHit": 122,
+      "branchesTotal": 155,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/i2c.hpp",
-      "linePct": 94.5945945945946,
-      "linesHit": 35,
-      "linesTotal": 37
+      "linePct": 97.94871794871794,
+      "linesHit": 191,
+      "linesTotal": 195
     },
     {
-      "branchPct": 72.72727272727273,
-      "branchesHit": 16,
-      "branchesTotal": 22,
+      "branchPct": 77.44680851063829,
+      "branchesHit": 182,
+      "branchesTotal": 235,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/iseled.hpp",
-      "linePct": 90.625,
-      "linesHit": 29,
-      "linesTotal": 32
+      "linePct": 97.80564263322884,
+      "linesHit": 312,
+      "linesTotal": 319
     },
     {
-      "branchPct": 70.45454545454545,
-      "branchesHit": 31,
-      "branchesTotal": 44,
+      "branchPct": 51.63934426229508,
+      "branchesHit": 63,
+      "branchesTotal": 122,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/l2.hpp",
+      "linePct": 82.94117647058823,
+      "linesHit": 141,
+      "linesTotal": 170
+    },
+    {
+      "branchPct": 92.2279792746114,
+      "branchesHit": 178,
+      "branchesTotal": 193,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/lifecycle.hpp",
-      "linePct": 78.43137254901961,
-      "linesHit": 40,
-      "linesTotal": 51
+      "linePct": 97.72727272727273,
+      "linesHit": 172,
+      "linesTotal": 176
     },
     {
-      "branchPct": 58.333333333333336,
-      "branchesHit": 7,
-      "branchesTotal": 12,
+      "branchPct": 73.6842105263158,
+      "branchesHit": 98,
+      "branchesTotal": 133,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/lin.hpp",
-      "linePct": 91.30434782608695,
-      "linesHit": 21,
-      "linesTotal": 23
+      "linePct": 98.38709677419355,
+      "linesHit": 183,
+      "linesTotal": 186
     },
     {
-      "branchPct": 65.0,
-      "branchesHit": 13,
-      "branchesTotal": 20,
+      "branchPct": 75.0,
+      "branchesHit": 30,
+      "branchesTotal": 40,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/loan.hpp",
       "linePct": 100.0,
-      "linesHit": 24,
-      "linesTotal": 24
+      "linesHit": 41,
+      "linesTotal": 41
     },
     {
-      "branchPct": 70.0,
-      "branchesHit": 21,
-      "branchesTotal": 30,
+      "branchPct": 70.64220183486239,
+      "branchesHit": 308,
+      "branchesTotal": 436,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/mdio.hpp",
-      "linePct": 91.89189189189189,
-      "linesHit": 34,
-      "linesTotal": 37
+      "linePct": 97.81818181818181,
+      "linesHit": 538,
+      "linesTotal": 550
     },
     {
       "branchPct": 57.69230769230769,
@@ -246,13 +273,13 @@
       "linesTotal": 22
     },
     {
-      "branchPct": 72.5,
-      "branchesHit": 29,
-      "branchesTotal": 40,
+      "branchPct": 71.75324675324676,
+      "branchesHit": 442,
+      "branchesTotal": 616,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/mock.hpp",
-      "linePct": 85.5421686746988,
-      "linesHit": 71,
-      "linesTotal": 83
+      "linePct": 91.45833333333333,
+      "linesHit": 878,
+      "linesTotal": 960
     },
     {
       "branchPct": 0.0,
@@ -264,31 +291,31 @@
       "linesTotal": 10
     },
     {
-      "branchPct": 53.125,
-      "branchesHit": 17,
-      "branchesTotal": 32,
+      "branchPct": 52.77777777777778,
+      "branchesHit": 19,
+      "branchesTotal": 36,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/observe.hpp",
-      "linePct": 95.1219512195122,
-      "linesHit": 39,
-      "linesTotal": 41
+      "linePct": 100.0,
+      "linesHit": 46,
+      "linesTotal": 46
     },
     {
-      "branchPct": 61.8421052631579,
-      "branchesHit": 47,
-      "branchesTotal": 76,
+      "branchPct": 61.44578313253012,
+      "branchesHit": 51,
+      "branchesTotal": 83,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/powerstate.hpp",
-      "linePct": 84.44444444444444,
-      "linesHit": 76,
-      "linesTotal": 90
+      "linePct": 84.15841584158416,
+      "linesHit": 85,
+      "linesTotal": 101
     },
     {
-      "branchPct": 68.75,
-      "branchesHit": 11,
-      "branchesTotal": 16,
+      "branchPct": 79.62962962962963,
+      "branchesHit": 215,
+      "branchesTotal": 270,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/pwm.hpp",
-      "linePct": 95.0,
-      "linesHit": 38,
-      "linesTotal": 40
+      "linePct": 98.99244332493703,
+      "linesHit": 393,
+      "linesTotal": 397
     },
     {
       "branchPct": 63.333333333333336,
@@ -309,12 +336,12 @@
       "linesTotal": 31
     },
     {
-      "branchPct": 49.29577464788732,
-      "branchesHit": 70,
+      "branchPct": 53.521126760563384,
+      "branchesHit": 76,
       "branchesTotal": 142,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/record.hpp",
-      "linePct": 95.9349593495935,
-      "linesHit": 118,
+      "linePct": 98.3739837398374,
+      "linesHit": 121,
       "linesTotal": 123
     },
     {
@@ -327,22 +354,31 @@
       "linesTotal": 32
     },
     {
-      "branchPct": 80.0,
-      "branchesHit": 68,
-      "branchesTotal": 85,
+      "branchPct": 82.7788649706458,
+      "branchesHit": 423,
+      "branchesTotal": 511,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/regmap.hpp",
-      "linePct": 92.40506329113924,
-      "linesHit": 73,
-      "linesTotal": 79
+      "linePct": 95.32846715328468,
+      "linesHit": 653,
+      "linesTotal": 685
     },
     {
-      "branchPct": 82.88770053475936,
-      "branchesHit": 155,
-      "branchesTotal": 187,
+      "branchPct": 86.90807799442896,
+      "branchesHit": 312,
+      "branchesTotal": 359,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/request.hpp",
-      "linePct": 97.02970297029702,
-      "linesHit": 196,
-      "linesTotal": 202
+      "linePct": 98.82352941176471,
+      "linesHit": 504,
+      "linesTotal": 510
+    },
+    {
+      "branchPct": 100.0,
+      "branchesHit": 50,
+      "branchesTotal": 50,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/respqueue.hpp",
+      "linePct": 100.0,
+      "linesHit": 58,
+      "linesTotal": 58
     },
     {
       "branchPct": 0.0,
@@ -354,13 +390,22 @@
       "linesTotal": 10
     },
     {
-      "branchPct": 65.9090909090909,
-      "branchesHit": 29,
-      "branchesTotal": 44,
+      "branchPct": 85.61643835616438,
+      "branchesHit": 250,
+      "branchesTotal": 292,
+      "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/server.hpp",
+      "linePct": 95.53072625698324,
+      "linesHit": 342,
+      "linesTotal": 358
+    },
+    {
+      "branchPct": 66.0,
+      "branchesHit": 66,
+      "branchesTotal": 100,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/shmem.hpp",
-      "linePct": 100.0,
-      "linesHit": 52,
-      "linesTotal": 52
+      "linePct": 99.21875,
+      "linesHit": 127,
+      "linesTotal": 128
     },
     {
       "branchPct": 70.0,
@@ -381,13 +426,13 @@
       "linesTotal": 10
     },
     {
-      "branchPct": 72.22222222222223,
-      "branchesHit": 13,
-      "branchesTotal": 18,
+      "branchPct": 81.11111111111111,
+      "branchesHit": 146,
+      "branchesTotal": 180,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/spi.hpp",
-      "linePct": 93.93939393939394,
-      "linesHit": 31,
-      "linesTotal": 33
+      "linePct": 98.91696750902527,
+      "linesHit": 274,
+      "linesTotal": 277
     },
     {
       "branchPct": 0.0,
@@ -408,22 +453,22 @@
       "linesTotal": 18
     },
     {
-      "branchPct": 61.81818181818182,
-      "branchesHit": 34,
-      "branchesTotal": 55,
+      "branchPct": 77.59740259740259,
+      "branchesHit": 239,
+      "branchesTotal": 308,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/uart.hpp",
-      "linePct": 82.75862068965517,
-      "linesHit": 48,
-      "linesTotal": 58
+      "linePct": 99.00990099009901,
+      "linesHit": 400,
+      "linesTotal": 404
     },
     {
-      "branchPct": 56.395348837209305,
-      "branchesHit": 97,
-      "branchesTotal": 172,
+      "branchPct": 58.203125,
+      "branchesHit": 149,
+      "branchesTotal": 256,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/udp.hpp",
-      "linePct": 92.96482412060301,
-      "linesHit": 185,
-      "linesTotal": 199
+      "linePct": 88.62876254180603,
+      "linesHit": 265,
+      "linesTotal": 299
     },
     {
       "branchPct": 0.0,
@@ -435,42 +480,42 @@
       "linesTotal": 11
     },
     {
-      "branchPct": 62.5,
-      "branchesHit": 10,
-      "branchesTotal": 16,
+      "branchPct": 68.18181818181819,
+      "branchesHit": 135,
+      "branchesTotal": 198,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/wakeup.hpp",
-      "linePct": 90.625,
-      "linesHit": 29,
-      "linesTotal": 32
+      "linePct": 91.53225806451613,
+      "linesHit": 227,
+      "linesTotal": 248
     },
     {
-      "branchPct": 72.22222222222223,
-      "branchesHit": 26,
-      "branchesTotal": 36,
+      "branchPct": 69.23076923076923,
+      "branchesHit": 36,
+      "branchesTotal": 52,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/rcp/watchdog.hpp",
-      "linePct": 83.63636363636364,
-      "linesHit": 46,
-      "linesTotal": 55
+      "linePct": 83.95061728395062,
+      "linesHit": 68,
+      "linesTotal": 81
     },
     {
-      "branchPct": 60.97560975609756,
-      "branchesHit": 25,
-      "branchesTotal": 41,
+      "branchPct": 59.67741935483871,
+      "branchesHit": 37,
+      "branchesTotal": 62,
       "filename": "/home/runner/work/cpp-RCP/cpp-RCP/include/relay/relay.hpp",
-      "linePct": 91.66666666666667,
-      "linesHit": 44,
-      "linesTotal": 48
+      "linePct": 91.80327868852459,
+      "linesHit": 56,
+      "linesTotal": 61
     }
   ],
-  "generatedAt": "2026-07-30T19:16:24Z",
-  "linePct": 91.62743779421655,
+  "generatedAt": "2026-08-22T22:19:44Z",
+  "linePct": 95.37797431038113,
   "meetsDal": false,
   "profile": "coverage.info",
   "summary": {
-    "hitBranches": 1843,
-    "hitLines": 2725,
-    "totalBranches": 2932,
-    "totalLines": 2974
+    "hitBranches": 5692,
+    "hitLines": 9059,
+    "totalBranches": 7851,
+    "totalLines": 9498
   },
   "thresholdBranch": 100.0,
   "thresholdLine": 100.0
