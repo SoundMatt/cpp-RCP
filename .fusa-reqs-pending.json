@@ -30,6 +30,94 @@
       "asil": "ASIL-B",
       "tc18": "§11.2.2.5 Figure 12 / Table 10 (\"presentation_time\"), TC18.txt L1596-1649",
       "gap": "Confirmed absent (2026-08-07): presentation_time appears nowhere in include/ or src/ except one comment. RequestTypeOpcode::Timed is recognized for opcode validity and priority category only (request.hpp:201,312) -- grepped for is_due/due_at/scheduled_time/delay_us/delay_ms and RequestTypeOpcode::Timed usage sitewide, found zero scheduling/dispatch logic anywhere. There is currently no mechanism in this codebase that defers a Timed request's execution until any point in time at all; the opcode is decodable but has no distinguishing runtime behavior from a standard request."
+    },
+    {
+      "id": "REQ-ACF-006",
+      "title": "encode_acf_abb shall recompute acf_msg_length from the actual payload, ignoring any caller-supplied value",
+      "text": "rcp::acf::encode_acf_abb shall derive the encoded acf_msg_length field from payload.size(), ignoring any acf_msg_length value present in the caller-supplied AcfMessageInfo.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.1 Table 4 (\"acf_msg_length: number of quadlets of data contained in this message\"), TC18.txt L1154",
+      "gap": "Confirmed divergence (2026-08-22): encode_acf_abb (acf.hpp:428-447) only computes acf_msg_length via compute_acf_msg_length() when the caller leaves AcfMessageInfo::acf_msg_length at its default (0) -- see acf.hpp's own header comment, lines 44-64 (\"acf_msg_length auto-fill\"), which documents this as a DELIBERATE divergence from c-RCP: rcp/e2e.hpp's apply_acf_length_adjustment() needs to bake a trailing CRC32 trailer's +1 quadlet into the header before encoding, which requires encode_acf_abb() to honor a caller-supplied nonzero acf_msg_length rather than recomputing it unconditionally. c-RCP's own rcp_acf_encode_abb() always recomputes, ignoring the caller's header value entirely, which is what REQ-ACF-006 literally requires. This is a real, working, and load-bearing behavioral difference (not an oversight) -- filed here for FuSa reviewers to make an explicit accept/reject call on the divergence (accept the documented rationale, or require encode_acf_abb() to gain a separate strict-recompute entry point) rather than silently losing the c-RCP-conformant requirement text. Affects both ACF_ABB (this id) and ACF_GBB (REQ-ACF-040, same root cause in encode_acf_gbb, acf.hpp:486-499)."
+    },
+    {
+      "id": "REQ-ACF-009",
+      "title": "decode_acf_abb shall reject a declared acf_msg_length that describes a payload extending past the buffer",
+      "text": "rcp::acf::decode_acf_abb shall return AvtpErrc::short_buffer whenever the header's declared acf_msg_length describes a payload extending past the end of the supplied buffer.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.1 Table 4's acf_msg_length field, TC18.txt L1154",
+      "gap": "Confirmed absent (2026-08-22): decode_acf_abb (acf.hpp:472-481) checks only that the buffer is at least kAcfCommonHeaderLen bytes long; it never compares the decoded acf_msg_length field against the actual buffer size, and treats everything from the header to the end of whatever buffer it was given as payload. acf.hpp's own \"TODO(phase1-followup)\" comment (lines 449-471) states this outright: c-RCP's stricter decode_abb()/decode_gbb() (which treat acf_msg_length*4 as the message's authoritative byte length and reject a short buffer) is 'not ported' because every real payload builder in this tree hands encode_acf_abb()/_gbb() an arbitrary-length payload without pre-padding to a quadlet boundary, so compute_acf_msg_length()'s ceiling-rounded value is not generally byte-exact and enforcing this strictly today would reject frames this library's own encoders legitimately produce. A genuine, currently-intentional gap versus TC18/c-RCP; the same TODO names the fix (make every payload builder pre-pad via pad_len() and set `pad` accordingly) as a later-phase prerequisite. Affects both ACF_ABB (this id) and ACF_GBB (REQ-ACF-041, same function pair, acf.hpp:501-512)."
+    },
+    {
+      "id": "REQ-ACF-011",
+      "title": "encode_acf_gbb shall zero the message_timestamp region for an untimed (mtv=false) message",
+      "text": "rcp::acf::encode_acf_gbb shall write an all-zero message_timestamp region whenever the caller's AcfMessageInfo::mtv is false, regardless of the message_timestamp value passed in.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "gap": "Confirmed absent (2026-08-22): encode_acf_gbb (acf.hpp:486-499) writes whatever message_timestamp value the caller passes via avtp::detail::put_u64 unconditionally -- it never inspects info.mtv before writing the 8-byte timestamp region. A caller that passes mtv=false together with a nonzero message_timestamp gets that nonzero value serialized onto the wire verbatim, not zeroed. No test in test_acf.cpp exercises mtv=false with a nonzero message_timestamp argument. Real, currently-unguarded gap versus c-RCP's rcp_acf_encode_gbb()."
+    },
+    {
+      "id": "REQ-ACF-018",
+      "title": "A read_size_or_segment_num classifier shall select read_size vs segment_num by the op bit, per TC18 Table 4/6",
+      "text": "A function equivalent to c-RCP's rcp_acf_read_size_or_segment_num_kind() shall interpret AcfMessageInfo::read_size_or_segment_num as read_size when op is false (read) and as segment_num otherwise (write), per TC18 §11.2.1 Table 4 and §11.2.2.1 Table 6.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.1, TC18.txt L1169 (Table 4); §11.2.2.1, TC18.txt L1280 (Table 6)",
+      "gap": "Confirmed absent (2026-08-22): acf.hpp has no read_size_or_segment_num_kind()-equivalent classifier at all -- the field is an opaque round-tripped uint16_t (acf.hpp:216). Its own doc comment reads \"read_size when !ms, segment_num when ms\" (gated on the `ms`/more-segments flag, acf.hpp:216 and the Message struct's own comment at acf.hpp:1073), which is a DIFFERENT selection criterion than TC18's op-based rule c-RCP implements -- for a plain (ms=0) write request, c-RCP's rule says the field is segment_num (op != READ) while cpp-RCP's own comment says it's read_size (ms == 0); these views only agree for reads. In practice this hasn't caused an observed bug because every real endpoint module (i2c.hpp:457/485, iseled.hpp:636/657, spi.hpp:756/788, uart.hpp:778/800) independently reimplements its own local read-vs-write gate instead of consulting one shared classifier, and fragmentation (which would set ms=1) is deferred to v2.8.0 per acf.hpp's own scope note -- so the field is only ever consumed as read_size today. Still a real, confirmed-missing shared primitive, and the ms-based doc comment should be reconciled with TC18's op-based rule before fragmentation support lands."
+    },
+    {
+      "id": "REQ-ACF-040",
+      "title": "encode_acf_gbb shall recompute acf_msg_length from the actual payload, ignoring any caller-supplied value",
+      "text": "rcp::acf::encode_acf_gbb shall derive the encoded acf_msg_length field from payload.size(), ignoring any acf_msg_length value present in the caller-supplied AcfMessageInfo.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.1 Table 4 (\"acf_msg_length: number of quadlets of data contained in this message\"), TC18.txt L1154",
+      "gap": "GBB half of REQ-ACF-006's gap: encode_acf_gbb (acf.hpp:486-499) has the identical \"0 = auto, nonzero = caller override\" contract, documented for the same rcp/e2e.hpp CRC-trailer reason at acf.hpp:44-64. See REQ-ACF-006's gap text for the full rationale; both ids share one root cause and one fix."
+    },
+    {
+      "id": "REQ-ACF-041",
+      "title": "decode_acf_gbb shall reject a declared acf_msg_length that describes a payload extending past the buffer",
+      "text": "rcp::acf::decode_acf_gbb shall return AvtpErrc::short_buffer whenever the header's declared acf_msg_length describes a payload extending past the end of the supplied buffer.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§11.2.1 Table 4's acf_msg_length field, TC18.txt L1154",
+      "gap": "GBB half of REQ-ACF-009's gap: decode_acf_gbb (acf.hpp:501-512) has the identical lenient contract (only the fixed kAcfGbbMessageInfoLen is checked, never the declared acf_msg_length against buffer size), governed by the same \"TODO(phase1-followup)\" comment at acf.hpp:449-471. See REQ-ACF-009's gap text for the full rationale; both ids share one root cause and one fix."
+    },
+    {
+      "id": "REQ-AVTP-012",
+      "title": "AVTP address equality shall require a matching byte_bus_id, not just stream_id",
+      "text": "A combined stream_id + byte_bus_id address type shall compare equal only when both stream_id AND byte_bus_id match, so that a request is routed to an endpoint only when both TC18-required address components agree.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§13.1 (\"The byte_bus_id is only unique in the context of a STREAM_ID and requests are only passed to the endpoint if both match.\"), TC18.txt L3898-3899; confirming §12.9.1 (\"In dependence on the stream_id and byte_bus_id the RC Server determines the endpoint that is addressed. If the lookup of the byte_bus_id in the context of the stream_id does not point to an Endpoint, the request is dropped without further notification.\"), TC18.txt L3591-3593",
+      "gap": "Confirmed absent (2026-08-22): no AvtpAddress-equivalent struct combining StreamId and ByteBusId with its own equality operator exists anywhere in cpp-RCP (grepped every include/rcp/*.hpp for \"AvtpAddress\"/\"avtp_address\"/a combining Address struct -- zero hits; avtp::ByteBusId is a bare uint16_t alias, avtp.hpp:191, with no pairing construct). include/rcp/admin.hpp:99 has a comment explicitly noting c-RCP's rcp_avtp_addr_t as a thing not yet ported. The dispatch-time address matching this would support (an inbound frame's stream_id+byte_bus_id pair resolving to exactly one endpoint) happens ad hoc inside rcp/mock.hpp's dispatch tables (out of this batch's edit scope, and itself not confirmed to implement the combined-match rule as a single testable predicate). Real, TC18-cited (§13.1/§12.9.1) gap; natural home is rcp/avtp.hpp."
+    },
+    {
+      "id": "REQ-WIREERR-002",
+      "title": "A wire_error_string-equivalent function shall return a unique, non-empty message per WireErrorCode",
+      "text": "A function equivalent to c-RCP's rcp_wire_error_string() shall return a unique, non-empty human-readable message for each rcp::acf::WireErrorCode enumerator.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "gap": "Confirmed absent (2026-08-22): no to-string/message function exists for rcp::acf::WireErrorCode anywhere in cpp-RCP. acf_category() (acf.hpp:126-141) covers AcfErrc (decode-time errors: bad_acf_msg_type/bad_acf_msg_length) -- a completely different enum from WireErrorCode (the Table 27/30 numeric codes carried in an ErrorResponse's byte_msg_payload, acf.hpp:693-711). WireErrorCode is a plain enum class, not a std::error_code category, so it has no .message()-style accessor at all today. QM-level ergonomics gap (c-RCP's own REQ-WIREERR-002 is asil QM), genuinely missing rather than architecturally divergent; natural home is rcp/acf.hpp alongside the WireErrorCode definition."
+    },
+    {
+      "id": "REQ-WIREERR-005",
+      "title": "A sequencer wire-error classifier shall distinguish SEQUENCER_NOT_KNOWN (unknown index) from UNAUTHORIZED_ACCESS (wrong owner)",
+      "text": "A function equivalent to c-RCP's rcp_sequencer_wire_error() shall map a sequencer-access rejection to WireErrorCode::SequencerNotKnown when the referenced sequencer index does not exist at all, and to WireErrorCode::UnauthorizedAccess when it exists but the requester is not its owner.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "tc18": "§12.7.10 Table 28 (own-access-control rule, \"Request_stream_index... allowed to access this sequencer\"), TC18.txt L3460-3493; §12.9.6 Table 30 (SEQUENCER_NOT_KNOWN=2, UNAUTHORIZED_ACCESS=3), TC18.txt L3812-3844",
+      "gap": "Confirmed absent (2026-08-22): rcp::acf::WireErrorCode::SequencerNotKnown (acf.hpp:695) is defined but grepped as having ZERO consumers anywhere in include/ or tests/ -- no caller ever produces it. This is consistent with rcp/request.hpp's own explicit \"TODO(phase1-followup)\" (lines 219-225) acknowledging that c-RCP's REQ-SEQ-013/014-style per-sequencer-owner/access-control gate is not yet ported: SequencerTable has no owner-per-sequencer concept to distinguish \"unknown index\" from \"real sequencer, wrong owner\" in the first place, so there is nothing yet to map to these two distinct wire codes. Real, TC18-cited (§12.7.10 Table 28) gap; the WireErrorCode enumerator itself lives in rcp/acf.hpp (in this batch's scope) but the classifier logic's natural home is rcp/request.hpp (out of this batch's scope, and already tracked there via that file's own TODO)."
     }
   ]
 }

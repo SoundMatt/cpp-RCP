@@ -4,6 +4,13 @@
 // fusa:req REQ-WIRE-007
 // fusa:req REQ-WIRE-011
 // fusa:req REQ-WIRE-013
+// fusa:req REQ-AVTP-013
+// fusa:req REQ-AVTP-014
+// fusa:req REQ-AVTP-015
+// fusa:req REQ-AVTP-021
+// fusa:req REQ-AVTP-022
+// fusa:req REQ-AVTP-023
+// fusa:req REQ-AVTP-031
 
 // TC18 wire codec, framing half — IEEE 1722 AVTPDU framing (NTSCF/TSCF) that
 // the OPEN Alliance TC18 Remote Control Protocol Specification v0.5.1_RC
@@ -351,6 +358,10 @@ inline std::error_code decode_tscf_header(const uint8_t* b, size_t len, TscfHead
     out.tu                   = (b[3] & detail::kFlagTimestampUncertain) != 0;
     out.stream_id           = StreamId::from_u64(detail::get_u64(&b[4]));
     out.avtp_timestamp      = detail::get_u32(&b[12]);
+    // REQ-AVTP-022: reserved0/reserved1 are populated from the real wire
+    // bytes (16-19/22-23), not left at their struct default — see
+    // tscf_reserved_all_zero() below (REQ-AVTP-031), which is built on top
+    // of these two fields actually reflecting what was received.
     out.reserved0            = detail::get_u32(&b[16]);
     out.control_data_length = detail::get_u16(&b[20]);
     out.reserved1            = detail::get_u16(&b[22]);
@@ -445,12 +456,16 @@ inline bool should_drop_tscf(bool server_time_sync_supported, uint8_t subtype,
     return false;
 }
 
-// REQ-AVTP-022, TC18 §13.3's second configurable rule: "If the reserved
+// REQ-AVTP-031, TC18 §13.3's second configurable rule: "If the reserved
 // bytes in the header are all zero, then the request shall be queued as if
 // the header was in NTSCF format or dropped, depending on configuration."
 // Returns true iff hdr's own reserved0/reserved1 are both zero — callers
 // combine this with a caller-owned TscfFallback exactly the way
 // should_drop_tscf()'s own unsupported_time_sync_policy parameter is used.
+// (Corrected 2026-08-22: this comment previously mislabeled itself
+// REQ-AVTP-022, which is actually decode_tscf_header()'s own population of
+// hdr.reserved0/reserved1 from the wire, above — the predicate this
+// function itself defines is REQ-AVTP-031.)
 inline bool tscf_reserved_all_zero(const TscfHeader& hdr) noexcept {
     return hdr.reserved0 == 0 && hdr.reserved1 == 0;
 }

@@ -2044,7 +2044,7 @@
     },
     {
       "id": "REQ-CLI-001",
-      "title": "CLI version document conforms to RELAY \u00a712.1",
+      "title": "CLI version document conforms to RELAY §12.1",
       "text": "The `version` subcommand with `--format json` shall emit a JSON object containing tool, version, spec_version, language, and runtime fields; language shall be \"cpp\", spec_version shall equal relay::kRelaySpecVersion, and protocol_int shall be 5 (RCP).",
       "standard": "relay",
       "level": "QM",
@@ -2052,7 +2052,7 @@
     },
     {
       "id": "REQ-CLI-002",
-      "title": "CLI capabilities document conforms to RELAY \u00a712.2",
+      "title": "CLI capabilities document conforms to RELAY §12.2",
       "text": "The `capabilities` subcommand shall emit a JSON object with kind=\"capabilities\" and the fields tool, version, spec_version, commands, transports, features, interfaces, optional_interfaces, and adapt; commands shall include version, capabilities, and status.",
       "standard": "relay",
       "level": "QM",
@@ -2060,7 +2060,7 @@
     },
     {
       "id": "REQ-CLI-003",
-      "title": "CLI status document conforms to RELAY \u00a712.3",
+      "title": "CLI status document conforms to RELAY §12.3",
       "text": "The `status` subcommand with `--format json` shall emit a JSON object containing tool, version, healthy, connected, endpoint, and details fields.",
       "standard": "relay",
       "level": "QM",
@@ -2068,7 +2068,7 @@
     },
     {
       "id": "REQ-CLI-004",
-      "title": "CLI exit codes conform to RELAY \u00a711.3",
+      "title": "CLI exit codes conform to RELAY §11.3",
       "text": "The CLI shall return exit code 2 (invalid-args) when invoked with no command, an unknown command, or an invalid --format value.",
       "standard": "relay",
       "level": "QM",
@@ -2076,7 +2076,7 @@
     },
     {
       "id": "REQ-RELAY-001",
-      "title": "RELAY spec version constant is current (\u00a719.4)",
+      "title": "RELAY spec version constant is current (§19.4)",
       "text": "relay::kRelaySpecVersion shall report the RELAY spec version the binding targets, kept in sync with spec/version.json (currently \"2.0\").",
       "standard": "relay",
       "level": "QM",
@@ -2084,23 +2084,23 @@
     },
     {
       "id": "REQ-RELAY-002",
-      "title": "RELAY Protocol enum and mandatory error sentinels (\u00a73, \u00a75.1)",
-      "text": "The relay:: namespace shall define the Protocol enum (CAN=1..SOMEIP=6) and the four mandatory error_condition sentinels (ErrClosed, ErrNotConnected, ErrTimeout, ErrPayloadTooLarge) in a category named \"relay\" with the spec \u00a75.1 messages.",
+      "title": "RELAY Protocol enum and mandatory error sentinels (§3, §5.1)",
+      "text": "The relay:: namespace shall define the Protocol enum (CAN=1..SOMEIP=6) and the four mandatory error_condition sentinels (ErrClosed, ErrNotConnected, ErrTimeout, ErrPayloadTooLarge) in a category named \"relay\" with the spec §5.1 messages.",
       "standard": "relay",
       "level": "QM",
       "asil": "QM"
     },
     {
       "id": "REQ-RELAY-003",
-      "title": "RCP-to-RELAY error equivalence mapping (\u00a75.2)",
-      "text": "rcp:: sentinel error codes shall be std::error_condition-equivalent to their RELAY counterparts: ErrClosed\u2192ErrClosed, ErrTimeout/ErrBusy\u2192ErrTimeout, ErrNotFound\u2192ErrNotConnected; ErrAlreadyExists shall remain standalone.",
+      "title": "RCP-to-RELAY error equivalence mapping (§5.2)",
+      "text": "rcp:: sentinel error codes shall be std::error_condition-equivalent to their RELAY counterparts: ErrClosed→ErrClosed, ErrTimeout/ErrBusy→ErrTimeout, ErrNotFound→ErrNotConnected; ErrAlreadyExists shall remain standalone.",
       "standard": "relay",
       "level": "QM",
       "asil": "QM"
     },
     {
       "id": "REQ-RELAY-004",
-      "title": "Adapt() wraps a Controller as a relay::Caller (\u00a710.3)",
+      "title": "Adapt() wraps a Controller as a relay::Caller (§10.3)",
       "text": "rcp::Adapt(RequestFn) shall return a non-null relay::Caller whose protocol() is RCP and whose call()/send() delegate to the wrapped RequestFn, resolving the target endpoint (byte_bus_id) from relay::Message.id; subscribe() shall report std::errc::function_not_supported, and close() shall succeed unconditionally.",
       "standard": "relay",
       "level": "QM",
@@ -2108,15 +2108,15 @@
     },
     {
       "id": "REQ-RELAY-005",
-      "title": "RELAY core bindings and RCP message mapping (\u00a718.2, \u00a714, \u00a715.7.5)",
-      "text": "rcp::Context shall alias relay::Context; SubscriberOptions shall default channel_depth=64 and expose topic_name; endpoint_id_to_relay_id()/relay_id_to_endpoint_id() shall round-trip a byte_bus_id through relay::Message.id as its plain decimal string form (RELAY spec v2.0 \u00a715.7.5), and message_to_request()/response_to_message() shall correctly decode/encode the op, evt_op, read_size_or_segment_num, and response_kind fields.",
+      "title": "RELAY core bindings and RCP message mapping (§18.2, §14, §15.7.5)",
+      "text": "rcp::Context shall alias relay::Context; SubscriberOptions shall default channel_depth=64 and expose topic_name; endpoint_id_to_relay_id()/relay_id_to_endpoint_id() shall round-trip a byte_bus_id through relay::Message.id as its plain decimal string form (RELAY spec v2.0 §15.7.5), and message_to_request()/response_to_message() shall correctly decode/encode the op, evt_op, read_size_or_segment_num, and response_kind fields.",
       "standard": "relay",
       "level": "QM",
       "asil": "QM"
     },
     {
       "id": "REQ-CLI-005",
-      "title": "CLI send --format json streaming NDJSON sink (RELAY \u00a711.2)",
+      "title": "CLI send --format json streaming NDJSON sink (RELAY §11.2)",
       "text": "The `send --format json` subcommand shall read relay.Message values as NDJSON on stdin (one per line) and publish each via message_to_request to the matching rcp::mock::Server endpoint until EOF; malformed or undeliverable lines shall be reported and skipped without aborting the stream. `send` without `--format json` shall return exit code 2.",
       "standard": "relay",
       "level": "QM",
@@ -2252,8 +2252,8 @@
     },
     {
       "id": "REQ-WIRE-015",
-      "title": "RELAY spec \u00a715.5 canonical ControlFlags/Message conversion",
-      "text": "rcp::acf::ControlFlags shall define FlagAck/FlagRead/FlagWrite/FlagResponse/FlagError/FlagMoreSegments at bit values 0x80/0x40/0x20/0x10/0x08/0x04 respectively, matching RELAY spec \u00a715.5's Go definition exactly; rcp::acf::to_message/from_message shall convert between AcfMessageInfo and the RELAY spec \u00a715.5 canonical Message shape, preserving byte_bus_id, transaction_num, read_size_or_segment, and body, and carrying message_timestamp only for the ACF_GBB encoding.",
+      "title": "RELAY spec §15.5 canonical ControlFlags/Message conversion",
+      "text": "rcp::acf::ControlFlags shall define FlagAck/FlagRead/FlagWrite/FlagResponse/FlagError/FlagMoreSegments at bit values 0x80/0x40/0x20/0x10/0x08/0x04 respectively, matching RELAY spec §15.5's Go definition exactly; rcp::acf::to_message/from_message shall convert between AcfMessageInfo and the RELAY spec §15.5 canonical Message shape, preserving byte_bus_id, transaction_num, read_size_or_segment, and body, and carrying message_timestamp only for the ACF_GBB encoding.",
       "standard": "relay",
       "level": "QM",
       "asil": "QM"
@@ -2489,12 +2489,12 @@
     },
     {
       "id": "REQ-DISC-001",
-      "title": "Discovery request framing \u2014 byte_bus_id 0, register-map address 0",
+      "title": "Discovery request framing — byte_bus_id 0, register-map address 0",
       "text": "rcp::discovery::make_discovery_request shall build an unconditional ACF_ABB read (op=false) targeting byte_bus_id 0 (kDiscoveryByteBusId), and kDiscoveryRegisterAddress shall be 0, fixing discovery reads at the general bootstrap/magic-number register-map region.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a712.6.1 Table 18 (\"Byte_bus_id 00000000000b\"; \"op 1b (read request)\"), TC18.txt L2746-2758",
+      "tc18": "§12.6.1 Table 18 (\"Byte_bus_id 00000000000b\"; \"op 1b (read request)\"), TC18.txt L2746-2758",
       "tc18_master_id": "TC18-12.6.1-001",
       "severity": "cybersecurity"
     },
@@ -2505,7 +2505,7 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a712.6.1 (\"AVTPDUs having a TSCF header are dropped without further response, as well as requests in ACF_GBB format.\"), TC18.txt L2743",
+      "tc18": "§12.6.1 (\"AVTPDUs having a TSCF header are dropped without further response, as well as requests in ACF_GBB format.\"), TC18.txt L2743",
       "tc18_master_id": "TC18-12.6.1-002",
       "severity": "cybersecurity"
     },
@@ -2516,7 +2516,7 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a712.6 (\"The first discovery request the RC server receives in HW_UNCONFIGURED or HW_CONFIGURED state is used to set the discovery stream from which now on configuration requests will be accepted.\"), TC18.txt L2732-2733",
+      "tc18": "§12.6 (\"The first discovery request the RC server receives in HW_UNCONFIGURED or HW_CONFIGURED state is used to set the discovery stream from which now on configuration requests will be accepted.\"), TC18.txt L2732-2733",
       "tc18_master_id": "TC18-12.6-003",
       "severity": "cybersecurity"
     },
@@ -2527,7 +2527,7 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a712.6 (\"If the RC Server does not receive configuration requests on the stream for a certain time (Discovery_TimeOut) it will drop the discovery stream and is open for a new discovery.\"), TC18.txt L2733-2735",
+      "tc18": "§12.6 (\"If the RC Server does not receive configuration requests on the stream for a certain time (Discovery_TimeOut) it will drop the discovery stream and is open for a new discovery.\"), TC18.txt L2733-2735",
       "tc18_master_id": "TC18-12.6-003",
       "severity": "cybersecurity"
     },
@@ -2538,7 +2538,7 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a712.6 (\"If multiple discovery requests are received from different RC Clients all requests are responded with the server_config map, but only the first one will be allowed as configuration stream.\"), TC18.txt L2735-2737",
+      "tc18": "§12.6 (\"If multiple discovery requests are received from different RC Clients all requests are responded with the server_config map, but only the first one will be allowed as configuration stream.\"), TC18.txt L2735-2737",
       "tc18_master_id": "TC18-12.6-003",
       "severity": "cybersecurity"
     },
@@ -2549,7 +2549,7 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a712.6 (\"If others send configuration requests they will be rejected and get an error response.\"), TC18.txt L2736-2737",
+      "tc18": "§12.6 (\"If others send configuration requests they will be rejected and get an error response.\"), TC18.txt L2736-2737",
       "tc18_master_id": "TC18-12.6-003",
       "severity": "cybersecurity"
     },
@@ -2560,7 +2560,7 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a712.7.4 (\"Changes in configuration via a discovery request are no longer allowed.\"), TC18.txt L2879-2880",
+      "tc18": "§12.7.4 (\"Changes in configuration via a discovery request are no longer allowed.\"), TC18.txt L2879-2880",
       "tc18_master_id": "TC18-12.7.4-001",
       "severity": "cybersecurity"
     },
@@ -2789,7 +2789,7 @@
     },
     {
       "id": "REQ-I2C-001",
-      "title": "i2c_mode open item \u2014 coarse high-speed decode only",
+      "title": "i2c_mode open item — coarse high-speed decode only",
       "text": "rcp::i2c::i2c_mode_of shall map AcfMessageInfo::hs=false to I2cMode::Standard and hs=true to I2cMode::HighSpeed, and shall not attempt to distinguish any finer I2C speed grade, per this milestone's documented open item pending a future spec errata pass.",
       "standard": "iso26262",
       "level": "ASIL-B",
@@ -2802,17 +2802,17 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a713.7.7.1 (\"Optionally the Client can request the I\u00b2C endpoint to wait for a pre-defined bit sequence has been received from a connected device.\"), TC18.txt L5203-5204",
+      "tc18": "§13.7.7.1 (\"Optionally the Client can request the I²C endpoint to wait for a pre-defined bit sequence has been received from a connected device.\"), TC18.txt L5203-5204",
       "tc18_master_id": "TC18-13.7.7.1-003"
     },
     {
       "id": "REQ-I2C-003",
       "title": "I2C controller-only raw byte-stream transfer",
-      "text": "rcp::i2c::I2cEndpoint::transfer shall record the exact byte sequences passed as `out_bytes` and `in_bytes` \u2014 including any address byte(s) the caller embeds in `out_bytes` \u2014 retrievable via last_sent()/last_received().",
+      "text": "rcp::i2c::I2cEndpoint::transfer shall record the exact byte sequences passed as `out_bytes` and `in_bytes` — including any address byte(s) the caller embeds in `out_bytes` — retrievable via last_sent()/last_received().",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a713.7.7.3 (\"The byte msg payload is the I2C payload including the address. The I2C endpoint does not know whether there is a 7- or 10-bit address, since the endpoint is just transparent.\"; Figure 30 \u2013 \"i2c request format\"), TC18.txt L5240-5257",
+      "tc18": "§13.7.7.3 (\"The byte msg payload is the I2C payload including the address. The I2C endpoint does not know whether there is a 7- or 10-bit address, since the endpoint is just transparent.\"; Figure 30 – \"i2c request format\"), TC18.txt L5240-5257",
       "tc18_master_id": "TC18-13.7.7.3-001"
     },
     {
@@ -2822,7 +2822,7 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a713.7.7.4 (\"An I\u00b2C endpoint optionally generates HW trigger events\"; Table 50's own Event column is blank in the extraction, so the concrete TransferComplete/Nack signal identities below this clause are this implementation's own, not spec-named), TC18.txt L5262-5264",
+      "tc18": "§13.7.7.4 (\"An I²C endpoint optionally generates HW trigger events\"; Table 50's own Event column is blank in the extraction, so the concrete TransferComplete/Nack signal identities below this clause are this implementation's own, not spec-named), TC18.txt L5262-5264",
       "tc18_master_id": "TC18-13.7.7.4-001"
     },
     {
@@ -2961,11 +2961,11 @@
     {
       "id": "REQ-ADC-003",
       "title": "ADC request-driven sampling only",
-      "text": "rcp::adc::AdcEndpoint::request_reading shall invoke its sample source exactly adc_avg_intervals_per_request * adc_combine_avg_values times per call \u2014 no more, no fewer \u2014 and shall return AdcErrc::no_signal (this endpoint's analog of PWM_IN_NO_SIGNAL on the request path) the first time the sample source reports a missing capture, without free-running or pushing samples outside a call.",
+      "text": "rcp::adc::AdcEndpoint::request_reading shall invoke its sample source exactly adc_avg_intervals_per_request * adc_combine_avg_values times per call — no more, no fewer — and shall return AdcErrc::no_signal (this endpoint's analog of PWM_IN_NO_SIGNAL on the request path) the first time the sample source reports a missing capture, without free-running or pushing samples outside a call.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a713.7.9.1 (\"The ADC only samples the input, when a request is executed. Consequently, no trigger will occur when there is no request to sample.\"), TC18.txt L5476-5477",
+      "tc18": "§13.7.9.1 (\"The ADC only samples the input, when a request is executed. Consequently, no trigger will occur when there is no request to sample.\"), TC18.txt L5476-5477",
       "tc18_master_id": "TC18-13.7.9.1-010"
     },
     {
@@ -2975,7 +2975,7 @@
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a713.7.9.1 (\"Reading ADC values from an endpoint can be triggered e.g. by a PWM output trigger event by using a Trigger request, which triggers on the PWM EP.\"), TC18.txt L5446-5447",
+      "tc18": "§13.7.9.1 (\"Reading ADC values from an endpoint can be triggered e.g. by a PWM output trigger event by using a Trigger request, which triggers on the PWM EP.\"), TC18.txt L5446-5447",
       "tc18_master_id": "TC18-13.7.9.1-002"
     },
     {
@@ -3635,11 +3635,11 @@
     {
       "id": "REQ-L2-007",
       "title": "MultiFrame round-trips two ACF_ABB messages packed into one L2 frame",
-      "text": "rcp::l2::encode_l2_multi_frame/decode_l2_multi_frame shall round-trip two or more ACF_ABB/ACF_GBB messages packed into a single Ethernet frame's AVTPDU, per extraction \u00a712.9.1.1's multiple-requests-in-one-frame requirement, the same as rcp::udp::MultiFrame's equivalent guarantee.",
+      "text": "rcp::l2::encode_l2_multi_frame/decode_l2_multi_frame shall round-trip two or more ACF_ABB/ACF_GBB messages packed into a single Ethernet frame's AVTPDU, per extraction §12.9.1.1's multiple-requests-in-one-frame requirement, the same as rcp::udp::MultiFrame's equivalent guarantee.",
       "standard": "iso26262",
       "level": "ASIL-B",
       "asil": "ASIL-B",
-      "tc18": "\u00a712.9.1.1 (\"An RCP frame may include multiple ACF-types (requests).\"), TC18.txt L3617",
+      "tc18": "§12.9.1.1 (\"An RCP frame may include multiple ACF-types (requests).\"), TC18.txt L3617",
       "tc18_master_id": "TC18-12.9.1.1-001"
     },
     {
@@ -3667,6 +3667,426 @@
       "level": "ASIL-B",
       "asil": "ASIL-B",
       "tc18": "§12.3.1.1/.2/.3 (write request accepted only when its frame's destination MAC is unicast)"
+    },
+    {
+      "id": "REQ-ACF-001",
+      "title": "acf_category() returns a unique, non-empty message per AcfErrc value",
+      "text": "rcp::acf::acf_category().message() shall return a unique, non-empty string for each defined AcfErrc value (bad_acf_msg_type, bad_acf_msg_length).",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-ACF-004",
+      "title": "encode_acf_abb writes the correct acf_msg_type regardless of the caller-supplied header",
+      "text": "rcp::acf::encode_acf_abb shall write kAcfMsgTypeAbb into the encoded frame's acf_msg_type field, independent of any acf_msg_type value the caller's AcfMessageInfo happens to carry on entry.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1 Table 4 (\"acf_msg_type 0x0E (ABB message)\"), TC18.txt L1152-1153; ACF_GBB acf_msg_type=0x0D, e.g. TC18.txt L1447"
+    },
+    {
+      "id": "REQ-ACF-012",
+      "title": "AcfMessageInfo::mtv is a genuine two-state wire bit with no third \"uncertain\" state",
+      "text": "rcp::acf::AcfMessageInfo::mtv shall be represented as a bool (exactly the two wire-defined states, valid/not-valid) and rcp::acf::effective_timestamp shall gate ACF_GBB message_timestamp use strictly on mtv being set, never treating an untimed message as implicitly valid.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.3 Responses, Table 17 (\"mtv 0b - message_timestamp not valid (for ACF_GBB if PTP not working and for ACF_ABB) / 1b - message_timestamp valid (for ACF_GBB if PTP working correctly)\"), TC18.txt L2246-2247 -- the general, exhaustive two-value mtv definition; also §11.2.1 Figure 7/Table 4 (\"mtv 0b\"), TC18.txt L1208-1222, the fixed-context row the earlier citation-backfill pass (PR #172) had already found"
+    },
+    {
+      "id": "REQ-ACF-013",
+      "title": "peek_msg_type reads the acf_msg_type byte without a full header decode",
+      "text": "rcp::acf::peek_msg_type shall report the ACF message's acf_msg_type byte from a buffer as short as 1 byte, and shall return AvtpErrc::short_buffer for a zero-length buffer.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1 Figure 7 (acf_msg_type is byte 0 of byte_message_info), TC18.txt L1142-1153",
+      "tc18_master_id": "TC18-11.2.1-004"
+    },
+    {
+      "id": "REQ-ACF-014",
+      "title": "Encoded ACF_ABB message length matches header length plus payload",
+      "text": "rcp::acf::encode_acf_abb shall produce a frame of exactly kAcfCommonHeaderLen + payload.size() bytes.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1 Figure 7 (ABB byte_message_info, no timestamp), TC18.txt L1142-1149; ACF_GBB's additional 8-byte message_timestamp, e.g. TC18.txt L1447-1451"
+    },
+    {
+      "id": "REQ-ACF-017",
+      "title": "kAcfMsgTypeAbb/kAcfMsgTypeGbb carry the specification's own numeric values",
+      "text": "rcp::acf::kAcfMsgTypeAbb shall equal 0x0E and rcp::acf::kAcfMsgTypeGbb shall equal 0x0D, the acf_msg_type values TC18 assigns to the ACF_ABB and ACF_GBB message formats respectively.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1, TC18.txt L1153; §11.2.2.1, TC18.txt L1250"
+    },
+    {
+      "id": "REQ-ACF-019",
+      "title": "AcfMessageInfo::op is a genuine two-state wire bit matching the specification's single op bit",
+      "text": "rcp::acf::AcfMessageInfo::op shall be represented as a bool (false = read, true = write), matching TC18's single-bit op field exactly rather than modeling a third encode-only state that could never appear on the wire.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1, TC18.txt L1163-1164 (Table 4)",
+      "tc18_master_id": "TC18-11.2.1-005"
+    },
+    {
+      "id": "REQ-ACF-021",
+      "title": "request_header_constraints_valid validates a request's fixed-value fields",
+      "text": "rcp::acf::request_header_constraints_valid(hdr, cs_has_meaning) shall return true iff hdr's hs, rsp, and err fields are all false, and cs is false unless cs_has_meaning is true (the compound-wait/chained exemption).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1, TC18.txt L1156-1167 (Table 4); §11.2.2.3, TC18.txt L1468-1474 (Table 8)",
+      "tc18_master_id": "TC18-11.2.1-005"
+    },
+    {
+      "id": "REQ-ACF-023",
+      "title": "evt_row2_is_plain implements Table 33's shared ADC/PWM_IN/I2C/LIN/CAN/UART/ISELED/MDIO rule",
+      "text": "rcp::acf::evt_row2_is_plain(evt) shall return true iff (evt & 0x7) == 0, per TC18 Table 33's rule for the {ADC, PWM_IN, I2C, LIN, CAN, UART, ISELED, MDIO} endpoint-type row.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5 Table 33, TC18.txt L3666-3710 (the reserved-range wording); §13.7.9.3 Figure 33/34 (\"RC Client sends a standard read request\" / ADC response with 8 measurements), the corroborating worked example resolving the ambiguity in Table 33's own favor for evt=000b",
+      "tc18_master_id": "TC18-13.5-001"
+    },
+    {
+      "id": "REQ-ACF-024",
+      "title": "compound_wait_evt_valid rejects exactly the reserved 011b value",
+      "text": "rcp::acf::compound_wait_evt_valid(evt) shall return true iff (evt & 0x7) != 0x3, per TC18 §13.5.1: a compound-wait request's evt[2:0] selects one of eight comparison modes, of which 011b is reserved.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5.1, TC18.txt L3735-3762 (evt[2:0] = 011b)",
+      "tc18_master_id": "TC18-13.5.1-002"
+    },
+    {
+      "id": "REQ-ACF-025",
+      "title": "compound_wait_match applies the shared status-length rule before any mode-specific comparison",
+      "text": "rcp::acf::compound_wait_match shall return false, regardless of comparison mode or buffer contents, when status_len < payload_len; otherwise it shall compare against only status's own first payload_len bytes.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5.1, TC18.txt L3735-3741 (length-capping rule and its own SPI example)",
+      "tc18_master_id": "TC18-13.5.1-001"
+    },
+    {
+      "id": "REQ-ACF-026",
+      "title": "compound_wait_match evt[2:0]=000b: exact match",
+      "text": "rcp::acf::compound_wait_match shall, for evt[2:0] = 000b, return true iff payload[0..payload_len) matches the length-capped current status exactly, byte for byte.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5.1, TC18.txt L3742 (evt[2:0] = 000b)",
+      "tc18_master_id": "TC18-13.5.1-002"
+    },
+    {
+      "id": "REQ-ACF-027",
+      "title": "compound_wait_match evt[2:0]=001b: AND-with-1s-mask",
+      "text": "rcp::acf::compound_wait_match shall, for evt[2:0] = 001b, return true iff every bit position set to 1 in payload is also set to 1 in the length-capped current status.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5.1, TC18.txt L3743-3746 (evt[2:0] = 001b)",
+      "tc18_master_id": "TC18-13.5.1-002"
+    },
+    {
+      "id": "REQ-ACF-028",
+      "title": "compound_wait_match evt[2:0]=010b: AND-with-0s-mask",
+      "text": "rcp::acf::compound_wait_match shall, for evt[2:0] = 010b, return true iff every bit position set to 1 in payload is set to 0 in the length-capped current status.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5.1, TC18.txt L3747-3750 (evt[2:0] = 010b)",
+      "tc18_master_id": "TC18-13.5.1-002"
+    },
+    {
+      "id": "REQ-ACF-029",
+      "title": "compound_wait_match evt[2:0]=100b: leading-quadlet high-word >=",
+      "text": "rcp::acf::compound_wait_match shall, for evt[2:0] = 100b, return true iff the first two bytes of payload's own leading quadlet, read big-endian, are >= the same two bytes of status; it shall return false, never reading out of bounds, when payload_len < 4.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5.1, TC18.txt L3753-3758 (evt[2:0] = 100b/101b)",
+      "tc18_master_id": "TC18-13.5.1-002"
+    },
+    {
+      "id": "REQ-ACF-030",
+      "title": "compound_wait_match evt[2:0]=110b: leading-quadlet low-word >=",
+      "text": "rcp::acf::compound_wait_match shall, for evt[2:0] = 110b, return true iff the last two bytes of payload's own leading quadlet, read big-endian, are >= the same two bytes of status; it shall return false, never reading out of bounds, when payload_len < 4.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5.1, TC18.txt L3759-3763 (evt[2:0] = 110b/111b)",
+      "tc18_master_id": "TC18-13.5.1-002"
+    },
+    {
+      "id": "REQ-ACF-031",
+      "title": "build_error_response builds a TC18 §12.9.6 error response",
+      "text": "rcp::acf::build_error_response shall build an ACF_ABB message carrying the given byte_bus_id and transaction_num, err = true, rsp = true, evt != kEvtAcknowledge, and a one-octet byte_msg_payload equal to the given WireErrorCode's numeric value.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§12.9.6 (\"The error response shall contain the byte_bus_id and transaction number of the request. The error response shall contain a byte_msg_payload with an error code.\"), TC18.txt L3808-3809; §11.3.4, TC18.txt L2299-2301",
+      "tc18_master_id": "TC18-12.9.6-003"
+    },
+    {
+      "id": "REQ-ACF-032",
+      "title": "peek_gbb_request_type peeks a GBB frame's own request_type without a full kind-specific decode",
+      "text": "rcp::acf::peek_gbb_request_type shall return the octet at frame offset kAcfCommonHeaderLen (the message_timestamp region's own repurposed leading octet, shared identically by every conditional-request kind) as out_request_type and return true, iff frame_len >= 9 and the frame's own header reports acf_msg_type == kAcfMsgTypeGbb; it shall return false, leaving out_request_type unchanged, for an ACF_ABB frame or a too-short buffer.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.2 (request_type/message_timestamp-repurposing scheme, common to every conditional request kind), TC18.txt L1299-1541",
+      "tc18_master_id": "TC18-11.2.2-002"
+    },
+    {
+      "id": "REQ-ACF-033",
+      "title": "build_acknowledge_rejected_response builds TC18 §11.3.1's Acknowledge-shaped storage-admission-rejection response",
+      "text": "rcp::acf::build_acknowledge_rejected_response shall build a response with evt[3:0] == kEvtAcknowledge, err = true, rsp = true, and a one-octet byte_msg_payload equal to the given WireErrorCode's numeric value -- classifying via response_kind_of() as Acknowledge, not ErrorResponse, distinct from build_error_response()'s §11.3.4 Error Response shape even though both carry err=1.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.3.1 Acknowledge (err=1 rejection sub-case, distinct from §11.3.4 Error Response), TC18.txt",
+      "tc18_master_id": "TC18-11.3.1-002"
+    },
+    {
+      "id": "REQ-ACF-038",
+      "title": "encode_acf_gbb writes the correct acf_msg_type regardless of the caller-supplied header",
+      "text": "rcp::acf::encode_acf_gbb shall write kAcfMsgTypeGbb into the encoded frame's acf_msg_type field, independent of any acf_msg_type value the caller's AcfMessageInfo happens to carry on entry.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1 Table 4 (\"acf_msg_type 0x0E (ABB message)\"), TC18.txt L1152-1153; ACF_GBB acf_msg_type=0x0D, e.g. TC18.txt L1447"
+    },
+    {
+      "id": "REQ-ACF-044",
+      "title": "Encoded ACF_GBB message length matches header length plus payload",
+      "text": "rcp::acf::encode_acf_gbb shall produce a frame of exactly kAcfGbbMessageInfoLen + payload.size() bytes, with kAcfGbbMessageInfoLen equal to kAcfCommonHeaderLen plus the 8-byte message_timestamp field.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1 Figure 7 (ABB byte_message_info, no timestamp), TC18.txt L1142-1149; ACF_GBB's additional 8-byte message_timestamp, e.g. TC18.txt L1447-1451"
+    },
+    {
+      "id": "REQ-ACF-047",
+      "title": "pad_len computes the zero-pad octet count to the next quadlet boundary",
+      "text": "rcp::acf::pad_len(unpadded_len) shall compute the zero-pad octet count (0-3) needed to bring unpadded_len octets up to a whole number of quadlets.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1 Figure 7 / Table 4 (\"ABB message standard request\" / \"Usage of ABB message for standard requests\"), TC18.txt L1142-1170",
+      "tc18_master_id": "TC18-11.2.1-005"
+    },
+    {
+      "id": "REQ-ACF-048",
+      "title": "kAcfMsgTypeGbb carries the specification's own numeric value",
+      "text": "rcp::acf::kAcfMsgTypeGbb shall equal 0x0D, the acf_msg_type value TC18 assigns to the ACF_GBB message format (see REQ-ACF-017 for the ACF_ABB / 0x0E counterpart, tested by the same TEST_CASE).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1, TC18.txt L1153; §11.2.2.1, TC18.txt L1250"
+    },
+    {
+      "id": "REQ-ACF-049",
+      "title": "decode_acf_message_info decodes op as a genuine two-state field",
+      "text": "rcp::acf::decode_acf_message_info shall decode the wire op bit into AcfMessageInfo::op as a bool -- by construction, decode can never produce a third encode-only state distinct from read/write.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1, TC18.txt L1163-1164 (Table 4)",
+      "tc18_master_id": "TC18-11.2.1-005"
+    },
+    {
+      "id": "REQ-ACF-050",
+      "title": "header_is_request identifies a decoded message as a request, not a response",
+      "text": "rcp::acf::header_is_request(hdr) shall return true iff hdr's rsp bit is false; a received message whose rsp bit is set shall not be admitted as a request, per TC18's rsp=1b response marker.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2.1, TC18.txt L1156-1167 (Table 4); §11.2.2.3, TC18.txt L1468-1474 (Table 8)",
+      "tc18_master_id": "TC18-11.2.1-005"
+    },
+    {
+      "id": "REQ-ACF-051",
+      "title": "compound_wait_match returns false for the reserved evt[2:0]=0x3 mode as its own defensive fallback",
+      "text": "rcp::acf::compound_wait_match shall also return false for evt[2:0] = 0x3 (reserved), as its own defined fallback behaviour for a caller that does not gate on compound_wait_evt_valid() first.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5.1, TC18.txt L3735-3741 (length-capping rule and its own SPI example)",
+      "tc18_master_id": "TC18-13.5.1-001"
+    },
+    {
+      "id": "REQ-ACF-052",
+      "title": "compound_wait_match evt[2:0]=101b: leading-quadlet high-word <=",
+      "text": "rcp::acf::compound_wait_match shall, for evt[2:0] = 101b, return true iff the first two bytes of payload's own leading quadlet, read big-endian, are <= the same two bytes of status; it shall return false, never reading out of bounds, when payload_len < 4.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5.1, TC18.txt L3753-3758 (evt[2:0] = 100b/101b)",
+      "tc18_master_id": "TC18-13.5.1-002"
+    },
+    {
+      "id": "REQ-ACF-053",
+      "title": "compound_wait_match evt[2:0]=111b: leading-quadlet low-word <=",
+      "text": "rcp::acf::compound_wait_match shall, for evt[2:0] = 111b, return true iff the last two bytes of payload's own leading quadlet, read big-endian, are <= the same two bytes of status; it shall return false, never reading out of bounds, when payload_len < 4.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.5.1, TC18.txt L3759-3763 (evt[2:0] = 110b/111b)",
+      "tc18_master_id": "TC18-13.5.1-002"
+    },
+    {
+      "id": "REQ-AVTP-013",
+      "title": "peek_subtype reads the subtype byte from a buffer as short as 1 byte, and rejects an empty buffer",
+      "text": "rcp::avtp::peek_subtype shall report the AVTPDU's subtype byte from a buffer as short as 1 byte, and shall return AvtpErrc::short_buffer for a zero-length buffer.",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.1 (subtype is byte 0 of both NTSCF Figure 6 and TSCF Figure 5), TC18.txt L1118-1138"
+    },
+    {
+      "id": "REQ-AVTP-014",
+      "title": "TSCF-without-time-sync is dropped under the default (DROP) policy",
+      "text": "rcp::avtp::should_drop_tscf shall return true iff subtype is kSubtypeTscf, server_time_sync_supported is false, and unsupported_time_sync_policy is TscfFallback::Drop -- this codec's own original, default disposition.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.1 (\"In case time-synchronization is not supported, AVTPDUs having a TSCF header are dropped, and no response send.\"), TC18.txt L1140",
+      "tc18_master_id": "TC18-11.1-005"
+    },
+    {
+      "id": "REQ-AVTP-015",
+      "title": "avtp_category() returns a unique, non-empty message per AvtpErrc value",
+      "text": "rcp::avtp::avtp_category().message() shall return a unique, non-empty string for each defined AvtpErrc value (short_buffer, bad_subtype, length_mismatch).",
+      "standard": "iso26262",
+      "level": "ASIL-A",
+      "asil": "ASIL-A",
+      "scope": "tc18",
+      "status": "implemented"
+    },
+    {
+      "id": "REQ-AVTP-021",
+      "title": "should_drop_tscf does not drop a TSCF-without-time-sync frame when policy is IGNORE",
+      "text": "rcp::avtp::should_drop_tscf shall return false for a TSCF frame with server_time_sync_supported == false when unsupported_time_sync_policy is TscfFallback::Ignore, per TC18 §13.3's configurable alternative to §11.1's unconditional drop wording.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.3 (\"Requests may come within an AVTPDU with a presentation time (i.e. TSCF header). In case the RC Server does not support time synchronization, the presentation time shall be ignored, and the request(s) executed as if no presentation time were included or dropped depending on the configuration of the RC Server.\"), TC18.txt L4035-4038",
+      "tc18_master_id": "TC18-13.3-001"
+    },
+    {
+      "id": "REQ-AVTP-022",
+      "title": "decode_tscf_header populates the TSCF header's reserved0/reserved1 fields from the wire",
+      "text": "rcp::avtp::decode_tscf_header shall decode bytes 16-19 into TscfHeader::reserved0 and bytes 22-23 into TscfHeader::reserved1 exactly as received, so a caller can evaluate TC18 §13.3's reserved-bytes-all-zero rule (see tscf_reserved_all_zero(), REQ-AVTP-031) against the real wire content rather than an assumed-zero default.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.3 (\"If the reserved bytes in the header are all zero, then the request shall be queued as if the header was in NTSCF format or dropped, depending on configuration.\"), TC18.txt L4039-4040",
+      "tc18_master_id": "TC18-13.3-003"
+    },
+    {
+      "id": "REQ-AVTP-023",
+      "title": "decode_tscf_header faithfully decodes tu regardless of its value (§13.3)",
+      "text": "rcp::avtp::decode_tscf_header shall decode the wire tu (timestamp-uncertain) bit into TscfHeader::tu unchanged for both tu=0 and tu=1, without itself branching on its value -- TC18 §13.3's 'execute as if tu=0' rule is a caller-level policy, not a decode-time transformation.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.3 (\"In case the time stamp is uncertain (i.e. tu = 1), then this shall be executed as if tu = 0.\"), TC18.txt L4040-4041",
+      "tc18_master_id": "TC18-13.3-004"
+    },
+    {
+      "id": "REQ-AVTP-031",
+      "title": "tscf_reserved_all_zero returns true iff both reserved fields are zero (§13.3)",
+      "text": "rcp::avtp::tscf_reserved_all_zero(hdr) shall return true iff hdr.reserved0 and hdr.reserved1 are both zero, the predicate TC18 §13.3's own reserved-bytes rule is built on.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§13.3 (\"If the reserved bytes in the header are all zero, then the request shall be queued as if the header was in NTSCF format or dropped, depending on configuration.\"), TC18.txt L4039-4040",
+      "tc18_master_id": "TC18-13.3-003"
+    },
+    {
+      "id": "REQ-WIREERR-001",
+      "title": "WireErrorCode assigns the governing spec's own numbered wire error codes",
+      "text": "rcp::acf::WireErrorCode shall assign each enumerator the exact numeric value TC18 Table 27/Table 30 defines for it (UnsupportedCmd=1 .. ChainError=17), so encode_error_payload()'s single-octet byte_msg_payload matches the wire value a peer expects.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§12.9.6 Table 30, TC18.txt L3804-3844",
+      "tc18_master_id": "TC18-12.9.6-004"
     }
   ]
 }

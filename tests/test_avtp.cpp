@@ -4,6 +4,13 @@
 // fusa:test REQ-WIRE-007
 // fusa:test REQ-WIRE-011
 // fusa:test REQ-WIRE-013
+// fusa:test REQ-AVTP-013
+// fusa:test REQ-AVTP-014
+// fusa:test REQ-AVTP-015
+// fusa:test REQ-AVTP-021
+// fusa:test REQ-AVTP-022
+// fusa:test REQ-AVTP-023
+// fusa:test REQ-AVTP-031
 
 // Tests for rcp/avtp.hpp — the TC18 AVTPDU header-framing half of the wire
 // codec (ROADMAP.md milestone 44, "Wire Format Core", v2.0.0; split from a
@@ -271,7 +278,7 @@ TEST_CASE("TSCF header round-trips sv/version/mr/tu", "[avtp]") {
 
 // ── §13.3 tu=1/tu=0 equivalence (REQ-AVTP-023) ────────────────────────────────
 
-TEST_CASE("TSCF header decode reports tu=1 and tu=0 faithfully", "[avtp]") {
+TEST_CASE("TSCF header decode reports tu=1 and tu=0 faithfully", "[avtp][REQ-AVTP-023]") {
     TscfHeader hdr;
     hdr.stream_id = make_stream_id(0x02, 1);
     hdr.tu        = true;
@@ -344,7 +351,7 @@ TEST_CASE("extend_timestamp: exactly half a period behind prefers the un-wrapped
 // ── Subtype dispatch & the TSCF-without-time-sync drop rule (ported from
 // c-RCP's rcp_avtp_peek_subtype()/_should_drop_tscf()/_tscf_reserved_all_zero()) ──
 
-TEST_CASE("peek_subtype reads the first byte", "[avtp]") {
+TEST_CASE("peek_subtype reads the first byte", "[avtp][REQ-AVTP-013]") {
     NtscfHeader hdr;
     hdr.stream_id = make_stream_id(0x02, 1);
     auto buf = encode_ntscf_header(hdr);
@@ -354,13 +361,13 @@ TEST_CASE("peek_subtype reads the first byte", "[avtp]") {
     REQUIRE(subtype == kSubtypeNtscf);
 }
 
-TEST_CASE("peek_subtype rejects an empty buffer", "[avtp]") {
+TEST_CASE("peek_subtype rejects an empty buffer", "[avtp][REQ-AVTP-013]") {
     uint8_t subtype = 0;
     REQUIRE(peek_subtype(nullptr, 0, subtype));
 }
 
 TEST_CASE("should_drop_tscf drops a TSCF frame when time sync is unsupported and the policy is Drop",
-          "[avtp]") {
+          "[avtp][REQ-AVTP-014]") {
     // TC18 §11.1's own unconditional wording, and this codec's original
     // (still default) disposition.
     REQUIRE(should_drop_tscf(false, kSubtypeTscf, TscfFallback::Drop));
@@ -378,18 +385,18 @@ TEST_CASE("should_drop_tscf never drops an NTSCF frame regardless of policy or t
 }
 
 TEST_CASE("should_drop_tscf with TscfFallback::Ignore does not drop an unsupported-time-sync TSCF frame",
-          "[avtp]") {
+          "[avtp][REQ-AVTP-021]") {
     // TC18 §13.3's own configurable alternative to §11.1's unconditional
     // wording — same inputs as the Drop-policy test above, only the policy
     // differs, isolating this behavior from every other case.
     REQUIRE_FALSE(should_drop_tscf(false, kSubtypeTscf, TscfFallback::Ignore));
 }
 
-TEST_CASE("should_drop_tscf: Ignore policy is irrelevant once time sync is supported", "[avtp]") {
+TEST_CASE("should_drop_tscf: Ignore policy is irrelevant once time sync is supported", "[avtp][REQ-AVTP-021]") {
     REQUIRE_FALSE(should_drop_tscf(true, kSubtypeTscf, TscfFallback::Ignore));
 }
 
-TEST_CASE("tscf_reserved_all_zero is true for a freshly decoded conformant header", "[avtp]") {
+TEST_CASE("tscf_reserved_all_zero is true for a freshly decoded conformant header", "[avtp][REQ-AVTP-031]") {
     TscfHeader hdr;
     hdr.stream_id = make_stream_id(0x02, 1);
     auto buf = encode_tscf_header(hdr);
@@ -403,7 +410,7 @@ TEST_CASE("tscf_reserved_all_zero is true for a freshly decoded conformant heade
     REQUIRE(tscf_reserved_all_zero(decoded));
 }
 
-TEST_CASE("tscf_reserved_all_zero is false when reserved0 or reserved1 is nonzero", "[avtp]") {
+TEST_CASE("tscf_reserved_all_zero is false when reserved0 or reserved1 is nonzero", "[avtp][REQ-AVTP-031]") {
     TscfHeader hdr;
     hdr.reserved0 = 1;
     REQUIRE_FALSE(tscf_reserved_all_zero(hdr));
@@ -413,7 +420,7 @@ TEST_CASE("tscf_reserved_all_zero is false when reserved0 or reserved1 is nonzer
     REQUIRE_FALSE(tscf_reserved_all_zero(hdr2));
 }
 
-TEST_CASE("decode_tscf_header reads nonzero reserved bytes off the wire", "[avtp]") {
+TEST_CASE("decode_tscf_header reads nonzero reserved bytes off the wire", "[avtp][REQ-AVTP-022]") {
     // Decoding a hand-built wire frame whose own bytes 16-19 are nonzero
     // (simulating a non-conformant or future-revision sender) proves decode
     // actually reads the reserved octets off the wire, not merely that a
@@ -429,4 +436,20 @@ TEST_CASE("decode_tscf_header reads nonzero reserved bytes off the wire", "[avtp
     REQUIRE(decoded.reserved0 == 0xDEADBEEFu);
     REQUIRE(decoded.reserved1 == 0xAABBu);
     REQUIRE_FALSE(tscf_reserved_all_zero(decoded));
+}
+
+// ── avtp_category() unique-message-per-errc (ported from c-RCP's
+// rcp_avtp_strerror()) ────────────────────────────────────────────────────
+
+TEST_CASE("avtp_category() returns a unique, non-empty message per AvtpErrc value", "[avtp][REQ-AVTP-015]") {
+    const auto& cat = avtp_category();
+    const std::string short_buffer    = cat.message(static_cast<int>(AvtpErrc::short_buffer));
+    const std::string bad_subtype     = cat.message(static_cast<int>(AvtpErrc::bad_subtype));
+    const std::string length_mismatch = cat.message(static_cast<int>(AvtpErrc::length_mismatch));
+    REQUIRE_FALSE(short_buffer.empty());
+    REQUIRE_FALSE(bad_subtype.empty());
+    REQUIRE_FALSE(length_mismatch.empty());
+    REQUIRE(short_buffer != bad_subtype);
+    REQUIRE(bad_subtype != length_mismatch);
+    REQUIRE(short_buffer != length_mismatch);
 }

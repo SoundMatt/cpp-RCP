@@ -523,11 +523,13 @@ jobs:
           echo "OK: $tested/$total tested"
 
       # Genuine security-test coverage: CYBERSECURITY.md's own six security
-      # layers cite exactly 64 requirement ids as security-relevant
-      # (REQ-TLS-001..010, REQ-AUTH-001..008, REQ-E2E-001..014,
-      # REQ-RL-001..008, REQ-DISC-001..009, REQ-REGMAP-001..015), each now
-      # marked `"severity": "cybersecurity"` in `.fusa-reqs.json` -- the
-      # field cpp-FuSa's own trace.cpp already reads to compute
+      # layers cite requirement ids as security-relevant (REQ-TLS-001..010,
+      # REQ-AUTH-001..008, REQ-E2E-001..014, REQ-RL-001..008,
+      # REQ-DISC-001..009, REQ-REGMAP-001..015, plus the 8 Table-30 Row-2
+      # evt[2:0]-classification ids added after that doc's count was last
+      # written -- 72 total as of Phase 5), each marked
+      # `"severity": "cybersecurity"` in `.fusa-reqs.json` -- the field
+      # cpp-FuSa's own trace.cpp already reads to compute
       # `secTestedRequirements` (a test annotation on a cybersecurity-marked
       # requirement), previously never populated so this metric was always
       # zero. Deliberately NOT using cpfusa's own `--sec-tested` CLI flag:
@@ -536,24 +538,42 @@ jobs:
       # sec_tested/total) -- the exact same bug class SoundMatt/c-FuSa#147
       # fixed in c-FuSa, filed upstream as SoundMatt/cpp-FuSa#64, not yet
       # fixed. Parses `--format json`'s already-correct
-      # `secTestedRequirements` field directly instead, at a 17% floor
-      # (64/376 = 17.02%) -- NOT a claim that only 17% of this codebase is
-      # security-relevant, a regression floor against the exact,
-      # CYBERSECURITY.md-enumerated subset. Once cpp-FuSa#64 is fixed
-      # upstream, this step can switch to `cpfusa trace --sec-tested 17`
-      # directly.
-      - name: Enforce security-test coverage (17% floor, real CYBERSECURITY.md subset)
+      # `secTestedRequirements` field directly instead.
+      #
+      # Gated on an ABSOLUTE COUNT (>= 72), not a percentage of the total
+      # catalog: this step was originally a 17% floor (64/376 at the time),
+      # but its own comment already stated the actual intent was "a
+      # regression floor against the exact, CYBERSECURITY.md-enumerated
+      # subset" losing test coverage -- not a claim about what fraction of
+      # the codebase is security-relevant. A percentage-of-total
+      # implementation is the wrong shape for that intent: Phase 6 (cpp-RCP
+      # #129) is deliberately growing `.fusa-reqs.json` from 412 toward
+      # something closer to c-RCP's 1282-entry catalog by re-deriving
+      # entries for already-ported, non-cybersecurity-relevant content
+      # (wire framing, per-endpoint register semantics, etc.) -- exactly
+      # the kind of correct, intentional growth a percentage floor
+      # penalizes as if it were a regression. Found when Phase 6 batch 1
+      # (PR #155) legitimately added 36 REQ-ACF-*/REQ-AVTP-*/REQ-WIREERR-*
+      # entries and the previously-passing ratio (72/412 = 17.5%) dropped
+      # to 72/448 = 16.1%, failing a floor that was never meant to track
+      # total-catalog size. An absolute-count floor at the current
+      # enumerated total (72) still catches the real regression this step
+      # exists for -- one of the enumerated ids losing its test tag, or an
+      # id being removed from the `severity: cybersecurity` set -- without
+      # being diluted by legitimate catalog growth elsewhere. Update this
+      # number (never lower it silently) if CYBERSECURITY.md's own
+      # enumerated set genuinely grows or shrinks.
+      - name: Enforce security-test coverage (absolute floor, real CYBERSECURITY.md subset)
         run: |
           cov="$(/tmp/cpfusa/build/cpfusa trace --format json | jq '.coverage')"
           echo "$cov"
           total=$(echo "$cov" | jq '.totalRequirements')
           sec=$(echo "$cov" | jq '.secTestedRequirements')
-          pct=$(( sec * 100 / total ))
-          if [ "$pct" -lt 17 ]; then
-            echo "::error::sec-tested gate failed: ${pct}% ($sec/$total) < required 17%"
+          if [ "$sec" -lt 72 ]; then
+            echo "::error::sec-tested gate failed: $sec/$total security-tested < required floor of 72 (CYBERSECURITY.md-enumerated subset)"
             exit 1
           fi
-          echo "OK: ${pct}% ($sec/$total) security-tested"
+          echo "OK: $sec/$total security-tested (floor: 72)"
 
   # ── cpp-FuSa: ctest integration → .fusa-evidence.json ────────────────────────
   cpfusa-verify:
