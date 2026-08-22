@@ -59,20 +59,29 @@ comparison against the high-water mark.
 **STATUS CORRECTED 2026-08-21 (cpp-RCP issue #129 / RELAY Phase 17 Phase 2
 pass) — two distinct corrections, both documentation-only:**
 
-1. **Wiring gap, not algorithm gap.** This section previously implied
-   `RxSequenceGuard` — and by extension the SP1/SP2 properties verified
-   here — functions as a real, active mitigation for H-004. It does not:
-   `RxSequenceGuard` is **never instantiated anywhere outside its own unit
-   test** — not in `mock::Server`'s dispatch, and not in any transport
-   `Server`. SP1/SP2 are correctly verified properties of the
-   `RxSequenceGuard` *primitive itself*, but a formally-verified primitive
-   that nothing in this codebase calls provides no actual protection
-   against H-004 today. See `HARA.md`'s own corrected H-004 section for
-   the full account (mirroring c-RCP's own resolution of the identical
-   ambiguity, issues #601/#606). Wiring `RxSequenceGuard` into
-   `rcp/mock.hpp`'s dispatch is explicitly out of scope for this pass
-   (Phase 4/server-dispatch work) — this correction only makes this
-   section stop overstating what already-verified fact it establishes.
+1. **Wiring gap, now closed for this codebase's own reference dispatch.**
+   This section previously stated that `RxSequenceGuard` was **never
+   instantiated anywhere outside its own unit test** — not in
+   `mock::Server`'s dispatch, and not in any transport `Server`. That was
+   accurate as of the 2026-08-21 pass that added this note, but is
+   superseded by Phase 4 batch C, "mock.hpp batch C — wire
+   RxSequenceGuard, StreamFaultTracker, RxWatchdog" (CHANGELOG.md, cpp-RCP
+   issue #129, PR #148): `rcp/mock.hpp`'s `Server` now holds a
+   `std::array<e2e::RxSequenceGuard, ...> seq_trackers_` member, and both
+   `Server::dispatch_e2e()` and `Server::dispatch_frame_e2e()` call it
+   (via a shared `seq_gate_admits()` helper) on every dispatched
+   request/frame before CRC unwrap — integration-tested in
+   `tests/test_mock.cpp` ("dispatch_e2e's sequence gate (REQ-E2E-028/029)
+   rejects a non-increasing sequence_num"), not merely the standalone
+   primitive's own `tests/test_e2e.cpp` unit test. See `HARA.md`'s own
+   corrected H-004 section and `include/rcp/e2e.hpp`'s file header
+   ("UPDATE (Phase 4/Phase 17 batch C...)") for the full account
+   (mirroring c-RCP's own earlier resolution of the identical ambiguity,
+   issues #601/#606). SP1/SP2 as verified here are therefore properties of
+   a primitive that **is** now wired into this codebase's own reference
+   dispatch — with the same "an integrator bypassing `mock::Server`'s own
+   dispatch is on their own" caveat every primitive in this codebase
+   carries (see `HARA.md`'s H-004 Residual Risks entry).
 2. **This spec models the pre-Phase-2-pass algorithm.** The same Phase 2
    pass that produced this correction also content-corrected
    `e2e::RxSequenceGuard`'s actual comparison rule against c-RCP's

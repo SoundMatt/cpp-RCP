@@ -2,7 +2,7 @@
 ## ISO 21434 / IEC 62443 SL-2
 
 **Document version**: 2.0.0
-**ASIL level**: ASIL-B (ISO 26262) / SIL-2 (IEC 61508)
+**ASIL level**: ASIL-C (ISO 26262, corrected from ASIL-B — see `HARA.md`'s H-001 rationale) / SIL-2 (IEC 61508)
 **Date**: 2026-07-28
 
 ---
@@ -74,7 +74,7 @@ Ratings: Feasibility (1-5) × Impact (1-5) = Risk Score
 
 Residual risks above threshold (score ≥ 10): T-01, T-02, T-04, T-05, T-11.
 All are covered by implemented mitigations. Residual risk is accepted at
-ASIL-B.
+ASIL-C (corrected from ASIL-B; see `HARA.md`'s H-001 rationale).
 
 ---
 
@@ -100,7 +100,8 @@ ASIL-B.
 
 All identified threats have corresponding mitigations aligned with IEC
 62443 SL-2 security level requirements. The residual risk profile is
-acceptable for ASIL-B / SIL-2 operation. A re-assessment is required when:
+acceptable for ASIL-C / SIL-2 operation (corrected from ASIL-B; see
+`HARA.md`'s H-001 rationale). A re-assessment is required when:
 - The threat landscape changes (new attack vectors identified)
 - A new protocol bridge (`mqttbr.hpp`/`ddsbr.hpp`/`someipbr.hpp`/
   `restbridge.hpp`/`grpcbridge.hpp`/`udsbr.hpp`/`doipbr.hpp`) moves past its
