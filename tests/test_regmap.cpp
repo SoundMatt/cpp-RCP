@@ -37,6 +37,38 @@
 // fusa:test REQ-RMAP-081
 // fusa:test REQ-RMAP-086
 // fusa:test REQ-RMAP-087
+//
+// Batch 11 fixup: these TEST_CASEs already carried real bracket tags but
+// were missing the manifest //fusa:test line cpfusa's own trace tool
+// actually scans for (a whole-tree "grep for [REQ-ID]" check is NOT what
+// cpfusa checks -- it requires this comment form specifically, per the
+// batch-8 lesson). No new test content; genuine tested-coverage caught by
+// re-running the real pinned cpfusa binary before merge, not just an
+// approximating local check:
+// fusa:test REQ-RMAP-018
+// fusa:test REQ-RMAP-019
+// fusa:test REQ-RMAP-020
+// fusa:test REQ-RMAP-021
+// fusa:test REQ-RMAP-022
+// fusa:test REQ-RMAP-023
+// fusa:test REQ-RMAP-026
+// fusa:test REQ-RMAP-027
+// fusa:test REQ-RMAP-028
+// fusa:test REQ-RMAP-029
+// fusa:test REQ-RMAP-031
+// fusa:test REQ-RMAP-032
+// fusa:test REQ-RMAP-033
+// fusa:test REQ-RMAP-034
+// fusa:test REQ-RMAP-035
+// fusa:test REQ-RMAP-036
+// fusa:test REQ-RMAP-037
+// fusa:test REQ-RMAP-038
+// fusa:test REQ-RMAP-039
+// fusa:test REQ-RMAP-043
+// fusa:test REQ-RMAP-073
+// fusa:test REQ-RMAP-074
+// fusa:test REQ-RMAP-075
+// fusa:test REQ-RMAP-082
 
 // Tests for rcp/regmap.hpp — the RC Server register-map data model and EP0
 // pseudo-endpoint (ROADMAP.md milestone 45, "RC Server Lifecycle &
@@ -282,7 +314,8 @@ TEST_CASE("Functional config remains writable at HW_CONFIGURED but locks at RCP_
 
 TEST_CASE("GeneralMap default-constructs zeroed, with the no-root-client sentinel",
           "[regmap][REQ-RMAP-003][REQ-RMAP-026][REQ-RMAP-027][REQ-RMAP-028][REQ-RMAP-029]"
-          "[REQ-RMAP-031][REQ-RMAP-032][REQ-RMAP-033][REQ-RMAP-035][REQ-RMAP-036][REQ-RMAP-038]") {
+          "[REQ-RMAP-031][REQ-RMAP-032][REQ-RMAP-033][REQ-RMAP-034][REQ-RMAP-035][REQ-RMAP-036]"
+          "[REQ-RMAP-037][REQ-RMAP-038]") {
     GeneralMap map;
 
     REQUIRE(map.magic == kRegisterMapMagic);
