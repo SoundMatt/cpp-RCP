@@ -8,6 +8,35 @@
 // fusa:req REQ-WIRE-013
 // fusa:req REQ-WIRE-014
 // fusa:req REQ-WIRE-015
+// fusa:req REQ-ACF-001
+// fusa:req REQ-ACF-004
+// fusa:req REQ-ACF-012
+// fusa:req REQ-ACF-013
+// fusa:req REQ-ACF-014
+// fusa:req REQ-ACF-017
+// fusa:req REQ-ACF-019
+// fusa:req REQ-ACF-021
+// fusa:req REQ-ACF-023
+// fusa:req REQ-ACF-024
+// fusa:req REQ-ACF-025
+// fusa:req REQ-ACF-026
+// fusa:req REQ-ACF-027
+// fusa:req REQ-ACF-028
+// fusa:req REQ-ACF-029
+// fusa:req REQ-ACF-030
+// fusa:req REQ-ACF-031
+// fusa:req REQ-ACF-032
+// fusa:req REQ-ACF-033
+// fusa:req REQ-ACF-038
+// fusa:req REQ-ACF-044
+// fusa:req REQ-ACF-047
+// fusa:req REQ-ACF-048
+// fusa:req REQ-ACF-049
+// fusa:req REQ-ACF-050
+// fusa:req REQ-ACF-051
+// fusa:req REQ-ACF-052
+// fusa:req REQ-ACF-053
+// fusa:req REQ-WIREERR-001
 
 // TC18 wire codec, message half — the ACF_ABB / ACF_GBB message types (ACF —
 // AVTP Control Format) the OPEN Alliance TC18 Remote Control Protocol
