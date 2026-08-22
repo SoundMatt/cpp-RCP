@@ -101,6 +101,23 @@ struct PolicyEntry {
     std::unordered_set<avtp::ByteBusId> endpoints;
 
     // Request kind: empty = any kind.
+    //
+    // Phase 8 batch B audit note (c-RCP parity): c-RCP's rcp_authz_policy_allow()
+    // keys this axis on a caller-supplied, deliberately opaque uint8_t
+    // request_type byte (see c-RCP's authz.h file header) rather than on
+    // request::RequestCategory — for a Standard request that byte is
+    // conventionally acf.h's rcp_acf_op_t (RCP_ACF_OP_READ/_WRITE), so a
+    // c-RCP policy entry can distinguish "may read but not write" within a
+    // single RequestCategory::Standard request, a distinction this axis
+    // cannot express (every Standard request — read or write — collapses to
+    // one RequestCategory::Standard value here). This is a deliberate,
+    // pre-existing choice (present since this header's own v2.11.0 rebind,
+    // not introduced by this audit): RequestCategory is "already the single
+    // taxonomy" this codebase keys every other request-kind axis on (see
+    // this file's header comment), and changing it to an opaque byte would
+    // be a breaking change to this already-tested PolicyEntry/permit()
+    // contract. Left as a known, documented granularity gap rather than
+    // ported in this batch.
     std::unordered_set<request::RequestCategory> kinds;
 };
 
