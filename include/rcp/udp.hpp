@@ -156,6 +156,35 @@ inline std::error_code decode_annexj_datagram(const uint8_t* b, size_t len,
     return {};
 }
 
+// FrameResponse — one dispatched member's own outcome, exactly enough of it
+// for Server::serve() (below) to decide whether to put a reply message on
+// the wire for it, and what that message says. Mirrors the response half of
+// rcp::mock::FrameMemberResult (rcp/mock.hpp) without this header needing to
+// #include rcp/mock.hpp itself — this file's own header comment already
+// establishes that the Server/Client here stay usable without ever
+// depending on the in-process simulator; a caller wiring
+// rcp::mock::Server::dispatch_frame()/dispatch_frame_e2e() to Handler below
+// supplies a small glue lambda translating each mock::FrameMemberResult it
+// gets back into this shape (see tests/test_udp.cpp). Declared outside the
+// RCP_UDP_POSIX split below (it depends only on acf.hpp, included
+// unconditionally) so both the real POSIX Server and the Windows stub
+// Server share the exact same Handler contract.
+//
+// info.rsp == false (acf::AcfMessageInfo's own default) is a valid,
+// EXPECTED outcome for a member Server::serve() must NOT put a reply
+// message on the wire for at all — Table 24 response suppression
+// (REQ-RMAP-048/049, rcp::mock::suppress_response_per_stream_cfg), a
+// queued/pending/suspended/still-reassembling-a-fragment admission outcome,
+// or any other "no wire response" case rcp::mock::DispatchErrc documents
+// (rcp/mock.hpp). serve() below drops any entry with info.rsp == false from
+// the outgoing MultiFrame instead of encoding it — exactly what a caller
+// going through rcp::mock::Server::dispatch_frame()/_e2e() directly would
+// do after inspecting .response.rsp itself.
+struct FrameResponse {
+    acf::AcfMessageInfo   info;
+    std::vector<uint8_t>  payload;
+};
+
 #if defined(RCP_UDP_POSIX)
 
 // ── Frame ─────────────────────────────────────────────────────────────────────
@@ -340,25 +369,62 @@ inline std::error_code decode_multi_frame(const uint8_t* b, size_t len, MultiFra
 // this file's header comment for the secondary-source provenance of that
 // number — unless a caller passes a different one), decodes each inbound
 // datagram as an Annex J envelope (4-byte encapsulation sequence number +
-// MultiFrame AVTPDU), and dispatches every ACF request the datagram carries
-// — one, the common case, or more than one packed back to back (extraction
-// §12.9.1.1, issue cpp-RCP-04-fresh) — to a caller-supplied Handler
-// individually, shaped to match rcp::mock::Server::dispatch's signature,
-// then encodes every response into a single reply MultiFrame (same order as
-// the requests arrived in), re-wraps it in a fresh encapsulation sequence
-// number, and sends it back to the sender under the same header kind
-// (NTSCF/TSCF) the request arrived under. Malformed datagrams (too short
-// for even the encapsulation sequence number, short buffer, bad subtype,
-// unrecognized ACF message type on the very first message) are dropped
-// silently, the same "drop rather than partially process" choice
-// rcp/discovery.hpp documents for its own decode path.
+// MultiFrame AVTPDU), and hands the *raw* ACF-region bytes (the AVTPDU's
+// payload immediately after its own NTSCF/TSCF header — one, the common
+// case, or more than one ACF_ABB/ACF_GBB member packed back to back,
+// extraction §12.9.1.1) to a caller-supplied frame-level Handler exactly
+// once per datagram, then encodes every non-suppressed FrameResponse it
+// gets back into a single reply MultiFrame (frame order preserved),
+// re-wraps it in a fresh encapsulation sequence number, and sends it back
+// to the sender under the same header kind (NTSCF/TSCF) the request
+// arrived under — UNLESS every member's own response was suppressed (Table
+// 24) or the handler produced nothing at all, in which case no reply
+// datagram is sent, matching what "no response is to be sent" actually
+// means on the wire. Malformed datagrams (too short for even the
+// encapsulation sequence number, short buffer, bad subtype, unrecognized
+// ACF message type on the very first message) are dropped silently, the
+// same "drop rather than partially process" choice rcp/discovery.hpp
+// documents for its own decode path.
+//
+// Handler is deliberately FRAME-level, not dispatch()'s own single-message
+// shape (issue cpp-RCP-udp-01, cpp-RCP issue #129 Phase 5 wave 1): an
+// earlier revision of this Handler matched rcp::mock::Server::dispatch's
+// single already-isolated-member contract directly (mock.hpp:1006), which
+// meant a caller wiring this Handler straight to mock::Server::dispatch —
+// the obvious, natural thing to do — silently lost Table 24 response
+// suppression, conditional/cancellation-opcode routing (peek_conditional_
+// request_type, mock.hpp:1763), and E2E/fragmentation handling for every
+// request that arrived over UDP: dispatch()/dispatch_e2e()/
+// dispatch_e2e_fragment() only ever see ONE already-isolated member, so
+// none of mock.hpp's own Phase 4 batch D2 frame-level machinery
+// (dispatch_frame()/dispatch_frame_e2e(), mock.hpp:1536/1587, which apply
+// Table 24 suppression via decode_and_dispatch()'s own admit_and_
+// classify()/suppress_response_per_stream_cfg() calls internally) was ever
+// reached. Handler's signature now matches dispatch_frame()'s/
+// dispatch_frame_e2e()'s own shared (client, stream_id, frame) shape (plus
+// the AVTPDU's own Sequence_Nr, needed only by dispatch_frame_e2e()'s own
+// once-per-frame REQ-E2E-028/029 gate) instead, so a caller can wire either
+// one directly (via a thin glue lambda translating
+// std::vector<mock::FrameMemberResult> to std::vector<FrameResponse> — see
+// tests/test_udp.cpp) and get the exact same behavior dispatching against
+// mock::Server directly would.
 class Server {
 public:
-    using Handler = std::function<std::error_code(size_t client,
-                                                    const acf::AcfMessageInfo& req,
-                                                    const std::vector<uint8_t>& req_payload,
-                                                    acf::AcfMessageInfo& out_resp,
-                                                    std::vector<uint8_t>& out_resp_payload)>;
+    // sequence_num is the enclosing AVTPDU's own Sequence_Nr (avtp::
+    // NtscfHeader::sequence_num/avtp::TscfHeader::sequence_num, 8-bit
+    // rolling counter) — required by rcp::mock::Server::dispatch_frame_e2e()'s
+    // own frame-level sequence gate (mock.hpp:1572-1586) even though a
+    // caller wiring dispatch_frame() instead (no E2E) has no use for it.
+    // Returns the number of FrameResponse entries appended to
+    // out_responses (out_responses is NOT cleared first, mirroring
+    // rcp::mock::Server::dispatch_frame()'s own "size_t dispatched count,
+    // caller passes an empty vector" contract — every out_responses this
+    // file's own Handler is ever invoked with already starts empty, see
+    // serve() below).
+    using Handler = std::function<size_t(size_t client, avtp::StreamId stream_id,
+                                          uint8_t sequence_num,
+                                          const std::vector<uint8_t>& acf_frame,
+                                          std::vector<FrameResponse>& out_responses)>;
 
     Server(avtp::StreamId stream_id, const char* addr, uint16_t port = kAnnexJControlPort)
         : stream_id_(stream_id), fd_(-1) {
@@ -484,8 +550,20 @@ private:
                                         in_encap_seq, avtpdu, avtpdu_len))
                 continue;
 
+            // decode_multi_frame validates the NTSCF/TSCF header (subtype,
+            // control_data_length) and, for the no-handler-registered
+            // fallback below, decodes its member list — but Handler above
+            // wants the RAW ACF-region bytes, not the decoded messages, so
+            // a frame-level dispatcher (rcp::mock::Server::dispatch_frame()/
+            // dispatch_frame_e2e()) can apply its own splitting/suppression/
+            // conditional-opcode/E2E logic against the unmodified wire
+            // bytes, exactly as it would for any other caller of those
+            // entry points.
             MultiFrame req;
             if (decode_multi_frame(avtpdu, avtpdu_len, req)) continue;
+            const size_t acf_off = req.use_tscf ? avtp::kTscfHeaderLen : avtp::kNtscfHeaderLen;
+            const std::vector<uint8_t> acf_frame(avtpdu + acf_off, avtpdu + avtpdu_len);
+            const uint8_t sequence_num = static_cast<uint8_t>(req.sequence_num);
 
             MultiFrame resp;
             resp.use_tscf        = req.use_tscf;
@@ -493,27 +571,46 @@ private:
             resp.sequence_num    = static_cast<uint16_t>(++seq_);
             resp.timestamp_valid = req.timestamp_valid;
             resp.avtp_timestamp  = req.avtp_timestamp;
-            resp.messages.reserve(req.messages.size());
+
+            std::vector<FrameResponse> results;
             {
                 std::lock_guard<std::mutex> lk(mu_);
                 size_t client = client_id_for(from);
                 last_recv_encap_seq_[client] = in_encap_seq;
-                // §12.9.1.1: "check each of them individually if to be
-                // processed or not" — each request in the datagram is
-                // dispatched and answered on its own, not as a batch.
-                for (const auto& m : req.messages) {
-                    acf::AcfEntry out_entry;
-                    if (handler_) {
-                        auto ec = handler_(client, m.info, m.payload, out_entry.info, out_entry.payload);
-                        (void)ec; // Handler always populates out_entry.info even on
-                                  // failure, same contract rcp::mock::Server::dispatch
-                                  // documents.
-                    } else {
-                        out_entry.info = acf::make_response(m.info, acf::ResponseKind::Acknowledge);
+                if (handler_) {
+                    handler_(client, req.stream_id, sequence_num, acf_frame, results);
+                } else {
+                    // No handler registered: acknowledge every member
+                    // individually — this class's own pre-existing default,
+                    // now built from req.messages (decode_multi_frame's own
+                    // already-decoded member list) rather than raw bytes,
+                    // since there is no dispatch logic here to hand raw
+                    // bytes to.
+                    results.reserve(req.messages.size());
+                    for (const auto& m : req.messages) {
+                        FrameResponse r;
+                        r.info = acf::make_response(m.info, acf::ResponseKind::Acknowledge);
+                        results.push_back(std::move(r));
                     }
-                    resp.messages.push_back(std::move(out_entry));
                 }
             }
+
+            // §12.9.1.1: each request in the datagram was checked and
+            // dispatched individually — now assemble the reply MultiFrame
+            // from whichever members actually produced a genuine wire
+            // response (FrameResponse::info.rsp == true; see that struct's
+            // own doc comment for why info.rsp == false is a valid,
+            // non-error "do not reply to this one" outcome, e.g. Table 24
+            // suppression).
+            resp.messages.reserve(results.size());
+            for (auto& r : results) {
+                if (!r.info.rsp) continue;
+                acf::AcfEntry entry;
+                entry.info    = std::move(r.info);
+                entry.payload = std::move(r.payload);
+                resp.messages.push_back(std::move(entry));
+            }
+            if (resp.messages.empty()) continue; // every member suppressed / nothing to send back
 
             auto out_frame  = encode_multi_frame(resp);
             auto out_wire   = encode_annexj_datagram(++encap_seq_, out_frame);
@@ -713,9 +810,11 @@ inline std::error_code decode_frame(const uint8_t*, size_t, Frame&) {
 
 class Server {
 public:
-    using Handler = std::function<std::error_code(size_t, const acf::AcfMessageInfo&,
-                                                    const std::vector<uint8_t>&,
-                                                    acf::AcfMessageInfo&, std::vector<uint8_t>&)>;
+    // Same shape as the real POSIX Server::Handler above — see that one's
+    // own doc comment for why it is frame-level, not single-message.
+    using Handler = std::function<size_t(size_t, avtp::StreamId, uint8_t,
+                                          const std::vector<uint8_t>&,
+                                          std::vector<FrameResponse>&)>;
 
     Server(avtp::StreamId, const char*, uint16_t = kAnnexJControlPort) {}
     std::string addr_string() const { return {}; }
