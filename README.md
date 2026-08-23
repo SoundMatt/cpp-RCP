@@ -152,7 +152,7 @@ Errors are returned as `std::error_code` values in the `rcp` category.
 
 cpp-RCP targets deployment in automotive safety-critical environments.
 
-- Safety standard: ISO 26262 ASIL-B / IEC 61508 SIL-2
+- Safety standard: ISO 26262 ASIL-C / IEC 61508 SIL-2 (corrected from ASIL-B; see `HARA.md`'s H-001 rationale)
 - Security standard: IEC 62443 SL-2
 - cpp-FuSa static analysis runs in CI on every PR
 - All requirements are traced to tests in `.fusa-reqs.json`

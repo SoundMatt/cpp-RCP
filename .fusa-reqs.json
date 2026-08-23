@@ -1211,6 +1211,22 @@
       "asil": "ASIL-B"
     },
     {
+      "id": "REQ-SHMEM-009",
+      "title": "A Channel's state is freed exactly once regardless of shared_ptr release order",
+      "text": "A shmem::Channel's underlying state shall be freed exactly once, and only once every std::shared_ptr<Channel> holder has released it, regardless of the order in which holders release -- constructing, copying, and releasing shared_ptr<Channel> handles in either order shall neither crash nor leak, matching c-RCP's own refcounted rcp_avtp_transport_t contract (shmem.c:151-181).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
+      "id": "REQ-SHMEM-010",
+      "title": "request() plays both the c-RCP send-side and recv-side ErrClosed role",
+      "text": "Channel::request() shall return ErrClosed once the Channel has been closed, regardless of which of c-RCP's own two separate shmem_side_send()/shmem_side_recv() roles a given call is standing in for -- a single request() call plays both the \"send\" and \"recv\" side of that split API, and each of c-RCP's own analogs independently reports RCP_ERR_CLOSED once its own side is closed (shmem.c:64-67/100-113,109-113).",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B"
+    },
+    {
       "id": "REQ-TSN-001",
       "title": "apply_priority sets SO_PRIORITY per RequestCategory",
       "text": "tsn::apply_priority(fd, cfg, category) shall set the SO_PRIORITY socket option proportional to the request's rcp::request::RequestCategory before the next send on that socket, on platforms where RCP_TSN_SO_PRIORITY is defined; on other platforms it shall succeed as a no-op.",
@@ -4987,6 +5003,17 @@
       "scope": "tc18",
       "status": "implemented",
       "tc18": "§11.2.2.7 (\"In any case the presentation_time is the earliest point in time, when the request shall be executed.\"), TC18.txt L1952"
+    },
+    {
+      "id": "REQ-TIMED-012",
+      "title": "A request carried under a TSCF header is postponed until its own presentation time",
+      "text": "rcp::server::Endpoint::admit()/admit_with_ack() shall, whenever the caller reports tv true (an enclosing TSCF header's own avtp_timestamp), postpone execution of the admitted request -- of any kind, Standard, Cancellation, or a conditional kind with its own start condition -- until avtp::extend_timestamp(avtp_timestamp, gptp_reference_now)'s reconstructed 48-bit instant is reached; select_due()/is_due() shall AND this envelope-level presentation gate with (not substitute for) each kind's own existing execution condition, and shall fail closed -- never report the request due -- whenever gptp_locked is false, regardless of how far in the past the gate's own instant already is.",
+      "standard": "iso26262",
+      "level": "ASIL-B",
+      "asil": "ASIL-B",
+      "scope": "tc18",
+      "status": "implemented",
+      "tc18": "§11.2, TC18.txt L1159; §11.2.1, TC18.txt L1204"
     },
     {
       "id": "REQ-CANCEL-002",
@@ -11483,6 +11510,17 @@
       "status": "implemented",
       "tc18": "§13.2 Table 28/31, TC18.txt L3570-3574",
       "tc18_master_id": "TC18-13.2-001"
+    },
+    {
+      "id": "REQ-RMAP-081",
+      "title": "EP_RESP_ON_ERROR (Table 31 prose, IO-pin gauging error response) is a dangling spec reference",
+      "text": "PARTIAL, matching c-RCP's own disposition: TC18's own prose names a configuration parameter (EP_RESP_ON_ERROR) that Table 31 itself never actually defines a bit or field for -- a genuine, confirmed TC18 spec defect, not an addressable local gap. What IS implemented and tested: ep_generic_cfg::render() deliberately invents no bit for it -- both reserved spans of octet 1 (bits [3:1] and [7:6], mask 0xCE) stay zero for every input, including inputs deliberately chosen to be non-zero/extreme everywhere else. What remains open: a real EP_RESP_ON_ERROR mechanism itself, which TC18's own spec silence makes genuinely unimplementable, not merely unwired.",
+      "standard": "iso26262",
+      "level": "QM",
+      "asil": "QM",
+      "scope": "tc18-gap",
+      "status": "partial",
+      "tc18": "§13.2 Table 31 (EP_RESP_ON_ERROR prose reference, no defined bit/field)"
     },
     {
       "id": "REQ-RMAP-082",

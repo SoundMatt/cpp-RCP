@@ -2,7 +2,7 @@
 
 **Document version**: 2.0.0
 **Date**: 2026-07-28
-**Standards**: ISO 26262 (ASIL-B), IEC 61508 (SIL-2), ISO 21434, IEC 62443 SL-2
+**Standards**: ISO 26262 (ASIL-C — corrected from ASIL-B, see `HARA.md` H-001), IEC 61508 (SIL-2), ISO 21434, IEC 62443 SL-2
 
 This revision (ROADMAP.md milestone 62, "Certification Refresh", v2.18.0)
 supersedes the pre-replacement audit pack authored at milestone 43. All
@@ -28,9 +28,19 @@ across Phase 13-16 (v2.0.0-v2.17.0).
 
 ## 2. ASIL-D Gap Analysis (ISO 26262 §7)
 
-cpp-RCP targets **ASIL-B** for the RC Client/RC Server communication
-subsystem. The following table records deliberate derogations from
-ASIL-D:
+cpp-RCP targets **ASIL-C** for the RC Client/RC Server communication
+subsystem (corrected from a previously-stated ASIL-B; see `HARA.md`'s
+H-001 rationale — S3/E4/C2 maps to ASIL-C, not ASIL-B, and no
+decomposition is claimed for it). The table and decomposition paragraph
+below predate that correction and still frame this subsystem's
+derogation from ASIL-D as an ASIL-B(D) = ASIL-A + ASIL-B decomposition —
+per `HARA.md`'s own H-001 rationale, no such decomposition is actually
+claimed (ASIL-C is met directly). **This section has not yet been
+re-derived for an ASIL-C target and is flagged as a follow-up, not
+resolved by this pass** — re-deriving which ASIL-D requirements still
+warrant derogation, and on what rationale, at an ASIL-C (rather than
+ASIL-B) target is a safety-case judgment call outside the scope of a
+documentation-consistency fix.
 
 | ASIL-D Requirement | Derogation Rationale | ASIL-B Coverage |
 |--------------------|----------------------|-----------------|
@@ -39,9 +49,11 @@ ASIL-D:
 | MISRA C++:2023 compliance | MISRA advisory rules selectively suppressed with justification | clang-tidy clean on safety-critical rules |
 | 100% MC/DC structural coverage | 80% branch coverage enforced in CI | 80% branch + path coverage reported by `cpfusa coverage` |
 
-ASIL decomposition: the RC Client/RC Server link is decomposed as
-ASIL-B(D) = ASIL-A + ASIL-B per ISO 26262-9 §5 (independent channel
-decomposition) — see `HARA.md`'s per-hazard decomposition rationale.
+ASIL decomposition (pre-dates the ASIL-C correction above — see this
+section's own flagged-follow-up note): the RC Client/RC Server link was
+previously described as decomposed as ASIL-B(D) = ASIL-A + ASIL-B per ISO
+26262-9 §5 (independent channel decomposition). `HARA.md`'s current
+per-hazard rationale for H-001 claims no such decomposition.
 
 ---
 

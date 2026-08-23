@@ -170,16 +170,6 @@
       "gap": "Confirmed absent (2026-08-22): RequestRecord::chained_predecessor is std::optional<uint8_t> (request.hpp:1315), and RequestLedger::submit() (request.hpp:1354-1362) never inspects it — a Chained-opcode record with chained_predecessor == std::nullopt is accepted and tracked exactly like any other Pending record, with no special rejection path. RequestErrc (request.hpp:270-285) has no CHAIN_ERROR-equivalent enumerator at all — the closest neighbors (request_not_found, request_canceled, invalid_lifecycle_transition) are semantically unrelated. This is distinct from REQ-CHAIN-009's 'already-aborted chain' case (which cascade_cancel()/propagate_chain_completion() genuinely do handle, unconditionally cancelling every downstream chained_successor once one member aborts — see request.hpp's own file-header delta #4/judgment-call note at lines 207-217): REQ-CHAIN-008 is about a chained member that never had a predecessor relationship recorded in the first place, which nothing in RequestLedger detects or rejects today. A caller assembling chained_predecessor/chained_successors links at submission time (this codebase's own design, not c-RCP's positional has_predecessor bool) could in principle already choose not to submit a first-frame Chained request with a false chained_predecessor link, but RequestLedger itself provides no enforcement or detection of the case, and no test in test_request.cpp exercises it."
     },
     {
-      "id": "REQ-TIMED-012",
-      "title": "A request carried under a TSCF header is postponed until the header's presentation time",
-      "text": "A caller-facing admission/dispatch entry point shall, given an AVTPDU decoded under a TSCF header (carrying its own avtp_timestamp), defer executing any request in it until that timestamp is reached, using the already-implemented timed_admit()/timed_due() primitives (REQ-TIMED-007/008/011) as the gate.",
-      "standard": "iso26262",
-      "level": "ASIL-B",
-      "asil": "ASIL-B",
-      "tc18": "§11.2, TC18.txt L1159; §11.2.1, TC18.txt L1204",
-      "gap": "Confirmed absent (2026-08-22): rcp/request.hpp implements every TSCF-admission PRIMITIVE this requirement depends on (timed_admit()/timed_due()/timed_too_far(), request.hpp:1094-1125) but, by this file's own explicit design note (request.hpp:246-250, 'this header... does not implement a running scheduler thread; wiring select_next_due()'s output into an actual dispatch loop is left to the embedding application'), provides no dispatch/admission LOOP that actually calls them against a real TSCF-decoded avtp_timestamp. Grepped the whole tree (include/, src/) for a dispatch-tscf/admit-gate equivalent to c-RCP's rcp_mock_server_dispatch_tscf()/rcp_server_endpoint_admit(): none exists — rcp/l2.hpp/udp.hpp encode/decode TSCF *framing* (use_tscf bit, avtp_timestamp field) but never route a decoded timestamp into timed_admit()/timed_due(). This is a genuine, confirmed absence of end-to-end behavior (not merely an unwired primitive): nothing in cpp-RCP today defers ANY request's execution until a TSCF header's presentation time arrives. Per this file's own design note this may be intentionally out of request.hpp's charter (a library of primitives, not a server), but the requirement's own text (postponement actually happening) has no home anywhere else in the tree either."
-    },
-    {
       "id": "REQ-TIMED-013",
       "title": "Standard requests, and timed requests under a TSCF header, are sent as ACF_ABB",
       "text": "A caller building a Standard or Timed request for transmission under a TSCF header shall encode it as ACF_ABB (not the ACF_GBB message_timestamp-repurposing path REQ-TIMED-002/003 model), with the TSCF header's own avtp_timestamp carrying the presentation time, and a receiver's admission/dispatch path shall honor that presentation time per REQ-TIMED-012.",
@@ -1301,18 +1291,6 @@
       "tc18": "",
       "tc18_master_id": "",
       "gap": "NOT a behavioral gap -- an id-collision traceability gap (2026-08-22, cpp-RCP Phase 6 batch 11 (RMAP/SRV)). The behavior itself is genuinely implemented and tested. The blocker is that this batch's REQ-REGMAP-* -> REQ-RMAP-* rename (ROADMAP.md Phase 17) claimed this id for cpp-RCP's own pre-existing, unrelated content first: this id is already taken in .fusa-reqs.json by that renamed entry. Already taken by: this catalog's own REQ-RMAP-015 (\"EndpointGenericConfig's per-endpoint E2E CRC safe-mode toggles\"). Genuinely implemented+tested: regmap::named_signal_string() -- tests/test_regmap.cpp's \"named_signal_string names are unique across the whole index\" TEST_CASE, dual-tagged [REQ-RMAP-044][REQ-RMAP-015] in this batch."
-    },
-    {
-      "id": "REQ-RMAP-081",
-      "title": "EP_RESP_ON_ERROR (Table 31 prose, IO-pin gauging error response) is a dangling spec reference",
-      "text": "NOT IMPLEMENTED, matching c-RCP's own disposition verbatim: TC18's own prose names a configuration parameter (EP_RESP_ON_ERROR) that Table 31 itself never actually defines a bit or field for -- a genuine, confirmed TC18 spec defect, not an addressable local gap. ep_generic_cfg::render()'s own reserved-octet spans (bits [3:1] and [7:6] of octet 1, mask 0xCE) deliberately stay zero for every input rather than inventing a bit position for this dangling reference.",
-      "standard": "iso26262",
-      "level": "QM",
-      "asil": "QM",
-      "scope": "tc18-gap",
-      "status": "not-implemented",
-      "tc18": "§13.2 Table 31 (EP_RESP_ON_ERROR prose reference, no defined bit/field)",
-      "gap": "Genuine spec-defect gap, matching c-RCP's own disposition verbatim (2026-08-22, cpp-RCP Phase 6 batch 11 (RMAP/SRV)): TC18 names EP_RESP_ON_ERROR in prose without ever defining where it lives on the wire. cpp-RCP additionally has a positive, already-tested defensive guarantee beyond c-RCP's own scope for this id -- ep_generic_cfg::render() never invents a bit for it (tests/test_regmap.cpp's \"ep_generic_cfg::render never sets a bit for the dangling EP_RESP_ON_ERROR reference\" TEST_CASE, tagged [REQ-RMAP-081]) -- but the underlying requirement (a real EP_RESP_ON_ERROR mechanism) remains genuinely unimplementable per the same spec silence c-RCP already confirmed, so this entry is filed as a gap rather than force-fit as implemented."
     },
     {
       "id": "REQ-RMAP-068",
